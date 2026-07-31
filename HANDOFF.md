@@ -2,84 +2,93 @@
 
 ## 来源
 
-Fork 自 https://github.com/T8mars/T8-penguin-canvas（MIT 协议，作者 @T8mars）
+Fork 自 https://github.com/T8mars/T8-penguin-canvas（MIT 协议，作者 @T8mars）。
 
-## 仓库
+## 仓库与目标
 
 - GitHub: https://github.com/qing20191723/T8-penguin-canvas
-- 本地: /mnt/d/atlas-canvas/
+- 本地工作区: `/mnt/d/atlas-canvas/`
+- 目标: 将 T8 无限画布接入 Atlas Cloud，并作为 Node.js Web 服务部署到 Render。
 
-## 目标
+## 技术栈
 
-将 T8 画布改造为 Atlas Cloud AI 画布，部署到 Render.com，公网 URL 访问。
+- React 19、Vite 6、TypeScript 5.7、Tailwind CSS 3.4
+- 画布: `@xyflow/react`
+- 后端: Express + `better-sqlite3`
+- 状态: Zustand
+- 桌面端: Electron 33（上游保留）
+- Web 生产运行时: Node.js 22
 
----
+## Atlas Cloud 接入
 
-## 技术
+Atlas 已接入项目原有“扩展平台”架构，而不是仅提供独立代理路由。
 
-```
-React 19 + Vite 6 + TypeScript 5.7 + Tailwind 3.4
-画布引擎: xyflow/react
-后端: Express (Node.js) + better-sqlite3
-状态: Zustand
-打包: Electron（本项目不用，仅 Web）
-```
+主要文件:
 
-## 目录
+- `backend/src/providers/atlas.js`: Atlas 图片、视频、媒体上传、异步任务轮询适配器
+- `backend/src/providers/adapters.js`: 注册 `atlas` 协议
+- `backend/src/providers/registry.js`: Atlas 默认平台与模型
+- `src/utils/advancedProviders.ts`: 图像/视频节点的 Atlas 平台选择
+- `src/components/ApiSettings.tsx`: Atlas 扩展平台设置界面
+- `backend/src/routes/atlasProxy.js`: Atlas 模型列表与直接代理接口
 
-```
-/mnt/d/atlas-canvas/
-├── backend/src/
-│   ├── server.js        # Express 入口，路由注册
-│   ├── config.js        # 端口 18766、路径等
-│   └── routes/
-│       ├── proxy.js      # 原有代理（RH/贞贞工坊）
-│       └── atlasProxy.js # 新增 Atlas 代理
-├── src/
-│   ├── components/
-│   │   └── ApiSettings.tsx  # API 设置面板
-│   ├── stores/
-│   │   └── apiKeys.ts       # API Key store
-│   └── types/
-│       └── canvas.ts        # ApiSettings 类型定义
-├── render.yaml           # Render 部署配置
-├── railway.toml          # Railway 配置（废弃）
-└── PLAN.md               # 规划文档
-```
+API Key 仅通过 Render 环境变量 `ATLASCLOUD_API_KEY` 或本地扩展平台配置提供，禁止写入仓库。
 
-## 改动过的文件
+直接代理路由:
 
-1. `package.json` — name 改为 atlas-canvas
-2. `backend/src/server.js` — CORS 改为 allow all，注册 `/api/proxy/atlas`
-3. `backend/src/routes/atlasProxy.js` — 新建，Atlas 图片/视频/模型列表/轮询代理
-4. `src/stores/apiKeys.ts` — 新增 atlasApiKey、atlasBaseUrl
-5. `src/types/canvas.ts` — ApiSettings 接口新增 atlasApiKey、atlasBaseUrl
-6. `src/components/ApiSettings.tsx` — KeyField 联合类型、COMMON_KEYS 数组、emptyMap()、emptyShow() 新增 atlasApiKey
-
-## Atlas API
-
-- Base: https://api.atlascloud.ai
-- Key: 仅通过 Render 环境变量 `ATLASCLOUD_API_KEY` 配置，禁止写入仓库
-- 后端路由:
-  - GET /api/proxy/atlas/models
-  - POST /api/proxy/atlas/image
-  - POST /api/proxy/atlas/video
-  - GET /api/proxy/atlas/poll/:predictionId
+- `GET /api/proxy/atlas/models`
+- `POST /api/proxy/atlas/image`
+- `POST /api/proxy/atlas/video`
+- `GET /api/proxy/atlas/poll/:predictionId`
 
 ## Render 部署
 
-- render.yaml 在根目录
-- 环境变量: ATLASCLOUD_API_KEY, HOST=0.0.0.0, PORT=10000, NODE_ENV=production
-- Build: npm install --include=dev && cd backend && npm install
-- Start: cd backend && node src/server.js
-- 公网 URL: https://qingchen-atlascloud-canvas.onrender.com
+- 服务名: `qingchen-atlascloud-canvas`
+- 公网地址: https://qingchen-atlascloud-canvas.onrender.com
+- 健康检查: `/api/status`
+- Start: `cd backend && node src/renderServer.js`
+- Build:
 
-## Render Build 日志
-
-构建状态：GitHub Actions 已在 Ubuntu 24.04 + Node.js 22 环境验证 `npm ci --include=dev` 与 `npm run build` 通过。
-src/components/ApiSettings.tsx(280,18): error TS1005: ',' expected.
-src/components/ApiSettings.tsx(280,33): error TS1005: ',' expected.
-src/components/ApiSettings.tsx(280,52): error TS1005: ',' expected.
-src/components/ApiSettings.tsx(280,67): error TS1005: ',' expected.
-src/components/ApiSettings.tsx(280,82): error TS1127: Invalid character.
+```bash
+npm install --include=dev \
+  && npm run build \
+  && npm rebuild better-sqlite3 \
+  && cd backend \
+  && npm install
 ```
+
+关键环境变量:
+
+- `ATLASCLOUD_API_KEY`
+- `HOST=0.0.0.0`
+- `PORT=10000`
+- `NODE_ENV=production`
+- `T8PC_FRONTEND_DIST=../dist`
+- `T8_FIGMA_BRIDGE_AUTOSTART=0`
+- `ATLAS_ALLOWED_ORIGINS=https://qingchen-atlascloud-canvas.onrender.com`
+- `T8_PUBLIC_ALLOWED_ORIGINS=https://qingchen-atlascloud-canvas.onrender.com`
+
+## 已修复的启动根因
+
+根目录的 `postinstall` 会执行 `electron-builder install-app-deps`，将 `better-sqlite3` 编译为 Electron 33 ABI。Render 使用普通 Node.js 22 启动后端，旧构建因此触发 `ERR_DLOPEN_FAILED` 并在监听端口前退出。
+
+Web 构建现在会在前端编译完成后执行 `npm rebuild better-sqlite3`，把原生模块重新编译为当前 Node.js ABI。GitHub Actions 已使用与 Render 相同的构建和启动命令验证:
+
+- TypeScript/Vite 构建通过
+- Node.js 生产服务成功监听 `0.0.0.0:10000`
+- `GET /api/status` 返回成功
+- 首页返回有效 HTML
+
+## CI 运行时
+
+GitHub Actions 已升级为:
+
+- `actions/checkout@v6`
+- `actions/setup-node@v6`
+- 项目构建 Node.js 版本: 22
+
+因此此前的“Node.js 20 已淘汰”警告已消除。该警告来自旧版 GitHub Action 的内部运行时，不是 Render 服务退出的根因。
+
+## 当前状态
+
+代码、构建和本地化生产启动验证均已通过。线上 Render 服务需要部署最新 `main` 后，再执行模型列表、图片提交和轮询的最终公网冒烟测试。
