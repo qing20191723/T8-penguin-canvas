@@ -34,20 +34,20 @@ jobs:
           npm run build
           npm --prefix backend install
 
-      - name: Start from repository root and verify health
+      - name: Start from repository root and verify public binding
         shell: bash
         env:
           RENDER: 'true'
-          HOST: 0.0.0.0
           PORT: 10000
           NODE_ENV: production
           T8PC_FRONTEND_DIST: ../dist
-          T8_FIGMA_BRIDGE_AUTOSTART: '0'
           T8_PUBLIC_ALLOWED_ORIGINS: https://qingchen-atlascloud-canvas.onrender.com
           ATLAS_ALLOWED_ORIGINS: https://qingchen-atlascloud-canvas.onrender.com
           ATLASCLOUD_API_KEY: test-placeholder-key
         run: |
           set -euo pipefail
+          unset HOST
+          unset T8_FIGMA_BRIDGE_AUTOSTART
           yarn start > /tmp/render-server.log 2>&1 &
           server_pid=$!
           trap 'kill $server_pid 2>/dev/null || true; cat /tmp/render-server.log || true' EXIT
@@ -74,4 +74,9 @@ jobs:
           curl -fsS --max-time 10 http://127.0.0.1:10000/ > /tmp/root.html
           grep -qi '<!doctype html\|<html' /tmp/root.html
           grep -q '\[render\] serving frontend from' /tmp/render-server.log
-          echo "Production root startup verified; root bytes=$(wc -c < /tmp/root.html)"
+          grep -q '地址: http://0.0.0.0:10000' /tmp/render-server.log
+          if grep -q '\[figma-bridge\] auto-start' /tmp/render-server.log; then
+            echo 'Figma Bridge must not auto-start in Render Web deployment.'
+            exit 1
+          fi
+          echo "Production public binding verified; root bytes=$(wc -c < /tmp/root.html)"

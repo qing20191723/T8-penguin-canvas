@@ -5,6 +5,15 @@
  * the Web deployment target. Electron packaging keeps using server.js.
  */
 
+// This entry point is only used for public Web deployment. Render routes the
+// public onrender.com hostname to the container's listening socket, so the
+// process must bind every interface rather than the loopback-only desktop
+// default. Set these values before loading server.js/config.js.
+process.env.T8_WEB_DEPLOY = '1';
+process.env.HOST = '0.0.0.0';
+if (!String(process.env.PORT || '').trim()) process.env.PORT = '10000';
+process.env.T8_FIGMA_BRIDGE_AUTOSTART = '0';
+
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
