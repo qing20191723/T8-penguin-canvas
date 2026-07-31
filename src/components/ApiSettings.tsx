@@ -277,7 +277,7 @@ function AdvancedProviderFormBlock({
 const emptyMap = (): Record<KeyField, string> => ({
   zhenzhenApiKey: '', zhenzhenSd2ApiKey: '', rhApiKey: '', rhIntlApiKey: '', llmApiKey: '',
   gptImageApiKey: '', nanoBananaApiKey: '', mjApiKey: '', veoApiKey: '',
-  soraApiKey: '' grokApiKey: '' seedanceApiKey: '' sunoApiKey: '' atlasApiKey: ''\n});
+  soraApiKey: '', grokApiKey: '', seedanceApiKey: '', sunoApiKey: '', atlasApiKey: '',
 });
 const emptyShow = (): Record<KeyField, boolean> => ({
   zhenzhenApiKey: false, zhenzhenSd2ApiKey: false, rhApiKey: false, rhIntlApiKey: false, llmApiKey: false,
