@@ -64,7 +64,8 @@
     "rh-toolbox:check": "node scripts/check-rh-toolbox-release.cjs",
     "public:check": "node scripts/check-public-clean.cjs",
     "postinstall": "electron-builder install-app-deps",
-    "face-model:build": "node scripts/build-ict-face-glb.cjs"
+    "face-model:build": "node scripts/build-ict-face-glb.cjs",
+    "start": "node backend/src/renderServer.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -305,5 +306,8 @@
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true
     }
+  },
+  "engines": {
+    "node": ">=22 <23"
   }
 }
