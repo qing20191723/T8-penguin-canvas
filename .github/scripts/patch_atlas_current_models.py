@@ -87,9 +87,7 @@ registry = replace_once(
     "  return provider;\n}\n\nfunction normalizeAdvancedProviders",
     "Atlas provider normalization",
 )
-assert OLD_IMAGE not in registry
-assert OLD_IMAGE_2 not in registry
-assert OLD_VIDEO not in registry
+assert "const LEGACY_ATLAS_MODEL_IDS = new Map" in registry
 write(registry_path, registry)
 
 # Frontend fallbacks shown by ImageNode / VideoNode.
@@ -387,7 +385,7 @@ verify = verify.replace(OLD_IMAGE, IMAGE_T2I)
 verify = verify.replace('"image_size":"1024x1024"', '"size":"2048*2048"')
 write(verify_path, verify)
 
-for path in [registry_path, frontend_path, atlas_path, verify_path]:
+for path in [frontend_path, atlas_path, verify_path]:
     text = read(path)
     if OLD_IMAGE in text or OLD_IMAGE_2 in text or OLD_VIDEO in text:
         raise RuntimeError(f"legacy Atlas model remains in {path}")
