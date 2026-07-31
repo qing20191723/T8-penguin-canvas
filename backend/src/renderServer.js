@@ -10,12 +10,33 @@ const path = require('path');
 const express = require('express');
 const { app } = require('./server');
 
-const frontendDist = path.resolve(
-  process.env.T8PC_FRONTEND_DIST || path.join(__dirname, '..', '..', 'dist'),
+const repositoryRoot = path.resolve(__dirname, '..', '..');
+const configuredDist = String(process.env.T8PC_FRONTEND_DIST || '').trim();
+const distCandidates = [];
+
+if (configuredDist) {
+  if (path.isAbsolute(configuredDist)) {
+    distCandidates.push(configuredDist);
+  } else {
+    // Render might launch from the repository root (`yarn start`) or from
+    // `backend/` when the Blueprint startCommand is honored. Support both.
+    distCandidates.push(path.resolve(process.cwd(), configuredDist));
+    distCandidates.push(path.resolve(__dirname, '..', configuredDist));
+    distCandidates.push(path.resolve(repositoryRoot, configuredDist));
+  }
+}
+
+distCandidates.push(path.join(repositoryRoot, 'dist'));
+
+const uniqueCandidates = [...new Set(distCandidates.map((candidate) => path.normalize(candidate)))];
+const frontendDist = uniqueCandidates.find((candidate) =>
+  fs.existsSync(path.join(candidate, 'index.html')),
 );
 
-if (!fs.existsSync(path.join(frontendDist, 'index.html'))) {
-  throw new Error(`[render] frontend build not found: ${frontendDist}`);
+if (!frontendDist) {
+  throw new Error(
+    `[render] frontend build not found; checked: ${uniqueCandidates.join(', ')}`,
+  );
 }
 
 app.use(express.static(frontendDist, {

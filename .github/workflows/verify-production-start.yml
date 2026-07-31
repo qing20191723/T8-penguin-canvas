@@ -8,12 +8,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-production-startup
+  group: verify-production-startup-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   startup:
-    if: github.head_ref == 'ci/verify-build'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -27,16 +26,18 @@ jobs:
           cache: npm
 
       - name: Build exactly like Render
+        env:
+          RENDER: 'true'
+          NODE_ENV: production
         run: |
           npm install --include=dev
           npm run build
-          npm rebuild better-sqlite3
-          cd backend
-          npm install
+          npm --prefix backend install
 
-      - name: Start production server and verify health
+      - name: Start from repository root and verify health
         shell: bash
         env:
+          RENDER: 'true'
           HOST: 0.0.0.0
           PORT: 10000
           NODE_ENV: production
@@ -47,12 +48,11 @@ jobs:
           ATLASCLOUD_API_KEY: test-placeholder-key
         run: |
           set -euo pipefail
-          cd backend
-          node src/renderServer.js > /tmp/render-server.log 2>&1 &
+          yarn start > /tmp/render-server.log 2>&1 &
           server_pid=$!
           trap 'kill $server_pid 2>/dev/null || true; cat /tmp/render-server.log || true' EXIT
           ready=0
-          for attempt in $(seq 1 60); do
+          for attempt in $(seq 1 90); do
             if ! kill -0 "$server_pid" 2>/dev/null; then
               echo "Production server exited before becoming ready"
               cat /tmp/render-server.log
@@ -73,4 +73,5 @@ jobs:
           cat /tmp/status.json
           curl -fsS --max-time 10 http://127.0.0.1:10000/ > /tmp/root.html
           grep -qi '<!doctype html\|<html' /tmp/root.html
-          echo "Production startup verified; root bytes=$(wc -c < /tmp/root.html)"
+          grep -q '\[render\] serving frontend from' /tmp/render-server.log
+          echo "Production root startup verified; root bytes=$(wc -c < /tmp/root.html)"
