@@ -1,0 +1,20 @@
+# Render deployment configuration
+# https://render.com → New Web Service → Deploy from GitHub
+
+services:
+  - type: web
+    name: atlas-canvas
+    env: node
+    region: singapore  # 亚洲区域，离国内近
+    plan: free
+    buildCommand: npm install --include=dev && cd backend && npm install
+    startCommand: cd backend && node src/server.js
+    envVars:
+      - key: ATLASCLOUD_API_KEY
+        sync: false  # 手动在 Render Dashboard 设置
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
