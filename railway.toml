@@ -1,0 +1,9 @@
+# Railway deployment configuration
+# Deploy: railway up
+
+[build]
+  builder = "nixpacks"
+  buildCommand = "npm install --include=dev && cd backend && npm install"
+
+[deploy]
+  startCommand = "cd backend && node src/server.js"

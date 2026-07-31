@@ -1,11 +1,10 @@
 {
-  "name": "t8-penguin-canvas",
-  "private": false,
-  "version": "2.7.3",
+  "name": "atlas-canvas",
+  "private": true,
+  "version": "1.0.0",
   "type": "module",
-  "main": "electron/main.cjs",
-  "description": "T8-penguin-canvas — AI 节点画布工作流工具（Web + Electron 桌面端）",
-  "author": "T8mars",
+  "description": "Atlas Canvas — AI 无限画布工作流（基于 Atlas Cloud 100+ 模型）",
+  "author": "qing20191723",
   "license": "MIT",
   "homepage": "https://github.com/T8mars/T8-penguin-canvas",
   "repository": {

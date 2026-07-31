@@ -291,23 +291,12 @@ app.use((req, res, next) => {
   if (isLocalCanvasSyncPath(req)) res.set('Cache-Control', 'no-store');
   next();
 });
+// CORS: 部署版允许所有来源（API Key 由后端保护）
 app.use(cors({
-  origin(origin, cb) {
-    cb(null, Boolean(origin && isTrustedLocalOrigin(origin)));
-  },
-  preflightContinue: true,
+  origin: true,
+  credentials: true,
 }));
 app.use((req, res, next) => {
-  const origin = String(req.get('origin') || '').trim();
-  const trustedOrigin = Boolean(origin && isTrustedLocalOrigin(origin));
-  const fetchSite = String(req.get('sec-fetch-site') || '').trim().toLowerCase();
-  if ((origin && !trustedOrigin) || fetchSite === 'cross-site') {
-    return res.status(403).json({
-      success: false,
-      code: 'origin_forbidden',
-      error: '请求来源未获本地后端授权',
-    });
-  }
   if (req.method === 'OPTIONS') return res.status(204).end();
   return next();
 });
@@ -453,6 +442,7 @@ app.get('/api/status', (_req, res) => {
 const canvasRouter = require('./routes/canvas');
 const settingsRouter = require('./routes/settings');
 const proxyRouter = require('./routes/proxy');
+const atlasProxyRouter = require('./routes/atlasProxy');
 const filesRouter = require('./routes/files');
 const imageOpsRouter = require('./routes/imageOps');
 const resourcesRouter = require('./routes/resources');
@@ -486,6 +476,7 @@ const collaborationGateway = getCollaborationGateway(config);
 app.use('/api/canvas', canvasRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/proxy', proxyRouter);
+app.use('/api/proxy/atlas', atlasProxyRouter);
 app.use('/api/proxy/external', externalProvidersRouter);
 app.use('/api/files', filesRouter);
 app.use('/api/image', imageOpsRouter);
