@@ -1,0 +1,117 @@
+name: Verify Render deployment
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-render-deployment
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.head_ref == 'ci/verify-build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for Render service
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          ready=0
+          for attempt in $(seq 1 40); do
+            code=$(curl -L -sS -o /tmp/status.json -w '%{http_code}' --max-time 45 "$base/api/status" || true)
+            if [ "$code" = "200" ] && node -e "const d=require('/tmp/status.json'); if(!d.ok) process.exit(1)"; then
+              ready=1
+              echo "Render service is ready on attempt $attempt"
+              cat /tmp/status.json
+              break
+            fi
+            echo "Render not ready yet: attempt=$attempt http=$code"
+            sleep 15
+          done
+          if [ "$ready" != "1" ]; then
+            echo 'Render service did not become ready.'
+            cat /tmp/status.json 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Verify web application
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          code=$(curl -L -sS -D /tmp/root.headers -o /tmp/root.html -w '%{http_code}' --max-time 60 "$base/")
+          test "$code" = "200"
+          grep -qi '<!doctype html\|<html' /tmp/root.html
+          echo "Root page HTTP $code, bytes=$(wc -c < /tmp/root.html)"
+
+      - name: Verify Atlas models endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          code=$(curl -L -sS -o /tmp/models.json -w '%{http_code}' --max-time 90 "$base/api/proxy/atlas/models")
+          cat /tmp/models.json
+          test "$code" = "200"
+          node - <<'NODE'
+          const data = require('/tmp/models.json');
+          if (!data.success) throw new Error(data.error || 'models endpoint returned success=false');
+          if (!Number.isFinite(data.total) || data.total < 1) throw new Error('models endpoint returned no models');
+          if (!Array.isArray(data.items)) throw new Error('models endpoint returned no items array');
+          console.log(`Atlas models verified: ${data.total}`);
+          NODE
+
+      - name: Verify Atlas image validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          code=$(curl -L -sS -o /tmp/image-invalid.json -w '%{http_code}' --max-time 60 \
+            -H 'Content-Type: application/json' \
+            -d '{}' \
+            "$base/api/proxy/atlas/image")
+          cat /tmp/image-invalid.json
+          test "$code" = "400"
+
+      - name: Submit real Atlas image task
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          payload='{"model":"seedream/seedream-v5.0-lite-text-to-image","params":{"prompt":"A minimal white circle centered on a plain black background, test image","image_size":"1024x1024"}}'
+          code=$(curl -L -sS -o /tmp/image-submit.json -w '%{http_code}' --max-time 120 \
+            -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "$base/api/proxy/atlas/image")
+          cat /tmp/image-submit.json
+          test "$code" = "200"
+          prediction_id=$(node -e "const d=require('/tmp/image-submit.json'); if(!d.success||!d.predictionId) process.exit(1); process.stdout.write(d.predictionId)")
+          echo "prediction_id=$prediction_id" >> "$GITHUB_ENV"
+          echo "Atlas image task submitted: $prediction_id"
+
+      - name: Poll real Atlas image task
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          completed=0
+          for attempt in $(seq 1 80); do
+            code=$(curl -L -sS -o /tmp/image-poll.json -w '%{http_code}' --max-time 60 \
+              "$base/api/proxy/atlas/poll/$prediction_id")
+            cat /tmp/image-poll.json
+            test "$code" = "200"
+            state=$(node -e "const d=require('/tmp/image-poll.json'); if(d.success===false){console.error(d.error||'Atlas task failed');process.exit(2)}; process.stdout.write(String(d.status||''))")
+            if [ "$state" = "completed" ]; then
+              node -e "const d=require('/tmp/image-poll.json'); if(!Array.isArray(d.outputs)||!d.outputs.length) process.exit(1); console.log('Atlas output:', d.outputs[0])"
+              completed=1
+              break
+            fi
+            echo "Atlas task status: $state (attempt $attempt)"
+            sleep 5
+          done
+          test "$completed" = "1"
