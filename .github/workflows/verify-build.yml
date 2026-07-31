@@ -67,15 +67,18 @@ jobs:
         env:
           EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
           SOURCE_SHA: ${{ steps.verify.outputs.source_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           result_dir="$(mktemp -d)"
           cp verify-build.log "$result_dir/latest-build.log"
+          success=false
+          if [ "${EXIT_CODE:-255}" = "0" ]; then success=true; fi
           cat > "$result_dir/status.json" <<JSON
           {
             "source_sha": "$SOURCE_SHA",
             "exit_code": ${EXIT_CODE:-255},
-            "success": $([ "${EXIT_CODE:-255}" = "0" ] && echo true || echo false),
+            "success": $success,
             "workflow_run_id": "$GITHUB_RUN_ID",
             "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
@@ -88,8 +91,6 @@ jobs:
           git commit -m "ci: publish build verification for $SOURCE_SHA"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin ci-results
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fail workflow when verification failed
         if: steps.verify.outputs.exit_code != '0'
