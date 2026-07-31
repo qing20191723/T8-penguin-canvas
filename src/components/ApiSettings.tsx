@@ -277,12 +277,12 @@ function AdvancedProviderFormBlock({
 const emptyMap = (): Record<KeyField, string> => ({
   zhenzhenApiKey: '', zhenzhenSd2ApiKey: '', rhApiKey: '', rhIntlApiKey: '', llmApiKey: '',
   gptImageApiKey: '', nanoBananaApiKey: '', mjApiKey: '', veoApiKey: '',
-  soraApiKey: '', grokApiKey: '', seedanceApiKey: '', sunoApiKey: '',
+  soraApiKey: *** grokApiKey: *** seedanceApiKey: *** sunoApiKey: *** atlasApiKey: ***\n});
 });
 const emptyShow = (): Record<KeyField, boolean> => ({
   zhenzhenApiKey: false, zhenzhenSd2ApiKey: false, rhApiKey: false, rhIntlApiKey: false, llmApiKey: false,
   gptImageApiKey: false, nanoBananaApiKey: false, mjApiKey: false, veoApiKey: false,
-  soraApiKey: false, grokApiKey: false, seedanceApiKey: false, sunoApiKey: false,
+  soraApiKey: false, grokApiKey: false, seedanceApiKey: false, sunoApiKey: false, atlasApiKey: false,
 });
 
 function formatCloudError(error: string, data?: any) {
