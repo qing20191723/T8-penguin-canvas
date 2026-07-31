@@ -38,9 +38,9 @@ const DEFAULT: ApiSettings = {
   soraApiKey: '',
   grokApiKey: '',
   seedanceApiKey: '',
-  sunoApiKey: ***
+  sunoApiKey: '',
   // Atlas Cloud
-  atlasApiKey: ***
+  atlasApiKey: '',
   atlasBaseUrl: 'https://api.atlascloud.ai/v1',
   // 路径默认值由后端按平台计算并通过 /api/settings 返回，前端不硬编码 D 盘。
   fileSavePath: '',
