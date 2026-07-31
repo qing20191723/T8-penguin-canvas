@@ -53,7 +53,8 @@ type KeyField =
   | 'soraApiKey'
   | 'grokApiKey'
   | 'seedanceApiKey'
-  | 'sunoApiKey';
+  | 'sunoApiKey'
+  | 'atlasApiKey';
 
 interface KeySpec {
   field: KeyField;
@@ -68,6 +69,7 @@ const COMMON_KEYS: KeySpec[] = [
   { field: 'rhApiKey', label: 'RH APIKEY国内', desc: '· runninghub.cn 国内站应用', bullet: 'bg-cyan-400' },
   { field: 'rhIntlApiKey', label: 'RH APIKEY海外', desc: '· runninghub.ai 海外站应用', bullet: 'bg-blue-400' },
   { field: 'llmApiKey', label: 'LLM 独立 API Key', desc: '· 额度隔离 · 用于 LLM/Vision', bullet: 'bg-emerald-400' },
+  { field: 'atlasApiKey', label: 'Atlas Cloud API Key', desc: '· 300+ 模型 · 图片/视频/音频生成', bullet: 'bg-indigo-400' },
 ];
 
 const CLASSIFIED_KEYS: KeySpec[] = [
