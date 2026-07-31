@@ -1,0 +1,113 @@
+name: Apply web share usability patch
+
+on:
+  push:
+    branches: [fix/web-usable-branding]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-web-share-usability
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: ${{ !contains(github.event.head_commit.message, '[web-share-patch]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/web-usable-branding
+          fetch-depth: 0
+
+      - name: Apply source patch
+        run: python3 .github/scripts/patch_web_share_usability.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install and build
+        env:
+          RENDER: 'true'
+          NODE_ENV: production
+        run: |
+          npm install --include=dev
+          npm run build
+          npm --prefix backend install
+
+      - name: Verify shared Web startup and canvas creation
+        shell: bash
+        env:
+          RENDER: 'true'
+          PORT: 10000
+          NODE_ENV: production
+          T8PC_FRONTEND_DIST: ../dist
+          T8_PUBLIC_ALLOWED_ORIGINS: https://qingchen-atlascloud-canvas.onrender.com
+          ATLAS_ALLOWED_ORIGINS: https://qingchen-atlascloud-canvas.onrender.com
+          ATLASCLOUD_API_KEY: test-placeholder-key
+        run: |
+          set -euo pipefail
+          yarn start > /tmp/qingchen-web.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid 2>/dev/null || true; sleep 1; cat /tmp/qingchen-web.log || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 120); do
+            if curl -fsS --max-time 3 http://127.0.0.1:10000/api/status > /tmp/status.json \
+              && grep -q '"phase":"ready"' /tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          curl -fsS --max-time 10 http://127.0.0.1:10000/ > /tmp/root.html
+          grep -q '清尘无限画布' /tmp/root.html
+
+          curl -fsS --max-time 10 http://127.0.0.1:10000/api/settings > /tmp/settings.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('/tmp/settings.json', encoding='utf-8'))['data']
+          atlas = next((p for p in data.get('advancedProviders', []) if p.get('protocol') == 'atlas'), None)
+          assert atlas, 'Atlas provider missing from settings'
+          assert atlas.get('enabled') is True, f'Atlas provider is not enabled: {atlas}'
+          assert atlas.get('imageModels'), 'Atlas image models missing'
+          assert atlas.get('videoModels'), 'Atlas video models missing'
+          print('Atlas provider defaults verified')
+          PY
+
+          curl -fsS --max-time 10 \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"清尘 Web 共享验收"}' \
+            http://127.0.0.1:10000/api/canvas > /tmp/created.json
+          python3 - <<'PY'
+          import json
+          created = json.load(open('/tmp/created.json', encoding='utf-8'))
+          assert created.get('success') is True, created
+          item = created.get('data') or {}
+          assert item.get('id'), created
+          print(item['id'])
+          PY
+
+          canvas_id=$(python3 -c "import json; print(json.load(open('/tmp/created.json'))['data']['id'])")
+          curl -fsS --max-time 10 "http://127.0.0.1:10000/api/canvas/${canvas_id}" > /tmp/canvas.json
+          grep -q '"success":true' /tmp/canvas.json
+          grep -q '\[render\] public bootstrap listening on http://0.0.0.0:10000' /tmp/qingchen-web.log
+          grep -q '\[render\] full T8 backend ready at http://127.0.0.1:10001' /tmp/qingchen-web.log
+
+      - name: Commit verified product changes
+        run: |
+          rm -f .github/workflows/apply-web-share-usability.yml
+          rm -f .github/scripts/patch_web_share_usability.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: make shared canvas usable and rebrand to Qingchen [web-share-patch]"
+          git push origin HEAD:fix/web-usable-branding
