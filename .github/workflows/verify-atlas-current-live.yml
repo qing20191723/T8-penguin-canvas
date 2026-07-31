@@ -1,0 +1,108 @@
+name: Verify live current Atlas node path
+
+on:
+  push:
+    branches: [ci/verify-atlas-current-live]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-live-current-atlas-node
+  cancel-in-progress: true
+
+jobs:
+  live-image-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for Render deployment 7b83767
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          expected='7b83767'
+          ready=0
+          for attempt in $(seq 1 80); do
+            code=$(curl -L -sS -o /tmp/status.json -w '%{http_code}' --max-time 90 "$base/api/status" || true)
+            if [ "$code" = '200' ]; then
+              observed=$(node -e "const d=require('/tmp/status.json'); process.stdout.write(String(d.commit||''))" 2>/dev/null || true)
+              phase=$(node -e "const d=require('/tmp/status.json'); process.stdout.write(String(d.phase||''))" 2>/dev/null || true)
+              success=$(node -e "const d=require('/tmp/status.json'); process.stdout.write(String(d.success===true||d.ok===true))" 2>/dev/null || true)
+              echo "attempt=$attempt http=$code commit=$observed phase=$phase success=$success"
+              if [[ "$observed" == "$expected"* ]] && [ "$phase" = 'ready' ] && [ "$success" = 'true' ]; then
+                ready=1
+                break
+              fi
+            else
+              echo "attempt=$attempt http=$code"
+            fi
+            sleep 15
+          done
+          if [ "$ready" != '1' ]; then
+            echo 'Expected Atlas repair deployment did not become ready.'
+            cat /tmp/status.json 2>/dev/null || true
+            exit 1
+          fi
+          cat /tmp/status.json
+
+      - name: Verify migrated public Atlas settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          curl -L -fsS --max-time 90 "$base/api/settings" > /tmp/settings.json
+          node - <<'NODE'
+          const data=require('/tmp/settings.json').data;
+          const atlas=(data.advancedProviders||[]).find((provider)=>provider.id==='atlas');
+          if(!atlas || !atlas.enabled) throw new Error('Atlas provider is not enabled');
+          if(atlas.defaults?.imageModel!=='bytedance/seedream-v5.0-lite') throw new Error(`unexpected image model: ${atlas.defaults?.imageModel}`);
+          if(atlas.defaults?.videoModel!=='kwaivgi/kling-v3.0-std/text-to-video') throw new Error(`unexpected video model: ${atlas.defaults?.videoModel}`);
+          if(!atlas.imageModels?.includes('bytedance/seedream-v5.0-lite/edit')) throw new Error('Seedream edit model missing');
+          if(!atlas.videoModels?.includes('kwaivgi/kling-v3.0-std/image-to-video')) throw new Error('Kling image-to-video model missing');
+          console.log('Atlas settings migrated:', atlas.defaults);
+          NODE
+
+      - name: Generate through the generic ImageNode provider route
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          cat > /tmp/request.json <<'JSON'
+          {
+            "providerId": "atlas",
+            "providerModel": "bytedance/seedream-v5.0-lite",
+            "model": "bytedance/seedream-v5.0-lite",
+            "prompt": "A minimal white circle centered on a plain black background, clean test image, no text",
+            "size": "2048*2048",
+            "n": 1
+          }
+          JSON
+          code=$(curl -L -sS -o /tmp/result.json -w '%{http_code}' --max-time 1200 \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/request.json \
+            "$base/api/proxy/external/image")
+          cat /tmp/result.json
+          test "$code" = '200'
+          node - <<'NODE'
+          const d=require('/tmp/result.json');
+          if(!d.success) throw new Error(d.error||'generic Atlas image generation failed');
+          const data=d.data||{};
+          if(!Array.isArray(data.imageUrls)||!data.imageUrls.length) {
+            throw new Error(`no image URL; save errors=${JSON.stringify(data.outputSaveErrors||[])}`);
+          }
+          console.log('taskId=',data.taskId||'');
+          console.log('imageUrl=',data.imageUrls[0]);
+          NODE
+          image_url=$(node -e "const d=require('/tmp/result.json').data; process.stdout.write(String(d.imageUrls[0]))")
+          case "$image_url" in
+            http://*|https://*) final_url="$image_url" ;;
+            /*) final_url="$base$image_url" ;;
+            *) echo 'Unexpected image URL'; exit 1 ;;
+          esac
+          code=$(curl -L -sS -D /tmp/image.headers -o /tmp/image.bin -w '%{http_code}' --max-time 240 "$final_url")
+          test "$code" = '200'
+          bytes=$(wc -c < /tmp/image.bin)
+          test "$bytes" -gt 1000
+          grep -qi '^content-type: image/' /tmp/image.headers
+          echo "Generic Atlas ImageNode path verified; bytes=$bytes url=$final_url"
