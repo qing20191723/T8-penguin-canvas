@@ -20,8 +20,10 @@ jobs:
       - name: Checkout pull request
         uses: actions/checkout@v4
 
-      - name: Preserve patch script
-        run: cp scripts/apply-atlas-integration.cjs /tmp/apply-atlas-integration.cjs
+      - name: Preserve patch scripts
+        run: |
+          cp scripts/apply-atlas-integration.cjs /tmp/apply-atlas-integration.cjs
+          cp scripts/fix-atlas-patch-script.cjs /tmp/fix-atlas-patch-script.cjs
 
       - name: Checkout current main
         run: |
@@ -34,8 +36,10 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Apply Atlas provider integration
-        run: node /tmp/apply-atlas-integration.cjs
+      - name: Repair and apply Atlas provider integration
+        run: |
+          node /tmp/fix-atlas-patch-script.cjs /tmp/apply-atlas-integration.cjs
+          node /tmp/apply-atlas-integration.cjs
 
       - name: Install and build
         run: |
