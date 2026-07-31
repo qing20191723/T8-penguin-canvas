@@ -5,6 +5,7 @@ import { seedDragonBallRadarForShenronTest, useDragonBallRadarStore } from './st
 import { seedSaintSeiyaGoldClothsForHadesTest, useSaintSeiyaSanctuaryStore } from './stores/saintSeiyaSanctuary';
 import { trackAchievementEvent } from './stores/achievements';
 import { useApiKeysStore } from './stores/apiKeys';
+import { useCanvasStore } from './stores/canvas';
 import { useShortcutStore } from './stores/shortcuts';
 import Sidebar from './components/Sidebar';
 import type { AddNodeFn, InsertWorkflowFn } from './components/Canvas';
@@ -183,7 +184,7 @@ const CANVAS_TUTORIALS = [
     youtube: 'https://www.youtube.com/watch?v=PQ5rKtOZ-tM',
   },
   {
-    title: '教程第八弹（本地Comfyui植入贞贞的无限画布！超简单超好用！新增足球小将主题，视频解析功能，节点对齐，即梦CLI修复多参，免费版魔搭API Lora支持，素材黏贴新模式，APIKEY导入导出功能）',
+    title: '教程第八弹（本地Comfyui植入清尘无限画布！超简单超好用！新增足球小将主题，视频解析功能，节点对齐，即梦CLI修复多参，免费版魔搭API Lora支持，素材黏贴新模式，APIKEY导入导出功能）',
     bilibili: 'https://www.bilibili.com/video/BV1ha7R6DES5/',
     youtube: 'https://www.youtube.com/watch?v=LViGXsMTFhs',
   },
@@ -295,7 +296,10 @@ function App() {
     toggleTheme,
     loadCustomTemplates,
   } = useThemeStore();
-  const { load: loadSettings } = useApiKeysStore();
+  const { load: loadSettings, settings: apiSettings } = useApiKeysStore();
+  const activeCanvasId = useCanvasStore((state) => state.activeId);
+  const canvasCount = useCanvasStore((state) => state.canvases.length);
+  const createCanvas = useCanvasStore((state) => state.createCanvas);
   const shortcuts = useShortcutStore((s) => s.shortcuts);
   const currentTemplate = useMemo(
     () => resolveThemeTemplate(templateId, customTemplates),
@@ -336,6 +340,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsedPreference);
   // 画布接收节点添加的 ref(从 Sidebar -> Canvas)
   const addNodeRef = useRef<AddNodeFn | null>(null);
+  const pendingSidebarNodeRef = useRef<{ type: NodeType; options?: Parameters<AddNodeFn>[1] } | null>(null);
   const insertWorkflowRef = useRef<InsertWorkflowFn | null>(null);
 
   const handleOpenZhaotutuTaggerTrainer = useCallback(async () => {
@@ -743,9 +748,56 @@ function App() {
     }
   };
 
-  const handleAddNode = (type: NodeType) => {
-    addNodeRef.current?.(type);
-  };
+  const atlasProvider = useMemo(
+    () => (apiSettings.advancedProviders || []).find(
+      (provider) => provider.enabled && provider.protocol === 'atlas',
+    ) || null,
+    [apiSettings.advancedProviders],
+  );
+
+  const buildSidebarNodeOptions = useCallback((type: NodeType): Parameters<AddNodeFn>[1] | undefined => {
+    if (!atlasProvider || (type !== 'image' && type !== 'video')) return undefined;
+    const models = type === 'image' ? atlasProvider.imageModels : atlasProvider.videoModels;
+    const defaultModel = type === 'image'
+      ? atlasProvider.defaults?.imageModel
+      : atlasProvider.defaults?.videoModel;
+    const providerModel = String(defaultModel || models?.[0] || '').trim();
+    return {
+      data: {
+        providerSource: 'atlas',
+        providerId: atlasProvider.id,
+        providerModel,
+      },
+    };
+  }, [atlasProvider]);
+
+  const handleAddNode = useCallback(async (type: NodeType) => {
+    const options = buildSidebarNodeOptions(type);
+    if (activeCanvasId) {
+      addNodeRef.current?.(type, options);
+      return;
+    }
+
+    pendingSidebarNodeRef.current = { type, options };
+    const created = await createCanvas(`画布 ${canvasCount + 1}`);
+    if (!created) pendingSidebarNodeRef.current = null;
+  }, [activeCanvasId, buildSidebarNodeOptions, canvasCount, createCanvas]);
+
+  useEffect(() => {
+    if (!activeCanvasId || !pendingSidebarNodeRef.current) return;
+    const pending = pendingSidebarNodeRef.current;
+    pendingSidebarNodeRef.current = null;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        addNodeRef.current?.(pending.type, pending.options);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [activeCanvasId]);
 
   const handleInsertResource = async (item: ResourceItem) => {
     const portraitData = portraitResourceToNodeData(item);
@@ -821,7 +873,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-op-brand__title text-[14px] font-black leading-none">
-                  ONE PIECE · 贞贞的无限画布
+                  ONE PIECE · 清尘无限画布
                 </h1>
                 <div className="t8-op-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   GRAND LINE CANVAS
@@ -836,7 +888,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-rh-brand__title text-[14px] font-black leading-none">
-                  RH · 贞贞的无限画布
+                  RH · 清尘无限画布
                 </h1>
                 <div className="t8-rh-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   RUNNINGHUB WORKSPACE
@@ -850,7 +902,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-naruto-brand__title text-[14px] font-black leading-none">
-                  火影 · 贞贞的无限画布
+                  火影 · 清尘无限画布
                 </h1>
                 <div className="t8-naruto-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   SHINOBI CHAKRA CANVAS
@@ -864,7 +916,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-eva-brand__title text-[14px] font-black leading-none">
-                  EVA · 贞贞的无限画布
+                  EVA · 清尘无限画布
                 </h1>
                 <div className="t8-eva-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   NERV HQ - TOKYO-3 / MAGI SYSTEM ONLINE
@@ -879,7 +931,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-yyh-brand__title text-[14px] font-black leading-none">
-                  幽游白书 · 贞贞的无限画布
+                  幽游白书 · 清尘无限画布
                 </h1>
                 <div className="t8-yyh-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   SPIRIT DETECTIVE CANVAS / REI MAP ONLINE
@@ -894,7 +946,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-slamdunk-brand__title text-[14px] font-black leading-none">
-                  灌篮高手 · 贞贞的无限画布
+                  灌篮高手 · 清尘无限画布
                 </h1>
                 <div className="t8-slamdunk-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   FULL COURT CANVAS / BUZZER BEATER READY
@@ -909,7 +961,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-soccer-brand__title text-[14px] font-black leading-none">
-                  足球小将 · 贞贞的无限画布
+                  足球小将 · 清尘无限画布
                 </h1>
                 <div className="t8-soccer-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   CAPTAIN TSUBASA CANVAS / GOLDEN GOAL READY
@@ -924,7 +976,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-dragonball-brand__title text-[14px] font-black leading-none">
-                  {shenronModeActive ? '神龙模式 · 贞贞的无限画布' : '七龙珠 · 贞贞的无限画布'}
+                  {shenronModeActive ? '神龙模式 · 清尘无限画布' : '七龙珠 · 清尘无限画布'}
                 </h1>
                 <div className="t8-dragonball-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   {shenronModeActive ? 'SHENRON MODE ONLINE / DRAGON RADAR LOCKED' : 'CAPSULE CORP CANVAS / DRAGON RADAR ONLINE'}
@@ -947,7 +999,7 @@ function App() {
               </span>
               <div className="min-w-0">
                 <h1 className="t8-saint-brand__title text-[14px] font-black leading-none">
-                  {hadesModeActive ? '冥界篇 · 贞贞的无限画布' : '圣斗士 · 十二宫'}
+                  {hadesModeActive ? '冥界篇 · 清尘无限画布' : '圣斗士 · 十二宫'}
                 </h1>
                 <div className="t8-saint-brand__sub text-[9px] font-bold tracking-wide leading-none mt-0.5">
                   {hadesModeActive ? 'HADES CHAPTER / ATHENA RESCUED' : 'SANCTUARY CANVAS / COSMO READY'}
@@ -962,12 +1014,12 @@ function App() {
           ) : isPixel ? (
             <>
               <h1 className="px-title text-[14px] font-bold tracking-wide leading-none">
-                贞贞的无限画布
+                清尘无限画布
               </h1>
-              <span className="px-chip px-chip--pink text-[10px]">企鹅共创版</span>
+              <span className="px-chip px-chip--pink text-[10px]">Atlas Cloud</span>
             </>
           ) : (
-            <h1 className="text-sm font-semibold">贞贞的无限画布（企鹅共创版）</h1>
+            <h1 className="text-sm font-semibold">清尘无限画布（Atlas Cloud）</h1>
           )}
           <span
             className={
@@ -1015,7 +1067,7 @@ function App() {
         </div>
         <div className="flex items-center gap-1">
           {/* 「图图打标器」推广按钮: 放在插件安装左侧, 点击后展示说明与获取链接 */}
-          <div ref={zhaotutuWrapRef} className="relative">
+          <div ref={zhaotutuWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => {
                 setZhaotutuOpen((v) => !v);
@@ -1090,7 +1142,7 @@ function App() {
           </div>
 
           {/* 「API获取」按钮: 紧邻图图打标器，以短标题展示四套 API 注册入口 */}
-          <div ref={apiAcquisitionWrapRef} className="relative">
+          <div ref={apiAcquisitionWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => {
                 setApiAcquisitionOpen((v) => !v);
@@ -1288,7 +1340,7 @@ function App() {
           </div>
 
           {/* 「画布教程」教程合集按钮: 放在最新应用左侧, 方便新用户按版本学习 */}
-          <div ref={canvasTutorialWrapRef} className="relative">
+          <div ref={canvasTutorialWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => {
                 setCanvasTutorialOpen((v) => !v);
@@ -1308,7 +1360,7 @@ function App() {
                           : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
                     }`
               }
-              title="画布教程 · T8 教程合集"
+              title="画布教程 · 清尘教程合集"
             >
               <BookOpen size={14} />
               <span className="text-[11px]">画布教程</span>
@@ -1330,7 +1382,7 @@ function App() {
               >
                 <div className={`flex items-center gap-2 ${isPixel ? '' : isDark ? 'text-amber-300' : 'text-amber-700'}`}>
                   <BookOpen size={16} className={isPixel ? '' : 'shrink-0'} />
-                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>画布教程 · T8 系列</span>
+                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>画布教程 · 清尘系列</span>
                 </div>
 
                 <div
@@ -1439,7 +1491,7 @@ function App() {
           </div>
 
           {/* 「最新应用」推广按钮: 同款胶囊, 主调 橙桃色(区分于 violet/mint/yellow/pink) */}
-          <div ref={appWrapRef} className="relative">
+          <div ref={appWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => setAppOpen((v) => !v)}
               className={
@@ -1560,7 +1612,7 @@ function App() {
           </div>
 
           {/* 「AIX产品」推广按钮: 同款胶囊, 主调 青蓝色 */}
-          <div ref={aixWrapRef} className="relative">
+          <div ref={aixWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => setAixOpen((v) => !v)}
               className={
@@ -1576,7 +1628,7 @@ function App() {
                           : 'bg-cyan-50 border-cyan-300 text-cyan-700 hover:bg-cyan-100'
                     }`
               }
-              title="AIX产品 · T8公司AIX产品"
+              title="AIX产品 · 清尘 AI 产品"
             >
               <Sparkles size={14} />
               <span className="text-[11px]">AIX产品</span>
@@ -1609,7 +1661,7 @@ function App() {
                     isPixel ? '' : isDark ? 'text-white/80' : 'text-zinc-700'
                   }`}
                 >
-                  T8公司AIX产品，欢迎体验
+                  清尘 AI 产品，欢迎体验
                 </div>
 
                 {/* 主行动 CTA: 跳转链接(新窗口) */}
@@ -1636,7 +1688,7 @@ function App() {
           </div>
 
           {/* 「贞贞工坊」推广按钮: 同款胶囊, 主调 紫色(区分于 mint/yellow/pink) */}
-          <div ref={zhenWrapRef} className="relative">
+          <div ref={zhenWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => setZhenOpen((v) => !v)}
               className={
@@ -1757,7 +1809,7 @@ function App() {
           </div>
 
           {/* 「视频教程」推广按钮: 与右侧【在线画布/主题/风格】同款胶囊, 主调 红色(B 站 / Youtube 调性) */}
-          <div ref={videoWrapRef} className="relative">
+          <div ref={videoWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => setVideoOpen((v) => !v)}
               className={
@@ -1797,7 +1849,7 @@ function App() {
                 {/* 标题 */}
                 <div className={`flex items-center gap-2 ${isPixel ? '' : isDark ? 'text-rose-300' : 'text-rose-700'}`}>
                   <PlayCircle size={16} className={isPixel ? '' : 'shrink-0'} />
-                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>视频教程 · T8老师</span>
+                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>视频教程 · 清尘</span>
                 </div>
 
                 {/* 副标 */}
@@ -1883,7 +1935,7 @@ function App() {
           </div>
 
           {/* 「在线画布」推广按钮: 与右侧主题/风格按钮同款外观, 点击展开浮层 */}
-          <div ref={cloudWrapRef} className="relative">
+          <div ref={cloudWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => setCloudOpen((v) => !v)}
               className={

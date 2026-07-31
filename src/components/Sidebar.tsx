@@ -473,7 +473,7 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
       <button
         key={n.type}
         onClick={() => onAddNode(n.type)}
-        title={n.description}
+        title={`${n.description}（单击添加到当前画布）`}
         className={`t8-sidebar-node w-full text-left flex items-center gap-2 px-2 py-1.5 transition-colors text-xs ${
           isPixel
             ? 'px-row'
@@ -799,9 +799,9 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
         }`}
       >
         {isPixel ? (
-          <span className="px-chip px-chip--muted">T8 · v{__APP_VERSION__}</span>
+          <span className="px-chip px-chip--muted">清尘 · v{__APP_VERSION__}</span>
         ) : (
-          <>T8-penguin-canvas · v{__APP_VERSION__}</>
+          <>清尘无限画布 · v{__APP_VERSION__}</>
         )}
       </div>
     </div>

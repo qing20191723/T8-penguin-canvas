@@ -123,7 +123,7 @@ publicApp.use((req, res, next) => {
     return res.status(503).json({
       success: false,
       code: phase === 'failed' ? 'backend_start_failed' : 'backend_starting',
-      error: backendError || 'T8 完整后端正在启动，请稍候重试。',
+      error: backendError || '清尘画布后端正在启动，请稍候重试。',
       phase,
     });
   }
@@ -144,7 +144,7 @@ publicApp.use(express.static(frontendDist, {
 
 function loadingPage() {
   const failed = phase === 'failed';
-  const title = failed ? 'T8 后端启动失败' : 'T8 无限画布正在启动';
+  const title = failed ? '清尘画布后端启动失败' : '清尘无限画布正在启动';
   const detail = failed
     ? '公网网页已经上线，但完整后端没有成功加载。请检查 Render 日志中的 [render] backend child 信息。'
     : 'Render 已开放公网端口，正在加载 T8 后端与 Atlas 能力。页面会在准备完成后自动刷新。';
