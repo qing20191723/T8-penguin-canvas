@@ -63,9 +63,10 @@
     "worktree:integration-audit": "node scripts/audit-worktree-integration.cjs",
     "rh-toolbox:check": "node scripts/check-rh-toolbox-release.cjs",
     "public:check": "node scripts/check-public-clean.cjs",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "node scripts/postinstall.cjs",
     "face-model:build": "node scripts/build-ict-face-glb.cjs",
-    "start": "node backend/src/renderServer.js"
+    "start": "node backend/src/renderServer.js",
+    "prestart": "node scripts/ensure-node-native.cjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
