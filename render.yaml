@@ -3,10 +3,12 @@
 
 services:
   - type: web
-    name: atlas-canvas
+    name: qingchen-atlascloud-canvas
     env: node
     region: singapore
     plan: free
+    autoDeployTrigger: commit
+    healthCheckPath: /api/status
     buildCommand: npm install --include=dev && npm run build && npm rebuild better-sqlite3 && cd backend && npm install
     startCommand: cd backend && node src/renderServer.js
     envVars:
