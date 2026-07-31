@@ -1,0 +1,33 @@
+name: Probe Render now
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'ci/verify-build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe current Render responses
+        shell: bash
+        run: |
+          set +e
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          echo '=== DNS ==='
+          getent ahosts qingchen-atlascloud-canvas.onrender.com || true
+          echo '=== Root ==='
+          curl -L -v --max-time 60 "$base/" -o /tmp/root 2>&1 | tail -80
+          echo "root bytes=$(wc -c < /tmp/root 2>/dev/null || echo 0)"
+          head -c 500 /tmp/root 2>/dev/null || true
+          echo
+          echo '=== Status ==='
+          curl -L -sS -D - --max-time 60 "$base/api/status" || true
+          echo
+          echo '=== Models ==='
+          curl -L -sS -D - --max-time 90 "$base/api/proxy/atlas/models" | head -c 4000 || true
+          echo
