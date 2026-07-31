@@ -1,0 +1,96 @@
+name: Verify build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'ci-results/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-build-main
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install and build
+        id: verify
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "Node: $(node --version)"
+            echo "npm: $(npm --version)"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo "=== npm ci --include=dev ==="
+            npm ci --include=dev
+            install_code=$?
+            echo
+            echo "Install exit code: $install_code"
+            if [ "$install_code" -eq 0 ]; then
+              echo
+              echo "=== npm run build ==="
+              npm run build
+              build_code=$?
+            else
+              build_code=99
+            fi
+            echo
+            echo "Build exit code: $build_code"
+          } > verify-build.log 2>&1
+          final_code=$build_code
+          if [ "$install_code" -ne 0 ]; then final_code=$install_code; fi
+          echo "exit_code=$final_code" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          cat verify-build.log
+          exit 0
+
+      - name: Publish verification result
+        if: always()
+        shell: bash
+        env:
+          EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
+          SOURCE_SHA: ${{ steps.verify.outputs.source_sha }}
+        run: |
+          set -e
+          result_dir="$(mktemp -d)"
+          cp verify-build.log "$result_dir/latest-build.log"
+          cat > "$result_dir/status.json" <<JSON
+          {
+            "source_sha": "$SOURCE_SHA",
+            "exit_code": ${EXIT_CODE:-255},
+            "success": $([ "${EXIT_CODE:-255}" = "0" ] && echo true || echo false),
+            "workflow_run_id": "$GITHUB_RUN_ID",
+            "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+          cd "$result_dir"
+          git init -b ci-results
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-build.log status.json
+          git commit -m "ci: publish build verification for $SOURCE_SHA"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin ci-results
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fail workflow when verification failed
+        if: steps.verify.outputs.exit_code != '0'
+        run: exit 1
