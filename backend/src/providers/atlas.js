@@ -7,6 +7,15 @@ const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1';
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 3000;
+const SEEDREAM_V5_T2I_MODEL = 'bytedance/seedream-v5.0-lite';
+const SEEDREAM_V5_EDIT_MODEL = 'bytedance/seedream-v5.0-lite/edit';
+const KLING_V3_T2V_MODEL = 'kwaivgi/kling-v3.0-std/text-to-video';
+const KLING_V3_I2V_MODEL = 'kwaivgi/kling-v3.0-std/image-to-video';
+const SEEDREAM_V5_SIZES = [
+  '2048*2048', '2304*1728', '1728*2304', '2848*1600', '1600*2848',
+  '2496*1664', '1664*2496', '3136*1344', '3072*3072', '3456*2592',
+  '2592*3456', '4096*2304', '2304*4096', '2496*3744', '3744*2496', '4704*2016',
+];
 const SUCCESS_STATUSES = new Set(['completed', 'complete', 'success', 'succeeded', 'done', 'finished', 'ready']);
 const FAILURE_STATUSES = new Set(['failed', 'failure', 'error', 'errored', 'cancelled', 'canceled', 'rejected', 'expired']);
 
@@ -144,6 +153,79 @@ function safeParams(value) {
 
 function firstDefined(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function dimensions(value) {
+  const match = String(value || '').trim().match(/^(\d{2,5})\s*[xX×*]\s*(\d{2,5})$/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function ratioNumber(value) {
+  const match = String(value || '').trim().match(/^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/);
+  if (!match) return 0;
+  const left = Number(match[1]);
+  const right = Number(match[2]);
+  return left > 0 && right > 0 ? left / right : 0;
+}
+
+function nearestSeedreamV5Size(sizeValue, ratioValue) {
+  const normalized = String(sizeValue || '').trim().replace(/[xX×]/g, '*');
+  if (SEEDREAM_V5_SIZES.includes(normalized)) return normalized;
+  const parsed = dimensions(sizeValue);
+  const targetRatio = parsed ? parsed.width / parsed.height : ratioNumber(ratioValue);
+  if (!targetRatio) return '2048*2048';
+  return SEEDREAM_V5_SIZES.reduce((best, candidate) => {
+    const current = dimensions(candidate);
+    const bestSize = dimensions(best);
+    const currentDistance = Math.abs(Math.log((current.width / current.height) / targetRatio));
+    const bestDistance = Math.abs(Math.log((bestSize.width / bestSize.height) / targetRatio));
+    return currentDistance < bestDistance ? candidate : best;
+  }, '2048*2048');
+}
+
+function normalizeSeedreamV5Params(params, input, refs, model) {
+  const size = nearestSeedreamV5Size(
+    firstDefined(params.size, params.image_size, input.size, input.image_size, input.imageSize),
+    firstDefined(params.aspect_ratio, params.ratio, input.aspect_ratio, input.aspectRatio, input.ratio),
+  );
+  const format = String(firstDefined(params.output_format, input.output_format, 'jpeg')).toLowerCase();
+  const normalized = {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    size,
+    output_format: format === 'png' ? 'png' : 'jpeg',
+    enable_base64_output: false,
+  };
+  if (model === SEEDREAM_V5_EDIT_MODEL) normalized.images = refs.slice(0, 14);
+  return normalized;
+}
+
+function normalizeKlingV3Params(params, input, refs, model) {
+  const durationRaw = Number(firstDefined(params.duration, input.duration, input.seconds, 5));
+  const duration = Math.max(3, Math.min(15, Math.round(Number.isFinite(durationRaw) ? durationRaw : 5)));
+  const ratio = String(firstDefined(params.aspect_ratio, params.ratio, input.aspect_ratio, input.aspectRatio, input.ratio, '16:9'));
+  const normalized = {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
+    duration,
+    aspect_ratio: ['16:9', '9:16', '1:1'].includes(ratio) ? ratio : '16:9',
+    cfg_scale: Math.max(0, Math.min(1, Number(firstDefined(params.cfg_scale, 0.5)) || 0.5)),
+    sound: typeof params.sound === 'boolean' ? params.sound : true,
+    multi_shot: params.multi_shot === true,
+  };
+  if (normalized.multi_shot && ['customize', 'intelligence'].includes(params.shot_type)) {
+    normalized.shot_type = params.shot_type;
+    if (params.shot_type === 'customize' && Array.isArray(params.multi_prompt)) normalized.multi_prompt = params.multi_prompt;
+  }
+  if (model === KLING_V3_I2V_MODEL) {
+    normalized.image = refs[0];
+    if (refs[1]) normalized.end_image = refs[1];
+    const resolution = String(firstDefined(params.resolution, input.resolution, '')).toUpperCase();
+    if (['720P', '1080P'].includes(resolution)) normalized.resolution = resolution;
+  }
+  return normalized;
 }
 
 async function uploadDataUrl(provider, dataUrl, filename, options = {}) {
@@ -344,7 +426,7 @@ async function runGeneration(provider, input, options, kind) {
     };
   }
 
-  const params = {
+  let params = {
     ...safeParams(provider.defaults?.params),
     ...safeParams(input.providerParams),
   };
@@ -359,15 +441,13 @@ async function runGeneration(provider, input, options, kind) {
   if (input.seed != null && params.seed == null) params.seed = input.seed;
   if (input.n != null && params.n == null && params.num_images == null) params.n = input.n;
 
+  let refs = [];
   try {
-    const refs = await resolveAtlasMediaList(provider, [
+    refs = await resolveAtlasMediaList(provider, [
       ...(Array.isArray(input.images) ? input.images : []),
       ...(input.image ? [input.image] : []),
       ...(input.image_url ? [input.image_url] : []),
     ], options);
-    if (refs.length && params.image == null && params.image_url == null && params.images == null) {
-      params.image = refs.length === 1 ? refs[0] : refs;
-    }
   } catch (error) {
     return {
       ok: false,
@@ -377,6 +457,17 @@ async function runGeneration(provider, input, options, kind) {
       model,
       error: error?.message || 'Atlas 参考媒体解析失败。',
     };
+  }
+
+  if (kind === 'image' && refs.length && model === SEEDREAM_V5_T2I_MODEL) model = SEEDREAM_V5_EDIT_MODEL;
+  if (kind === 'video' && refs.length && model === KLING_V3_T2V_MODEL) model = KLING_V3_I2V_MODEL;
+
+  if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
+    params = normalizeSeedreamV5Params(params, input, refs, model);
+  } else if (model === KLING_V3_T2V_MODEL || model === KLING_V3_I2V_MODEL) {
+    params = normalizeKlingV3Params(params, input, refs, model);
+  } else if (refs.length && params.image == null && params.image_url == null && params.images == null) {
+    params.image = refs.length === 1 ? refs[0] : refs;
   }
 
   const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';

@@ -77,13 +77,20 @@ const DEFAULT_AGNES_CHAT_MODELS = [
 ];
 
 const DEFAULT_ATLAS_IMAGE_MODELS = [
-  'seedream/seedream-v5.0-lite-text-to-image',
-  'qwen-image/qwen-image-text-to-image-plus',
+  'bytedance/seedream-v5.0-lite',
+  'bytedance/seedream-v5.0-lite/edit',
 ];
 
 const DEFAULT_ATLAS_VIDEO_MODELS = [
-  'kling-video/kling-v3.0-standard-text-to-video',
+  'kwaivgi/kling-v3.0-std/text-to-video',
+  'kwaivgi/kling-v3.0-std/image-to-video',
 ];
+
+const LEGACY_ATLAS_MODEL_IDS = new Map([
+  ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-lite'],
+  ['qwen-image/qwen-image-text-to-image-plus', 'bytedance/seedream-v5.0-lite'],
+  ['kling-video/kling-v3.0-standard-text-to-video', 'kwaivgi/kling-v3.0-std/text-to-video'],
+]);
 
 const DEFAULT_JIMENG_IMAGE_MODELS = [
   'seedream-4.7',
@@ -285,6 +292,17 @@ function normalizeModelList(values) {
   return out;
 }
 
+function migrateAtlasModelId(value) {
+  const model = String(value || '').trim();
+  return LEGACY_ATLAS_MODEL_IDS.get(model) || model;
+}
+
+function migrateAtlasModelList(values, defaults) {
+  const migrated = normalizeModelList(values).map(migrateAtlasModelId);
+  return mergeModelLists(defaults, migrated)
+    .filter((model) => !LEGACY_ATLAS_MODEL_IDS.has(model));
+}
+
 function normalizeModelscopeLoraStrength(value, fallback = 0.8) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -474,6 +492,7 @@ function normalizeProvider(raw, previous = null) {
   if (!baseUrl && protocol === 'modelscope') baseUrl = DEFAULT_MODELSCOPE_BASE_URL;
   if (!baseUrl && protocol === 'volcengine') baseUrl = DEFAULT_VOLCENGINE_BASE_URL;
   if (!baseUrl && protocol === 'agnes') baseUrl = DEFAULT_AGNES_BASE_URL;
+  if (!baseUrl && protocol === 'atlas') baseUrl = DEFAULT_ATLAS_BASE_URL;
   if (protocol === 'jimeng-cli') baseUrl = '';
   if (protocol === 'comfyui') {
     const allowRemote = normalizeBoolean(raw.allowRemote, false);
@@ -547,6 +566,20 @@ function normalizeProvider(raw, previous = null) {
       chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
       responseFormat: 'url',
       ...provider.defaults,
+    };
+  }
+
+  if (id === 'atlas' && protocol === 'atlas') {
+    provider.imageModels = migrateAtlasModelList(provider.imageModels, DEFAULT_ATLAS_IMAGE_MODELS);
+    provider.videoModels = migrateAtlasModelList(provider.videoModels, DEFAULT_ATLAS_VIDEO_MODELS);
+    const atlasDefaults = provider.defaults || {};
+    const imageModel = migrateAtlasModelId(atlasDefaults.imageModel);
+    const videoModel = migrateAtlasModelId(atlasDefaults.videoModel);
+    provider.defaults = {
+      ...atlasDefaults,
+      imageModel: provider.imageModels.includes(imageModel) ? imageModel : DEFAULT_ATLAS_IMAGE_MODELS[0],
+      videoModel: provider.videoModels.includes(videoModel) ? videoModel : DEFAULT_ATLAS_VIDEO_MODELS[0],
+      pollIntervalMs: normalizeNumber(atlasDefaults.pollIntervalMs, 3000, 1000, 30000),
     };
   }
 

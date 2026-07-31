@@ -233,8 +233,8 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
     volcengine: ['doubao-seedream-4-0-250828'],
     agnes: ['agnes-image-2.1-flash', 'agnes-image-2.0-flash'],
     atlas: [
-      'seedream/seedream-v5.0-lite-text-to-image',
-      'qwen-image/qwen-image-text-to-image-plus',
+      'bytedance/seedream-v5.0-lite',
+      'bytedance/seedream-v5.0-lite/edit',
     ],
     'jimeng-cli': [
       'seedream-4.7',
@@ -249,7 +249,7 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
   video: {
     'openai-compatible': [],
     agnes: ['agnes-video-v2.0'],
-    atlas: ['kling-video/kling-v3.0-standard-text-to-video'],
+    atlas: ['kwaivgi/kling-v3.0-std/text-to-video', 'kwaivgi/kling-v3.0-std/image-to-video'],
     volcengine: [
       'doubao-seedance-2-0-260128',
       'doubao-seedance-2-0-fast-260128',
