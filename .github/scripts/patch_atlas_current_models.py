@@ -374,18 +374,7 @@ test('Kling v3 switches to image-to-video for a reference image', async () => {
 });
 ''', encoding="utf-8")
 
-# Update the existing deployment smoke test to the current response contract and model schema.
-verify_path = ".github/workflows/verify-render.yml"
-verify = read(verify_path)
-verify = verify.replace(
-    "const d=require('/tmp/status.json'); if(!d.ok) process.exit(1)",
-    "const d=require('/tmp/status.json'); if(!(d.success===true||d.ok===true)||(d.phase&&d.phase!=='ready')) process.exit(1)",
-)
-verify = verify.replace(OLD_IMAGE, IMAGE_T2I)
-verify = verify.replace('"image_size":"1024x1024"', '"size":"2048*2048"')
-write(verify_path, verify)
-
-for path in [frontend_path, atlas_path, verify_path]:
+for path in [frontend_path, atlas_path]:
     text = read(path)
     if OLD_IMAGE in text or OLD_IMAGE_2 in text or OLD_VIDEO in text:
         raise RuntimeError(f"legacy Atlas model remains in {path}")
