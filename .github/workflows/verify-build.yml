@@ -5,13 +5,15 @@ on:
     branches: [main]
     paths-ignore:
       - 'ci-results/**'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: verify-build-main
+  group: verify-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -62,7 +64,7 @@ jobs:
           exit 0
 
       - name: Publish verification result
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         shell: bash
         env:
           EXIT_CODE: ${{ steps.verify.outputs.exit_code }}
