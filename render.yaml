@@ -26,3 +26,5 @@ services:
         value: https://qingchen-atlascloud-canvas.onrender.com
       - key: T8_PUBLIC_ALLOWED_ORIGINS
         value: https://qingchen-atlascloud-canvas.onrender.com
+      - key: T8_PUBLIC_ALLOWED_ORIGINS
+        value: https://qingchen-atlascloud-canvas.onrender.com

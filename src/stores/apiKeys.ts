@@ -39,9 +39,6 @@ const DEFAULT: ApiSettings = {
   grokApiKey: '',
   seedanceApiKey: '',
   sunoApiKey: '',
-  // Atlas Cloud
-  atlasApiKey: '',
-  atlasBaseUrl: 'https://api.atlascloud.ai/v1',
   // 路径默认值由后端按平台计算并通过 /api/settings 返回，前端不硬编码 D 盘。
   fileSavePath: '',
   canvasAutoSavePath: '',

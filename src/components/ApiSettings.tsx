@@ -53,8 +53,7 @@ type KeyField =
   | 'soraApiKey'
   | 'grokApiKey'
   | 'seedanceApiKey'
-  | 'sunoApiKey'
-  | 'atlasApiKey';
+  | 'sunoApiKey';
 
 interface KeySpec {
   field: KeyField;
@@ -69,7 +68,6 @@ const COMMON_KEYS: KeySpec[] = [
   { field: 'rhApiKey', label: 'RH APIKEY国内', desc: '· runninghub.cn 国内站应用', bullet: 'bg-cyan-400' },
   { field: 'rhIntlApiKey', label: 'RH APIKEY海外', desc: '· runninghub.ai 海外站应用', bullet: 'bg-blue-400' },
   { field: 'llmApiKey', label: 'LLM 独立 API Key', desc: '· 额度隔离 · 用于 LLM/Vision', bullet: 'bg-emerald-400' },
-  { field: 'atlasApiKey', label: 'Atlas Cloud API Key', desc: '· 300+ 模型 · 图片/视频/音频生成', bullet: 'bg-indigo-400' },
 ];
 
 const CLASSIFIED_KEYS: KeySpec[] = [
@@ -104,6 +102,7 @@ const ADVANCED_PROVIDER_LABELS: Record<AdvancedProviderProtocol, string> = {
   modelscope: 'ModelScope',
   volcengine: '火山引擎',
   agnes: 'Agnes AI',
+  atlas: 'Atlas Cloud',
   comfyui: 'ComfyUI',
   'jimeng-cli': '即梦 CLI',
 };
@@ -152,6 +151,15 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     modelHint: '默认模型：LLM agnes-2.0-flash；图像 agnes-image-2.1-flash / agnes-image-2.0-flash；视频 agnes-video-v2.0。图像尺寸跟随图像节点比例/尺寸，视频比例/时长/分辨率会自动换算为 Agnes 宽高和帧数；本机参考图会自动转成可提交给远端任务的 base64 图片内容。',
     baseUrlPlaceholder: 'https://apihub.agnes-ai.com/v1',
     keyLabel: 'Agnes AI API Key',
+  },
+  atlas: {
+    subtitle: '接入 Atlas Cloud 的图片与视频模型',
+    description: 'Atlas Cloud 使用异步任务接口并支持 300+ 模型。Render 部署优先读取服务端 ATLASCLOUD_API_KEY，本地也可在此扩展平台卡片中填写 API Key。',
+    nodeScopes: ['图像节点', '视频节点'],
+    connectionHint: 'Base URL 默认使用 https://api.atlascloud.ai/api/v1；启用后可在图像和视频节点的“扩展平台”中选择 Atlas Cloud。',
+    modelHint: '每行填写一个 Atlas 精确模型 ID。不同模型参数不同，可在节点的扩展参数中传入模型专用字段。',
+    baseUrlPlaceholder: 'https://api.atlascloud.ai/api/v1',
+    keyLabel: 'Atlas Cloud API Key（Render 可由服务端注入）',
   },
   comfyui: {
     subtitle: '接入 ComfyUI 工作流',
@@ -277,12 +285,12 @@ function AdvancedProviderFormBlock({
 const emptyMap = (): Record<KeyField, string> => ({
   zhenzhenApiKey: '', zhenzhenSd2ApiKey: '', rhApiKey: '', rhIntlApiKey: '', llmApiKey: '',
   gptImageApiKey: '', nanoBananaApiKey: '', mjApiKey: '', veoApiKey: '',
-  soraApiKey: '', grokApiKey: '', seedanceApiKey: '', sunoApiKey: '', atlasApiKey: '',
+  soraApiKey: '', grokApiKey: '', seedanceApiKey: '', sunoApiKey: '',
 });
 const emptyShow = (): Record<KeyField, boolean> => ({
   zhenzhenApiKey: false, zhenzhenSd2ApiKey: false, rhApiKey: false, rhIntlApiKey: false, llmApiKey: false,
   gptImageApiKey: false, nanoBananaApiKey: false, mjApiKey: false, veoApiKey: false,
-  soraApiKey: false, grokApiKey: false, seedanceApiKey: false, sunoApiKey: false, atlasApiKey: false,
+  soraApiKey: false, grokApiKey: false, seedanceApiKey: false, sunoApiKey: false,
 });
 
 function formatCloudError(error: string, data?: any) {

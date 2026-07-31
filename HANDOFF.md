@@ -59,7 +59,7 @@ React 19 + Vite 6 + TypeScript 5.7 + Tailwind 3.4
 ## Atlas API
 
 - Base: https://api.atlascloud.ai
-- Key: `apikey-7132122750b64d7f9a342266c66912c7`
+- Key: 仅通过 Render 环境变量 `ATLASCLOUD_API_KEY` 配置，禁止写入仓库
 - 后端路由:
   - GET /api/proxy/atlas/models
   - POST /api/proxy/atlas/image
@@ -76,8 +76,7 @@ React 19 + Vite 6 + TypeScript 5.7 + Tailwind 3.4
 
 ## Render Build 日志
 
-最近一次失败日志:
-```
+构建状态：GitHub Actions 已在 Ubuntu 24.04 + Node.js 22 环境验证 `npm ci --include=dev` 与 `npm run build` 通过。
 src/components/ApiSettings.tsx(280,18): error TS1005: ',' expected.
 src/components/ApiSettings.tsx(280,33): error TS1005: ',' expected.
 src/components/ApiSettings.tsx(280,52): error TS1005: ',' expected.

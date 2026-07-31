@@ -4,6 +4,7 @@ const volcengine = require('./volcengine');
 const agnes = require('./agnes');
 const comfyui = require('./comfyui');
 const jimengCli = require('./jimengCli');
+const atlas = require('./atlas');
 
 const ADAPTERS = {
   'openai-compatible': openaiCompatible,
@@ -12,6 +13,7 @@ const ADAPTERS = {
   agnes,
   comfyui,
   'jimeng-cli': jimengCli,
+  atlas,
 };
 
 function getAdapterForProtocol(protocol) {

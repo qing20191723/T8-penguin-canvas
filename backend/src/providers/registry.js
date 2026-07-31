@@ -1,6 +1,7 @@
 const DEFAULT_MODELSCOPE_BASE_URL = 'https://api-inference.modelscope.cn/v1';
 const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 const DEFAULT_AGNES_BASE_URL = 'https://apihub.agnes-ai.com/v1';
+const DEFAULT_ATLAS_BASE_URL = 'https://api.atlascloud.ai/api/v1';
 const { isAllowedComfyuiUrl } = require('./comfyuiAccess');
 
 const DEFAULT_MODELSCOPE_IMAGE_MODELS = [
@@ -75,6 +76,15 @@ const DEFAULT_AGNES_CHAT_MODELS = [
   'agnes-2.0-flash',
 ];
 
+const DEFAULT_ATLAS_IMAGE_MODELS = [
+  'seedream/seedream-v5.0-lite-text-to-image',
+  'qwen-image/qwen-image-text-to-image-plus',
+];
+
+const DEFAULT_ATLAS_VIDEO_MODELS = [
+  'kling-video/kling-v3.0-standard-text-to-video',
+];
+
 const DEFAULT_JIMENG_IMAGE_MODELS = [
   'seedream-4.7',
   'seedream-4.6',
@@ -104,6 +114,7 @@ const SUPPORTED_PROTOCOLS = new Set([
   'agnes',
   'comfyui',
   'jimeng-cli',
+  'atlas',
 ]);
 
 const PROVIDER_ID_RE = /^[a-z0-9][a-z0-9_-]{1,47}$/;
@@ -172,6 +183,21 @@ const DEFAULT_ADVANCED_PROVIDERS = [
       videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
       chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
       responseFormat: 'url',
+    },
+  },
+  {
+    id: 'atlas',
+    label: 'Atlas Cloud',
+    protocol: 'atlas',
+    baseUrl: DEFAULT_ATLAS_BASE_URL,
+    enabled: Boolean(process.env.ATLASCLOUD_API_KEY),
+    imageModels: DEFAULT_ATLAS_IMAGE_MODELS,
+    videoModels: DEFAULT_ATLAS_VIDEO_MODELS,
+    chatModels: [],
+    defaults: {
+      imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],
+      videoModel: DEFAULT_ATLAS_VIDEO_MODELS[0],
+      pollIntervalMs: 3000,
     },
   },
   {

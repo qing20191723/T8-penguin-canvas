@@ -277,9 +277,15 @@ function waitForApplicationRequests(timeoutMs = null) {
 // ========== 中间件 ==========
 const LOCAL_ORIGIN_RE = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/i;
 const UXP_ORIGIN_RE = /^uxp:\/\//i;
+const PUBLIC_ALLOWED_ORIGINS = new Set(
+  String(process.env.T8_PUBLIC_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 function isTrustedLocalOrigin(origin) {
   const value = String(origin || '').trim();
-  return LOCAL_ORIGIN_RE.test(value) || UXP_ORIGIN_RE.test(value);
+  return LOCAL_ORIGIN_RE.test(value) || UXP_ORIGIN_RE.test(value) || PUBLIC_ALLOWED_ORIGINS.has(value);
 }
 function isLocalCanvasSyncPath(req) {
   const pathname = String(req?.originalUrl || req?.url || req?.path || '')
@@ -291,12 +297,23 @@ app.use((req, res, next) => {
   if (isLocalCanvasSyncPath(req)) res.set('Cache-Control', 'no-store');
   next();
 });
-// CORS: 部署版允许所有来源（API Key 由后端保护）
 app.use(cors({
-  origin: true,
+  origin(origin, cb) {
+    cb(null, !origin || isTrustedLocalOrigin(origin));
+  },
   credentials: true,
 }));
 app.use((req, res, next) => {
+  const origin = String(req.get('origin') || '').trim();
+  const trustedOrigin = Boolean(origin && isTrustedLocalOrigin(origin));
+  const fetchSite = String(req.get('sec-fetch-site') || '').trim().toLowerCase();
+  if ((origin && !trustedOrigin) || (fetchSite === 'cross-site' && !trustedOrigin)) {
+    return res.status(403).json({
+      success: false,
+      code: 'origin_forbidden',
+      error: '请求来源未获后端授权',
+    });
+  }
   if (req.method === 'OPTIONS') return res.status(204).end();
   return next();
 });
