@@ -3,3 +3,4 @@ inspection pass 2
 apply verified repair
 approved workflow trigger
 fixed extraction trigger
+preserve strings trigger
