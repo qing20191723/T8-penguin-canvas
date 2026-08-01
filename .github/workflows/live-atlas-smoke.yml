@@ -1,0 +1,161 @@
+name: Verify deployed Atlas image generation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  live-atlas-smoke:
+    if: github.event.pull_request.head.ref == 'ci/live-atlas-smoke-209a05d' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for Render deployment and run one schema-driven image smoke test
+        env:
+          APP_ORIGIN: https://qingchen-atlascloud-canvas.onrender.com
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const origin = process.env.APP_ORIGIN.replace(/\/+$/, '');
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const json = async (url, init = {}) => {
+            const response = await fetch(url, init);
+            const text = await response.text();
+            let payload;
+            try { payload = text ? JSON.parse(text) : {}; }
+            catch { payload = { raw: text }; }
+            return { response, payload };
+          };
+
+          const deadline = Date.now() + 20 * 60 * 1000;
+          let deployedSettings = null;
+          while (Date.now() < deadline) {
+            try {
+              const { response, payload } = await json(`${origin}/api/settings`, { cache: 'no-store' });
+              const settings = payload?.data || {};
+              const providers = Array.isArray(settings?.advancedProviders) ? settings.advancedProviders : [];
+              const qingchenPath = [
+                settings.fileSavePath,
+                settings.canvasAutoSavePath,
+                settings.resourceLibraryPath,
+                settings.themeTemplatePath,
+              ].some((value) => /qingchen/i.test(String(value || '')));
+              const atlasOnly = providers.some((provider) => provider?.id === 'atlas' && provider?.protocol === 'atlas')
+                && providers.every((provider) => ['atlas', 'custom-api'].includes(String(provider?.id || '')));
+              if (response.ok && payload?.success === true && qingchenPath && atlasOnly) {
+                deployedSettings = settings;
+                break;
+              }
+              console.log('Render not on Atlas-only Qingchen build yet', {
+                status: response.status,
+                qingchenPath,
+                providerIds: providers.map((provider) => provider?.id),
+              });
+            } catch (error) {
+              console.log('Render deployment probe failed, retrying:', error.message);
+            }
+            await sleep(15_000);
+          }
+          if (!deployedSettings) throw new Error('Render did not expose the Atlas-only Qingchen settings within 20 minutes');
+
+          const { response: modelsResponse, payload: modelsPayload } = await json(`${origin}/api/proxy/atlas/models`, { cache: 'no-store' });
+          if (!modelsResponse.ok || modelsPayload?.success !== true) {
+            throw new Error(`Atlas model catalog proxy failed: HTTP ${modelsResponse.status} ${modelsPayload?.error || ''}`);
+          }
+          const models = Array.isArray(modelsPayload.items) ? modelsPayload.items : [];
+          const candidates = models.filter((model) => {
+            if (String(model?.type || '').toLowerCase() !== 'image') return false;
+            const id = String(model?.id || '');
+            const categories = (Array.isArray(model?.categories) ? model.categories : []).join(' ').toLowerCase();
+            const textToImage = /text-to-image/.test(`${id} ${categories}`);
+            const editLike = /edit|image-to-image|inpaint|outpaint/.test(`${id} ${categories}`);
+            return textToImage && !editLike && /^https:\/\/static\.atlascloud\.ai\/model\/schema\//.test(String(model?.schema || ''));
+          });
+          const preferred = 'bytedance/seedream-v5.0-pro/text-to-image';
+          candidates.sort((a, b) => (a.id === preferred ? -1 : b.id === preferred ? 1 : String(a.id).localeCompare(String(b.id))));
+
+          let selected = null;
+          let inputSchema = null;
+          for (const candidate of candidates) {
+            try {
+              const { response, payload } = await json(candidate.schema, { cache: 'no-store' });
+              if (!response.ok) continue;
+              const schema = payload?.components?.schemas?.Input || payload?.Input || payload;
+              if (!schema || typeof schema !== 'object') continue;
+              const required = Array.isArray(schema.required) ? schema.required : [];
+              const forbiddenRequired = required.some((key) => /image|video|audio|mask|reference/i.test(String(key)));
+              if (forbiddenRequired) continue;
+              selected = candidate;
+              inputSchema = schema;
+              break;
+            } catch {}
+          }
+          if (!selected || !inputSchema) throw new Error('No public Atlas text-to-image model with an accessible simple official schema was found');
+
+          const properties = inputSchema.properties && typeof inputSchema.properties === 'object' ? inputSchema.properties : {};
+          const body = {
+            model: selected.id,
+            prompt: 'A single polished jade-green glass sphere on a clean warm-gray studio background, soft product lighting, centered composition, no text, no logo',
+          };
+          for (const key of Array.isArray(inputSchema.required) ? inputSchema.required : []) {
+            if (key === 'model' || key === 'prompt' || body[key] !== undefined) continue;
+            const rule = properties[key] || {};
+            if (rule.default !== undefined) body[key] = rule.default;
+            else if (Array.isArray(rule.enum) && rule.enum.length) body[key] = rule.enum[0];
+            else throw new Error(`Selected Atlas model requires unsupported field without a documented default: ${key}`);
+          }
+
+          console.log('Submitting Atlas image smoke test', { model: selected.id, keys: Object.keys(body) });
+          const { response: submitResponse, payload: submitPayload } = await json(`${origin}/api/proxy/atlas/image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!submitResponse.ok || submitPayload?.success !== true) {
+            throw new Error(`Atlas image submit failed: HTTP ${submitResponse.status} ${submitPayload?.error || JSON.stringify(submitPayload)}`);
+          }
+
+          let outputs = Array.isArray(submitPayload.outputs) ? submitPayload.outputs : [];
+          const predictionId = String(submitPayload.predictionId || '').trim();
+          if (!outputs.length && !predictionId) throw new Error('Atlas image submit returned neither output nor predictionId');
+
+          let finalStatus = submitPayload.status || 'processing';
+          const pollDeadline = Date.now() + 8 * 60 * 1000;
+          while (!outputs.length && Date.now() < pollDeadline) {
+            await sleep(5_000);
+            const { response, payload } = await json(`${origin}/api/proxy/atlas/poll/${encodeURIComponent(predictionId)}`, { cache: 'no-store' });
+            if (!response.ok || payload?.success === false) {
+              throw new Error(`Atlas image poll failed: HTTP ${response.status} ${payload?.error || JSON.stringify(payload)}`);
+            }
+            finalStatus = payload?.status || finalStatus;
+            outputs = Array.isArray(payload?.outputs) ? payload.outputs : [];
+            console.log('Atlas image poll', { predictionId, status: finalStatus, outputCount: outputs.length });
+          }
+          const output = String(outputs[0] || '');
+          if (!/^https?:\/\//i.test(output)) throw new Error(`Atlas image task did not complete with a public output URL; final status=${finalStatus}`);
+
+          const report = {
+            deployed: true,
+            modelCount: models.length,
+            selectedModel: selected.id,
+            predictionId: predictionId || null,
+            finalStatus,
+            outputHost: new URL(output).host,
+          };
+          fs.writeFileSync('atlas-live-smoke-report.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          NODE
+
+      - name: Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-live-smoke-report
+          path: atlas-live-smoke-report.json
+          if-no-files-found: ignore
+          retention-days: 1
