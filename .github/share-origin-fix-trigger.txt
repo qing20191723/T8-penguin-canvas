@@ -1,0 +1,1 @@
+apply forwarded origin and disable public collaboration worker
