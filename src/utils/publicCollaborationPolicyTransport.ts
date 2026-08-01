@@ -555,7 +555,10 @@ export function installPublicCollaborationPolicyTransport() {
       }
     }
 
-    let response = await originalFetch(input instanceof Request ? input.url : input, effectiveInit);
+    const requestTarget: RequestInfo | URL = effectiveInit === init
+      ? input
+      : (input instanceof Request ? input.url : input);
+    let response = await originalFetch(requestTarget, effectiveInit);
 
     if (canvasId && requestPayload) {
       if (response.ok) {
