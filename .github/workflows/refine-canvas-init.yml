@@ -1,0 +1,38 @@
+name: Refine canvas init state
+
+on:
+  push:
+    branches: [fix/node-click-and-remove-rh]
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/node-click-and-remove-rh
+          fetch-depth: 0
+      - run: python3 .github/scripts/refine_canvas_init_state.py
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build
+        env:
+          RENDER: 'true'
+        run: |
+          npm ci --include=dev
+          npm run build
+      - name: Commit refinement
+        run: |
+          rm -f .github/workflows/refine-canvas-init.yml .github/scripts/refine_canvas_init_state.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: make first-canvas initialization deterministic"
+          git push origin HEAD:fix/node-click-and-remove-rh
