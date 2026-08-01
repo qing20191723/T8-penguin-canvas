@@ -74,7 +74,8 @@ jobs:
           assert 'API Key 设置（Atlas Cloud + 自定义 API）' in api_settings
           assert '所有内置 LLM、图像与视频模型均来自 Atlas Cloud 当前公共模型目录' in api_settings
           assert "id: 'atlas'" in store and "id: 'custom-api'" in store
-          assert "filter((provider) => provider.protocol === 'atlas' || provider.protocol === 'openai-compatible')" in registry
+          assert "'openai-compatible',\n  'atlas'," in registry
+          assert 'return [atlas, custom].filter(Boolean);' in registry
           assert 'https://api.atlascloud.ai/api/v1/model/generateImage' in atlas or "`${providerBaseUrl(provider)}/model/generateImage`" in atlas
           assert "const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1'" in atlas
           assert 'https://static.atlascloud.ai/model/schema/' in atlas_schema
