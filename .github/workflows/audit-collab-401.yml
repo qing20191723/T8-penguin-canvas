@@ -1,0 +1,30 @@
+name: Audit collaboration preflight 401
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.pull_request.head.ref == 'ci/audit-collab-401-209a05d'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Locate preflight UI, collaboration requests and auth guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== exact UI strings ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E '执行前只读体检|体检阻断|历史运行证据|只读体检|阻断项' src backend electron tools || true
+          echo '=== collaboration endpoint strings ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E '/api/collaboration|collaboration/e|projectId=|execution.*evidence|evidence.*execution' src backend electron tools || true
+          echo '=== 401 and auth guards in collaboration backend ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E 'status\(401\)|sendStatus\(401\)|401.*json|unauthor|authority|authorization|management.*token|session.*token' backend/src | head -n 1500 || true
+          echo '=== files changed since 15:47 baseline candidates ==='
+          git log --since='2026-08-01T07:47:00Z' --name-status --pretty='format:COMMIT %H %cI %s' -- src backend electron | head -n 2500
