@@ -1,4 +1,4 @@
-// 主 API Key 与分类独立 Key 设置路由
+// Atlas Cloud 与自定义 API 设置路由
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -40,20 +40,20 @@ const TASK_COMPLETION_SOUND_EXTENSION_BY_MIME = {
   'audio/webm': '.webm',
 };
 
-// 默认 settings 结构（主 Key + 8 类分类 Key）
+// 默认 settings 结构。旧 Key 字段只用于兼容历史配置，不再作为公开主入口。
 const DEFAULT_SETTINGS = {
   // 主 Key
   zhenzhenApiKey: '',
-  zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL, // 固定 https://ai.t8star.org
+  zhenzhenBaseUrl: config.ATLAS_GENERATION_BASE_URL,
   zhenzhenSd2ApiKey: '',
-  zhenzhenSd2BaseUrl: config.ZHENZHEN_SD2_BASE_URL,
+  zhenzhenSd2BaseUrl: config.ATLAS_GENERATION_BASE_URL,
   rhApiKey: '',
-  rhBaseUrl: config.RH_BASE_URL,
+  rhBaseUrl: '',
   rhIntlApiKey: '',
-  rhIntlBaseUrl: config.RH_INTL_BASE_URL,
+  rhIntlBaseUrl: '',
   // v1.2.9.16: 取消 rhWalletApiKey —— RH 钱包应用节点与普通 RunningHub 节点统一使用 rhApiKey
   llmApiKey: '',
-  llmBaseUrl: config.ZHENZHEN_BASE_URL, // 同Atlas Cloud上游
+  llmBaseUrl: config.ATLAS_CHAT_BASE_URL,
   // 分类 Key（留空时 fallback 到 zhenzhenApiKey）
   gptImageApiKey: '',
   nanoBananaApiKey: '',
@@ -65,7 +65,7 @@ const DEFAULT_SETTINGS = {
   sunoApiKey: '',
   // v1.2.10.2: 全局生成素材自动保存到本地的路径(可用户自定义)
   fileSavePath: config.DEFAULT_LOCAL_SAVE_DIR,
-  // v1.3.1: 画布自动保存导出路径(实际写入 <path>/T8-penguin-canvas/canvases)
+  // v1.3.1: 画布自动保存导出路径(实际写入 <path>/qingchen-canvas/canvases)
   canvasAutoSavePath: config.DEFAULT_CANVAS_AUTO_SAVE_DIR,
   // v1.3.4: 资源库路径(资源文件 + resource_library.json 元数据)
   resourceLibraryPath: config.DEFAULT_RESOURCE_LIBRARY_DIR,
@@ -73,7 +73,7 @@ const DEFAULT_SETTINGS = {
   themeTemplatePath: config.DEFAULT_THEME_TEMPLATE_DIR,
   // 本地 Eagle API 地址，只用于“发送到 Eagle”功能。路由层仍会强制限制为本机地址。
   eagleApiBase: config.DEFAULT_EAGLE_API_BASE,
-  // v1.8.0: 扩展 API 平台（高级可选）。默认只提供禁用的配置卡片，不影响主流程。
+  // Atlas Cloud 是唯一内置模型平台；另保留一个可选的 OpenAI 兼容自定义入口。
   advancedProviders: normalizeAdvancedProviders(),
   // v1.9.x: 云端上传目标（可选）。默认禁用，不影响资源库/自动保存主流程。
   cloudUploadTargets: normalizeCloudUploadTargets(),
@@ -180,11 +180,18 @@ const CURRENT_DEFAULT_PATHS = {
 };
 
 const LEGACY_DEFAULT_PATHS = {
-  fileSavePath: config.LEGACY_WINDOWS_DEFAULT_ROOT,
-  canvasAutoSavePath: config.LEGACY_WINDOWS_DEFAULT_ROOT,
-  resourceLibraryPath: `${config.LEGACY_WINDOWS_DEFAULT_ROOT}\\resources`,
-  themeTemplatePath: `${config.LEGACY_WINDOWS_DEFAULT_ROOT}\\theme-templates`,
+  fileSavePath: [config.LEGACY_WINDOWS_DEFAULT_ROOT, config.LEGACY_HOME_DEFAULT_ROOT],
+  canvasAutoSavePath: [config.LEGACY_WINDOWS_DEFAULT_ROOT, config.LEGACY_HOME_DEFAULT_ROOT],
+  resourceLibraryPath: [
+    path.join(config.LEGACY_WINDOWS_DEFAULT_ROOT, 'resources'),
+    path.join(config.LEGACY_HOME_DEFAULT_ROOT, 'resources'),
+  ],
+  themeTemplatePath: [
+    path.join(config.LEGACY_WINDOWS_DEFAULT_ROOT, 'theme-templates'),
+    path.join(config.LEGACY_HOME_DEFAULT_ROOT, 'theme-templates'),
+  ],
 };
+
 
 // 分类 key 字段列表（供 GET 脱敏与 POST 合并使用）
 const CLASSIFIED_KEY_FIELDS = [
@@ -201,20 +208,36 @@ function normalizePathForCompare(value) {
 }
 
 function migrateLegacyDefaultPaths(settings) {
-  if (process.platform === 'win32') {
-    return { settings, changed: false };
-  }
   let changed = false;
   const next = { ...settings };
   for (const field of Object.keys(CURRENT_DEFAULT_PATHS)) {
     const current = String(next[field] || '').trim();
     if (!current) continue;
-    if (normalizePathForCompare(current) === normalizePathForCompare(LEGACY_DEFAULT_PATHS[field])) {
+    const legacyValues = Array.isArray(LEGACY_DEFAULT_PATHS[field]) ? LEGACY_DEFAULT_PATHS[field] : [];
+    if (legacyValues.some((value) => normalizePathForCompare(current) === normalizePathForCompare(value))) {
       next[field] = CURRENT_DEFAULT_PATHS[field];
       changed = true;
     }
   }
   return { settings: next, changed };
+}
+
+function migrateAtlasProviderKey(settings) {
+  const next = { ...settings };
+  const providers = normalizeAdvancedProviders(next.advancedProviders);
+  const atlasIndex = providers.findIndex((provider) => provider.id === 'atlas' && provider.protocol === 'atlas');
+  if (atlasIndex < 0 || providers[atlasIndex].apiKey) {
+    next.advancedProviders = providers;
+    return { settings: next, changed: false };
+  }
+  const legacyKey = String(next.zhenzhenSd2ApiKey || next.zhenzhenApiKey || next.llmApiKey || '').trim();
+  if (!legacyKey) {
+    next.advancedProviders = providers;
+    return { settings: next, changed: false };
+  }
+  providers[atlasIndex] = { ...providers[atlasIndex], apiKey: legacyKey, enabled: true };
+  next.advancedProviders = providers;
+  return { settings: next, changed: true };
 }
 
 function maskKey(k) {
@@ -229,18 +252,19 @@ function loadSettings({ persistMigrations = true } = {}) {
     const merged = {
       ...DEFAULT_SETTINGS,
       ...data,
-      zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
-      zhenzhenSd2BaseUrl: config.ZHENZHEN_SD2_BASE_URL,
-      llmBaseUrl: config.ZHENZHEN_BASE_URL,
+      zhenzhenBaseUrl: config.ATLAS_GENERATION_BASE_URL,
+      zhenzhenSd2BaseUrl: config.ATLAS_GENERATION_BASE_URL,
+      llmBaseUrl: config.ATLAS_CHAT_BASE_URL,
     };
     merged.advancedProviders = normalizeAdvancedProviders(data.advancedProviders);
     merged.cloudUploadTargets = normalizeCloudUploadTargets(data.cloudUploadTargets);
     merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(data.taskCompletionSound);
-    const migrated = migrateLegacyDefaultPaths(merged);
-    if (persistMigrations && migrated.changed) {
-      saveSettings(migrated.settings);
+    const keyMigration = migrateAtlasProviderKey(merged);
+    const pathMigration = migrateLegacyDefaultPaths(keyMigration.settings);
+    if (persistMigrations && (keyMigration.changed || pathMigration.changed)) {
+      saveSettings(pathMigration.settings);
     }
-    return migrated.settings;
+    return pathMigration.settings;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -383,11 +407,11 @@ router.post('/', (req, res) => {
     ...current,
     ...safeIncoming,
     // base URL 强制为配置值,不允许覆盖
-    zhenzhenBaseUrl: config.ZHENZHEN_BASE_URL,
-    zhenzhenSd2BaseUrl: config.ZHENZHEN_SD2_BASE_URL,
-    rhBaseUrl: config.RH_BASE_URL,
-    rhIntlBaseUrl: config.RH_INTL_BASE_URL,
-    llmBaseUrl: config.ZHENZHEN_BASE_URL,
+    zhenzhenBaseUrl: config.ATLAS_GENERATION_BASE_URL,
+    zhenzhenSd2BaseUrl: config.ATLAS_GENERATION_BASE_URL,
+    rhBaseUrl: '',
+    rhIntlBaseUrl: '',
+    llmBaseUrl: config.ATLAS_CHAT_BASE_URL,
   };
   merged.advancedProviders = hasAdvancedProviders
     ? normalizeAdvancedProviders(incoming.advancedProviders, current.advancedProviders)

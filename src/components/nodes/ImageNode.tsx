@@ -227,6 +227,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
     [advancedProviders, d?.providerSource, d?.providerId, d?.providerModel],
   );
   const isExternalSelected = providerSelection.available && providerSelection.providerSource !== 'zhenzhen';
+  const isAtlasExternalSelected = isExternalSelected && providerSelection.provider?.protocol === 'atlas';
   const savedExternalMissing = !!d?.providerSource && d.providerSource !== 'zhenzhen' && !providerSelection.available;
   const externalModelOptions = providerSelection.provider
     ? advancedProviderModelOptions(providerSelection.provider, 'image')
@@ -240,7 +241,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const jimengCliCustomSizeEnabled = isJimengCliImageSelected && providerParams?.customSizeEnabled === true;
   const jimengCliWidth = Math.round(Number(providerParams?.width) || 1024);
   const jimengCliHeight = Math.round(Number(providerParams?.height) || 1024);
-  const externalImageCountLimit = isJimengCliImageSelected ? 10 : 4;
+  const externalImageCountLimit = isAtlasExternalSelected ? 10 : isJimengCliImageSelected ? 10 : 4;
   const comfyWorkflow = isComfyExternal
     ? providerSelection.provider?.comfyuiConfig?.workflows?.find((workflow) => workflow.id === externalProviderModel || workflow.name === externalProviderModel)
     : undefined;
@@ -322,6 +323,29 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const isCurrentGenerationRun = (runId: number) => generationRunRef.current === runId;
   const patchProviderParams = (patch: Record<string, any>) => {
     update({ providerParams: { ...providerParams, ...patch } });
+  };
+  const atlasParamsText = typeof d?.atlasParamsText === 'string'
+    ? d.atlasParamsText
+    : JSON.stringify(providerParams, null, 2);
+  const updateAtlasParamsText = (raw: string) => {
+    const patch: Record<string, any> = { atlasParamsText: raw };
+    if (!raw.trim()) {
+      patch.providerParams = {};
+      patch.atlasParamsError = null;
+      update(patch);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('参数必须是 JSON 对象');
+      }
+      patch.providerParams = parsed;
+      patch.atlasParamsError = null;
+    } catch (error: any) {
+      patch.atlasParamsError = error?.message || 'JSON 格式不正确';
+    }
+    update(patch);
   };
   const applyModelscopeLoraSelection = (nextSelection: ModelscopeSelectedLora[], enabled = true) => {
     const normalized = normalizeModelscopeLoraWeightsTotal(
@@ -563,8 +587,10 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
   const MJ_REF_MAX = 2; // sref 与 oref 各最多 2 张
 
   // 参考图上限(FAL 使用 FAL_REGISTRY.maxRefs,其他走原设计)
-  const maxRefs = isExternalSelected
-    ? Math.max(8, modelDef.maxReferenceImages || 0)
+  const maxRefs = isAtlasExternalSelected
+    ? 14
+    : isExternalSelected
+      ? Math.max(8, modelDef.maxReferenceImages || 0)
     : isZhenzhenImageG2I2I
       ? 10
     : isZhenzhenLowpriceImage
@@ -1936,7 +1962,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
               onClick={() => update({ advancedProviderOpen: !d?.advancedProviderOpen })}
               className="w-full flex items-center justify-between text-[10px] font-semibold text-white/70 hover:text-white"
             >
-              <span>高级来源</span>
+              <span>模型来源</span>
               <span>
                 {isExternalSelected && providerSelection.provider
                   ? providerSelection.provider.label
@@ -1948,48 +1974,11 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             {d?.advancedProviderOpen && (
               <div className="space-y-2">
                 <div>
-                  <label className="text-[10px] text-white/50 block mb-1">平台</label>
+                  <label className="text-[10px] text-white/50 block mb-1">API 提供商</label>
                   <select
-                    value={isExternalSelected
-                      ? providerSelection.providerId
-                      : isZhenzhenBudgetPlatformSelected
-                        ? 'builtin:seedance-nz'
-                        : 'zhenzhen'}
+                    value={providerSelection.available ? providerSelection.providerId : ''}
                     onChange={(e) => {
                       const nextId = e.target.value;
-                      if (nextId === 'zhenzhen') {
-                        const leavingBudgetPlatform = d?.imageBuiltinSource === 'seedance-nz'
-                          || isZhenzhenBudgetImageModel(savedApiModel);
-                        update({
-                          providerSource: 'zhenzhen',
-                          providerId: '',
-                          providerModel: '',
-                          imageBuiltinSource: 'zhenzhen',
-                          ...(leavingBudgetPlatform
-                            ? {
-                                apiModel: modelDef.apiModel,
-                                aspectRatio: modelDef.defaultAspectRatio,
-                                sizeLevel: modelDef.defaultSize,
-                              }
-                            : {}),
-                          ...clearModelscopeLoraParams(),
-                        });
-                        return;
-                      }
-                      if (nextId === 'builtin:seedance-nz') {
-                        update({
-                          providerSource: 'zhenzhen',
-                          providerId: '',
-                          providerModel: '',
-                          imageBuiltinSource: 'seedance-nz',
-                          model: 'gpt-image-2',
-                          apiModel: ZHENZHEN_IMAGE_G2_T2I_MODEL,
-                          aspectRatio: 'adaptive',
-                          sizeLevel: '1K',
-                          ...clearModelscopeLoraParams(),
-                        });
-                        return;
-                      }
                       const provider = imageAdvancedProviders.find((item) => item.id === nextId);
                       if (!provider) return;
                       const nextModels = advancedProviderModelOptions(provider, 'image');
@@ -2012,7 +2001,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 </div>
                 {isExternalSelected && providerSelection.provider && (
                   <div>
-                    <label className="text-[10px] text-white/50 block mb-1">外部模型</label>
+                    <label className="text-[10px] text-white/50 block mb-1">{providerSelection.provider?.protocol === 'atlas' ? 'Atlas 模型' : '自定义模型'}</label>
                     <select
                       value={externalProviderModel}
                       onChange={(e) => {
@@ -2033,6 +2022,34 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                         <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
                       ))}
                     </select>
+                  </div>
+                )}
+                {isExternalSelected && providerSelection.provider?.protocol === 'atlas' && (
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => update({ atlasParamsOpen: !d?.atlasParamsOpen })}
+                      className="w-full flex items-center justify-between text-[10px] text-white/55 hover:text-white/80"
+                    >
+                      <span>模型专用参数 JSON（可选）</span>
+                      <span>{d?.atlasParamsOpen ? '收起' : '展开'}</span>
+                    </button>
+                    {d?.atlasParamsOpen && (
+                      <>
+                        <textarea
+                          value={atlasParamsText}
+                          onChange={(e) => updateAtlasParamsText(e.target.value)}
+                          rows={5}
+                          spellCheck={false}
+                          placeholder={'{\n  "thinking": "enabled"\n}'}
+                          style={{ background: '#18181b', color: '#ffffff' }}
+                          className="w-full resize-y rounded border border-white/10 px-2 py-1 font-mono text-[10px] leading-relaxed outline-none focus:border-white/30"
+                        />
+                        <div className={d?.atlasParamsError ? 'text-[10px] text-red-300' : 'text-[10px] text-white/35'}>
+                          {d?.atlasParamsError || '公共参数会自动映射；特殊字段请按 Atlas 官方模型 Schema 填写。'}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
                 {isJimengCliImageSelected && (
@@ -2442,7 +2459,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 )}
                 {savedExternalMissing && (
                   <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
-                    当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
+                    当前画布记录的模型来源未启用或不存在，已临时切换到 Atlas Cloud。
                   </div>
                 )}
               </div>

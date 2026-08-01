@@ -823,7 +823,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
               onClick={() => update({ advancedProviderOpen: !d?.advancedProviderOpen })}
               className="w-full flex items-center justify-between text-[10px] font-semibold text-white/70 hover:text-white"
             >
-              <span>高级来源</span>
+              <span>模型来源</span>
               <span>
                 {isExternalSelected && providerSelection.provider
                   ? providerSelection.provider.label
@@ -835,31 +835,11 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
             {d?.advancedProviderOpen && (
               <div className="space-y-2">
                 <div>
-                  <label className="text-[10px] text-white/50 block mb-1">平台</label>
+                  <label className="text-[10px] text-white/50 block mb-1">API 提供商</label>
                   <select
-                    value={isExternalSelected
-                      ? providerSelection.providerId
-                      : isSeedanceNzSelected ? 'seedance-nz' : 'zhenzhen'}
+                    value={providerSelection.available ? providerSelection.providerId : ''}
                     onChange={(e) => {
                       const nextId = e.target.value;
-                      if (nextId === 'zhenzhen') {
-                        update({
-                          llmApiSource: 'zhenzhen',
-                          providerSource: 'zhenzhen',
-                          providerId: '',
-                          providerModel: '',
-                        });
-                        return;
-                      }
-                      if (nextId === 'seedance-nz') {
-                        update({
-                          llmApiSource: 'seedance-nz',
-                          providerSource: 'zhenzhen',
-                          providerId: '',
-                          providerModel: DEFAULT_SEEDANCE_NZ_LLM_MODEL,
-                        });
-                        return;
-                      }
                       const provider = llmAdvancedProviders.find((item) => item.id === nextId);
                       if (!provider) return;
                       const nextModels = advancedProviderModelOptions(provider, 'llm');
@@ -883,7 +863,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                 </div>
                 {isExternalSelected && providerSelection.provider && (
                   <div>
-                    <label className="text-[10px] text-white/50 block mb-1">外部模型</label>
+                    <label className="text-[10px] text-white/50 block mb-1">{providerSelection.provider?.protocol === 'atlas' ? 'Atlas 模型' : '自定义模型'}</label>
                     <select
                       value={externalProviderModel}
                       onChange={(e) => update({ providerModel: e.target.value })}
@@ -918,7 +898,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                 )}
                 {savedExternalMissing && (
                   <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
-                    当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
+                    当前画布记录的模型来源未启用或不存在，已临时切换到 Atlas Cloud。
                   </div>
                 )}
               </div>

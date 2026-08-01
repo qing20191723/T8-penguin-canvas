@@ -18,8 +18,8 @@ const router = express.Router();
 const EXTERNAL_GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
 const WEB_IMAGE_FETCH_TIMEOUT_MS = 30 * 1000;
 const WEB_IMAGE_FETCH_MAX_BYTES = 20 * 1024 * 1024;
-const DEFAULT_WEB_IMAGE_PROVIDER_ID = 'modelscope';
-const DEFAULT_WEB_IMAGE_VISION_MODEL = 'Qwen/Qwen3-VL-235B-A22B-Instruct';
+const DEFAULT_WEB_IMAGE_PROVIDER_ID = 'atlas';
+const DEFAULT_WEB_IMAGE_VISION_MODEL = 'google/gemini-3.5-flash';
 const DEFAULT_WEB_IMAGE_PROMPT_INSTRUCTION = [
   '你是资深 AI 图像提示词反推助手。请严格观察这张网页图片，输出一段可直接用于文生图的高质量中文提示词。',
   '必须完全基于图片可见内容，不要补写图中不存在的主体、场景、风格或抽象概念；如果无法识别图片，请明确说明无法读取图片，不要编造。',
@@ -308,7 +308,7 @@ async function fetchWebImageAsDataUrl(imageUrl, options = {}) {
       signal: controller.signal,
       headers: {
         Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        'User-Agent': 'T8-PenguinCanvas-WebImageReverse/2.3',
+        'User-Agent': 'Qingchen-Canvas-WebImageReverse/1.0',
       },
     });
     if (!response.ok) throw new Error(`读取网页图片失败：HTTP ${response.status}`);
@@ -496,7 +496,7 @@ router.post('/image', async (req, res) => {
         ok: false,
         code: firstFailure?.code || 'output_missing',
         error: firstFailure
-          ? `扩展平台已生成结果，但保存到 T8 本地失败：${firstFailure.error}`
+          ? `扩展平台已生成结果，但保存到清尘本地失败：${firstFailure.error}`
           : '扩展平台任务已完成，但没有返回可识别的图像、视频、音频或文本结果。请保留任务 ID 并检查平台任务详情。',
       }, resolved.provider, {
         remoteImageUrls,
@@ -540,14 +540,14 @@ router.post('/web-image', async (req, res) => {
       return res.json({
         success: false,
         code: 'provider_not_found',
-        error: '未找到 ModelScope 扩展平台配置。',
+        error: '未找到 Atlas Cloud 配置。',
       });
     }
     if (!provider.enabled) {
       return res.json({
         success: false,
         code: 'provider_disabled',
-        error: 'ModelScope 扩展平台未启用，请先在 API 设置中启用。',
+        error: 'Atlas Cloud 未启用，请先在 API 设置中填写 Atlas Cloud API Key。',
         data: { provider: safeProviderForResponse(provider) },
       });
     }
@@ -563,7 +563,8 @@ router.post('/web-image', async (req, res) => {
     }
 
     const instruction = cleanWebText(req.body?.promptInstruction || req.body?.instruction, 2000) || DEFAULT_WEB_IMAGE_PROMPT_INSTRUCTION;
-    const visionModel = DEFAULT_WEB_IMAGE_VISION_MODEL;
+    const requestedVisionModel = cleanWebText(req.body?.visionModel || req.body?.vision_model, 240);
+    const visionModel = requestedVisionModel || DEFAULT_WEB_IMAGE_VISION_MODEL;
 
     const visionImageUrl = await resolveWebImageForVision(imageUrl, {
       baseUrl: `http://127.0.0.1:${config.PORT}`,
@@ -585,7 +586,7 @@ router.post('/web-image', async (req, res) => {
       return res.json({
         success: false,
         code: 'empty_prompt',
-        error: 'ModelScope 反推成功但没有返回提示词。',
+        error: 'Atlas 视觉模型已响应但没有返回提示词。',
         data: {
           ...chatResult,
           provider: safeProviderForResponse(provider),
@@ -598,7 +599,7 @@ router.post('/web-image', async (req, res) => {
       return res.json({
         success: false,
         code: 'unreadable_image_prompt',
-        error: 'ModelScope 视觉模型没有读到这张网页图片，已停止生图。请换一张可访问图片，或先下载图片后上传到画布。',
+        error: 'Atlas 视觉模型没有读到这张网页图片，已停止生图。请换一张可访问图片，或先下载图片后上传到画布。',
         data: {
           ...chatResult,
           provider: safeProviderForResponse(provider),
@@ -683,7 +684,7 @@ router.post('/web-image', async (req, res) => {
 
     const remoteImageUrls = Array.isArray(imageResult.imageUrls) ? imageResult.imageUrls : [];
     const savedImages = await saveMediaOutputs('image', remoteImageUrls, {
-      trustedLocalOrigins: trustedLocalOutputOrigins(resolved.provider),
+      trustedLocalOrigins: trustedLocalOutputOrigins(provider),
     });
     const imageUrls = savedImages.urls;
     if (!imageUrls.length) {
@@ -692,7 +693,7 @@ router.post('/web-image', async (req, res) => {
         success: false,
         code: firstFailure?.code || 'output_missing',
         error: firstFailure
-          ? `图片已经生成，但保存到 T8 本地失败：${firstFailure.error}`
+          ? `图片已经生成，但保存到清尘本地失败：${firstFailure.error}`
           : '图片任务已完成，但平台没有返回可识别的图片地址。请保留任务 ID 并检查平台任务详情。',
         data: {
           ...imageResult,

@@ -1,20 +1,26 @@
 import { create } from 'zustand';
-import type { ApiSettings } from '../types/canvas';
+import type { AdvancedProviderConfig, ApiSettings } from '../types/canvas';
 import * as api from '../services/api';
 
-// 主 Key 的固定 base URL
-export const FIXED_ZHENZHEN_BASE = 'https://ai.t8star.org';
-// 沿用历史字段名，实际承载清尘平价 AI 小屋的 LLM / 视频 / 图片 / 音频接口。
-export const FIXED_ZHENZHEN_SD2_BASE = 'https://api.seedance.nz';
-export const RH_BASE = 'https://www.runninghub.cn';
-export const RH_INTL_BASE = 'https://www.runninghub.ai';
+/** Atlas Cloud 官方接口根地址。 */
+export const ATLAS_GENERATION_BASE_URL = 'https://api.atlascloud.ai/api/v1';
+export const ATLAS_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1';
 
+/**
+ * 历史导出名仅为兼容旧代码与旧设置文件；它们现在统一指向 Atlas Cloud，
+ * 前端不再展示原有平台入口。
+ */
+export const FIXED_ZHENZHEN_BASE = ATLAS_GENERATION_BASE_URL;
+export const FIXED_ZHENZHEN_SD2_BASE = ATLAS_GENERATION_BASE_URL;
+export const RH_BASE = '';
+export const RH_INTL_BASE = '';
 
-const ATLAS_PREFERRED_IMAGE_MODELS = [
+const ATLAS_FALLBACK_IMAGE_MODELS = [
   'bytedance/seedream-v5.0-pro/text-to-image',
   'bytedance/seedream-v5.0-pro/edit',
 ];
-const ATLAS_PREFERRED_VIDEO_MODELS = [
+const ATLAS_FALLBACK_CHAT_MODELS = ['moonshotai/kimi-k3'];
+const ATLAS_FALLBACK_VIDEO_MODELS = [
   'kwaivgi/kling-v3.0-std/text-to-video',
   'kwaivgi/kling-v3.0-std/image-to-video',
   'atlascloud/wan-2.7-spicy/image-to-video',
@@ -25,7 +31,7 @@ const ATLAS_PREFERRED_VIDEO_MODELS = [
 
 type AtlasCatalogKind = 'image' | 'video' | 'chat' | 'other';
 
-function uniqueAtlasModelIds(values: unknown[]): string[] {
+function uniqueModelIds(values: unknown[]): string[] {
   const out: string[] = [];
   for (const value of values) {
     const id = String(
@@ -42,30 +48,93 @@ function uniqueAtlasModelIds(values: unknown[]): string[] {
 }
 
 function atlasCatalogKind(model: any): AtlasCatalogKind {
-  const type = String(model?.type || '').toLowerCase();
-  const tags = (Array.isArray(model?.tags) ? model.tags : [])
-    .map((item: unknown) => String(item || '').toLowerCase())
+  const type = String(model?.type || '').trim().toLowerCase();
+  if (type === 'image') return 'image';
+  if (type === 'video') return 'video';
+  if (type === 'text') return 'chat';
+
+  const categories = Array.isArray(model?.categories) ? model.categories : [];
+  const tags = Array.isArray(model?.tags) ? model.tags : [];
+  const text = [...categories, ...tags]
+    .map((item) => String(item || '').toLowerCase())
     .join(' ');
-  const text = `${type} ${tags}`;
   if (/image|text-to-image|image-to-image|inpaint|outpaint/.test(text)) return 'image';
-  if (/video|text-to-video|image-to-video|video-to-video/.test(text)) return 'video';
+  if (/video|text-to-video|image-to-video|video-to-video|reference-to-video/.test(text)) return 'video';
   if (/\b(text|llm|chat|language|embedding)\b|text-to-text|vision-language/.test(text)) return 'chat';
   return 'other';
 }
 
+function ensureAtlasAndCustomProviders(settings: { advancedProviders?: AdvancedProviderConfig[] }): AdvancedProviderConfig[] {
+  const source = Array.isArray(settings.advancedProviders) ? settings.advancedProviders : [];
+  const atlasSource = source.find((provider) => provider?.protocol === 'atlas' || provider?.id === 'atlas');
+  const customSource = source.find((provider) => (
+    provider?.id === 'custom-api'
+    || (provider?.protocol === 'openai-compatible' && provider?.id !== 'atlas')
+  ));
+
+  const atlas: AdvancedProviderConfig = {
+  ...(atlasSource || {}),
+  id: 'atlas',
+  label: 'Atlas Cloud',
+  protocol: 'atlas',
+  baseUrl: ATLAS_GENERATION_BASE_URL,
+  enabled: true,
+  imageModels: Array.isArray(atlasSource?.imageModels) && atlasSource.imageModels.length
+    ? atlasSource.imageModels
+    : ATLAS_FALLBACK_IMAGE_MODELS,
+  videoModels: Array.isArray(atlasSource?.videoModels) && atlasSource.videoModels.length
+    ? atlasSource.videoModels
+    : ATLAS_FALLBACK_VIDEO_MODELS,
+  chatModels: Array.isArray(atlasSource?.chatModels) && atlasSource.chatModels.length
+    ? atlasSource.chatModels
+    : ATLAS_FALLBACK_CHAT_MODELS,
+  defaults: {
+    imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
+    videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
+    chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
+    pollIntervalMs: 3000,
+    ...(atlasSource?.defaults || {}),
+  },
+};
+
+const custom: AdvancedProviderConfig = {
+  ...(customSource || {}),
+  id: 'custom-api',
+  label: customSource?.label || '自定义 API',
+  protocol: 'openai-compatible',
+  baseUrl: customSource?.baseUrl || '',
+  enabled: customSource?.enabled === true,
+  imageModels: Array.isArray(customSource?.imageModels) ? customSource.imageModels : [],
+  videoModels: Array.isArray(customSource?.videoModels) ? customSource.videoModels : [],
+  chatModels: Array.isArray(customSource?.chatModels) ? customSource.chatModels : [],
+  defaults: { ...(customSource?.defaults || {}) },
+};
+
+return [atlas, custom];
+}
+
+function selectDefault(models: string[], preferred: string[], current: unknown): string {
+  const requested = String(current || '').trim();
+  if (requested && models.includes(requested)) return requested;
+  return preferred.find((model) => models.includes(model)) || models[0] || '';
+}
+
 async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> {
-  const providers = (Array.isArray(settings.advancedProviders) ? settings.advancedProviders : [])
-    .filter((provider) => provider?.protocol === 'atlas');
-  const atlasIndex = providers.findIndex((provider) => provider?.protocol === 'atlas');
+  const providers = ensureAtlasAndCustomProviders(settings);
+  const atlasIndex = providers.findIndex((provider) => provider.id === 'atlas');
   if (atlasIndex < 0) return { ...settings, advancedProviders: providers };
 
   try {
     const response = await fetch('/api/proxy/atlas/models', { cache: 'no-store' });
     const payload = await response.json();
-    if (!response.ok || payload?.success === false) throw new Error(payload?.error || `HTTP ${response.status}`);
+    if (!response.ok || payload?.success === false) {
+      throw new Error(payload?.error || `HTTP ${response.status}`);
+    }
     const items = Array.isArray(payload?.items)
       ? payload.items
-      : Object.values(payload?.models || {}).flatMap((value) => Array.isArray(value) ? value : []);
+      : Object.values(payload?.models || {}).flatMap((value) => (Array.isArray(value) ? value : []));
+    if (!items.length) throw new Error('Atlas 模型目录为空');
+
     const byKind = { image: [] as any[], video: [] as any[], chat: [] as any[] };
     for (const model of items) {
       const kind = atlasCatalogKind(model);
@@ -73,34 +142,34 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     }
 
     const current = providers[atlasIndex];
-    const imageModels = uniqueAtlasModelIds([
-      ...ATLAS_PREFERRED_IMAGE_MODELS,
-      ...byKind.image,
-      ...(current.imageModels || []),
-    ]);
-    const videoModels = uniqueAtlasModelIds([
-      ...ATLAS_PREFERRED_VIDEO_MODELS,
-      ...byKind.video,
-      ...(current.videoModels || []),
-    ]);
-    const chatModels = uniqueAtlasModelIds([
-      ...byKind.chat,
-      ...(current.chatModels || []),
-    ]);
-    const defaults = { ...(current.defaults || {}) };
-    defaults.imageModel = imageModels.includes(String(defaults.imageModel || ''))
-      ? defaults.imageModel
-      : ATLAS_PREFERRED_IMAGE_MODELS[0];
-    defaults.videoModel = videoModels.includes(String(defaults.videoModel || ''))
-      ? defaults.videoModel
-      : ATLAS_PREFERRED_VIDEO_MODELS[0];
-    if (chatModels.length) {
-      defaults.chatModel = chatModels.includes(String(defaults.chatModel || ''))
-        ? defaults.chatModel
-        : chatModels[0];
+    // 模型列表以 Atlas 当前公共目录为唯一来源；只有目录请求失败时才使用内置回退。
+    const imageModels = uniqueModelIds(byKind.image);
+    const videoModels = uniqueModelIds(byKind.video);
+    const chatModels = uniqueModelIds(byKind.chat);
+    if (!imageModels.length && !videoModels.length && !chatModels.length) {
+      throw new Error('Atlas 模型目录没有可识别模型');
     }
+
+    const defaults = { ...(current.defaults || {}) };
+    defaults.imageModel = selectDefault(
+      imageModels,
+      ATLAS_FALLBACK_IMAGE_MODELS,
+      defaults.imageModel,
+    );
+    defaults.videoModel = selectDefault(
+      videoModels,
+      ATLAS_FALLBACK_VIDEO_MODELS,
+      defaults.videoModel,
+    );
+    defaults.chatModel = selectDefault(chatModels, ATLAS_FALLBACK_CHAT_MODELS, defaults.chatModel);
+
     providers[atlasIndex] = {
       ...current,
+      id: 'atlas',
+      label: 'Atlas Cloud',
+      protocol: 'atlas',
+      baseUrl: ATLAS_GENERATION_BASE_URL,
+      enabled: true,
       imageModels,
       videoModels,
       chatModels,
@@ -108,7 +177,23 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     };
     return { ...settings, advancedProviders: providers };
   } catch (error) {
-    console.warn('[atlas] 动态模型目录加载失败，保留内置回退模型', error);
+    console.warn('[atlas] 当前模型目录加载失败，使用官方已核对的少量回退模型', error);
+    const current = providers[atlasIndex];
+    const imageModels = uniqueModelIds(ATLAS_FALLBACK_IMAGE_MODELS);
+    const videoModels = uniqueModelIds(ATLAS_FALLBACK_VIDEO_MODELS);
+    const chatModels = uniqueModelIds(ATLAS_FALLBACK_CHAT_MODELS);
+    providers[atlasIndex] = {
+      ...current,
+      imageModels,
+      videoModels,
+      chatModels,
+      defaults: {
+        ...(current.defaults || {}),
+        imageModel: selectDefault(imageModels, ATLAS_FALLBACK_IMAGE_MODELS, current.defaults?.imageModel),
+        videoModel: selectDefault(videoModels, ATLAS_FALLBACK_VIDEO_MODELS, current.defaults?.videoModel),
+        chatModel: selectDefault(chatModels, ATLAS_FALLBACK_CHAT_MODELS, current.defaults?.chatModel),
+      },
+    };
     return { ...settings, advancedProviders: providers };
   }
 }
@@ -117,12 +202,14 @@ async function normalizedLoadedSettings(data: Partial<ApiSettings>): Promise<Api
   const settings: ApiSettings = {
     ...DEFAULT,
     ...data,
-    zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
-    zhenzhenSd2BaseUrl: FIXED_ZHENZHEN_SD2_BASE,
-    rhBaseUrl: RH_BASE,
-    rhIntlBaseUrl: RH_INTL_BASE,
-    llmBaseUrl: FIXED_ZHENZHEN_BASE,
+    // 历史字段保留给旧画布/旧设置兼容，但全部锁定到 Atlas 官方地址。
+    zhenzhenBaseUrl: ATLAS_GENERATION_BASE_URL,
+    zhenzhenSd2BaseUrl: ATLAS_GENERATION_BASE_URL,
+    rhBaseUrl: '',
+    rhIntlBaseUrl: '',
+    llmBaseUrl: ATLAS_CHAT_BASE_URL,
   };
+  settings.advancedProviders = ensureAtlasAndCustomProviders(settings);
   return hydrateAtlasCatalog(settings);
 }
 
@@ -137,17 +224,17 @@ interface ApiKeysState {
 }
 
 const DEFAULT: ApiSettings = {
+  // 历史 Key 字段不再用于公共 UI；保留仅为旧设置迁移。
   zhenzhenApiKey: '',
-  zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
+  zhenzhenBaseUrl: ATLAS_GENERATION_BASE_URL,
   zhenzhenSd2ApiKey: '',
-  zhenzhenSd2BaseUrl: FIXED_ZHENZHEN_SD2_BASE,
+  zhenzhenSd2BaseUrl: ATLAS_GENERATION_BASE_URL,
   rhApiKey: '',
-  rhBaseUrl: RH_BASE,
+  rhBaseUrl: '',
   rhIntlApiKey: '',
-  rhIntlBaseUrl: RH_INTL_BASE,
+  rhIntlBaseUrl: '',
   llmApiKey: '',
-  llmBaseUrl: FIXED_ZHENZHEN_BASE,
-  // 分类独立 Key（留空时 fallback 到 zhenzhenApiKey）
+  llmBaseUrl: ATLAS_CHAT_BASE_URL,
   gptImageApiKey: '',
   nanoBananaApiKey: '',
   mjApiKey: '',
@@ -156,15 +243,14 @@ const DEFAULT: ApiSettings = {
   grokApiKey: '',
   seedanceApiKey: '',
   sunoApiKey: '',
-  // 路径默认值由后端按平台计算并通过 /api/settings 返回，前端不硬编码 D 盘。
   fileSavePath: '',
   canvasAutoSavePath: '',
   resourceLibraryPath: '',
   themeTemplatePath: '',
   eagleApiBase: '',
-  advancedProviders: [],
+  advancedProviders: ensureAtlasAndCustomProviders({ advancedProviders: [] }),
   advancedProviderSummary: {
-    enabledCount: 0,
+    enabledCount: 1,
     configuredKeyCount: 0,
     comfyuiConfigured: false,
     jimengConfigured: false,
@@ -203,7 +289,6 @@ export const useApiKeysStore = create<ApiKeysState>((set) => ({
     set({ loading: true, error: null });
     try {
       await api.updateSettings(patch);
-      // 重新拉取(后端会返回脱敏后的 Key)
       const data = await api.getSettings();
       const settings = await normalizedLoadedSettings(data);
       set({ settings, loading: false });

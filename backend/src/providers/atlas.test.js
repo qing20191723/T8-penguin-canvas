@@ -88,7 +88,7 @@ test('Kling v3 image-to-video preserves the official model and maps start/end fr
       assert.equal(body.image, 'https://example.com/start.png');
       assert.equal(body.end_image, 'https://example.com/end.png');
       assert.equal(body.duration, 8);
-      assert.equal(body.resolution, '1080P');
+      assert.equal(body.resolution, '1080P-SR');
     }, 'https://example.com/kling-i2v.mp4'),
   });
   assert.equal(result.ok, true);
@@ -188,6 +188,9 @@ test('Wan 2.7 video-edit requires and maps the source video', async () => {
       assert.equal(body.video, 'https://example.com/source.mp4');
       assert.deepEqual(body.images, ['https://example.com/style.png']);
       assert.equal(body.duration, 0);
+      assert.equal(body.resolution, '1080P');
+      assert.ok(!('image' in body));
+      assert.ok(!('audio' in body));
     }, 'https://example.com/edited.mp4'),
   });
   assert.equal(result.ok, true);
@@ -212,7 +215,7 @@ test('Atlas LLM uses the official OpenAI-compatible v1 chat endpoint', async () 
   assert.equal(result.text, 'pong');
 });
 
-test('Spicy reference-to-video binds every image with attached_subject syntax', async () => {
+test('Spicy reference-to-video binds every image with official @imageN syntax', async () => {
   const result = await atlas.generateVideo(provider, {
     model: 'atlascloud/wan-2.7-spicy/reference-to-video',
     prompt: 'The subjects walk forward together.',
@@ -224,11 +227,13 @@ test('Spicy reference-to-video binds every image with attached_subject syntax', 
   }, {
     fetchImpl: generationFetch((_url, body) => {
       assert.equal(body.model, 'atlascloud/wan-2.7-spicy/reference-to-video');
-      assert.equal(body.images.length, 3);
+      assert.equal(body.reference_images.length, 3);
       for (let index = 1; index <= 3; index += 1) {
-        assert.match(body.prompt, new RegExp(`attached_subject@image${index}`));
+        assert.match(body.prompt, new RegExp(`@image${index}`));
       }
-      assert.equal(body.prompt_extend, false);
+      assert.equal(body.aspect_ratio, 'auto');
+      assert.ok(!('images' in body));
+      assert.ok(!('prompt_extend' in body));
     }, 'https://example.com/spicy-reference.mp4'),
   });
   assert.equal(result.ok, true);
@@ -252,6 +257,185 @@ test('Alibaba Wan reference-to-video adds ordered character labels', async () =>
       assert.match(body.prompt, /character3/i);
       assert.equal(body.prompt_extend, false);
     }, 'https://example.com/alibaba-reference.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('dynamic Atlas image models are normalized from the official Input schema', async () => {
+  const model = 'atlascloud/face-swap-image';
+  const result = await atlas.generateImage(provider, {
+    model,
+    images: ['https://example.com/source.png', 'https://example.com/target.png'],
+    providerParams: { unsupported_field: 'must be removed' },
+  }, {
+    modelType: 'Image',
+    modelSchema: {
+      type: 'object',
+      required: ['model', 'image', 'Image'],
+      properties: {
+        model: { type: 'string' },
+        image: { type: 'string' },
+        Image: { type: 'string' },
+      },
+    },
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.model, model);
+      assert.equal(body.image, 'https://example.com/source.png');
+      assert.equal(body.Image, 'https://example.com/target.png');
+      assert.ok(!('unsupported_field' in body));
+    }, 'https://example.com/swapped.png'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('dynamic Atlas reference video models map images to schema-defined subjects', async () => {
+  const model = 'vidu/q2/reference-to-video';
+  const result = await atlas.generateVideo(provider, {
+    model,
+    prompt: 'Two people walk through the scene.',
+    images: ['https://example.com/a.png', 'https://example.com/b.png'],
+  }, {
+    modelType: 'Video',
+    modelSchema: {
+      type: 'object',
+      required: ['model', 'prompt', 'subjects'],
+      properties: {
+        model: { type: 'string' },
+        prompt: { type: 'string' },
+        subjects: {
+          type: 'array',
+          items: { type: 'object' },
+        },
+      },
+    },
+    fetchImpl: generationFetch((_url, body) => {
+      assert.deepEqual(body.subjects, [
+        { id: 'subject1', images: ['https://example.com/a.png'] },
+        { id: 'subject2', images: ['https://example.com/b.png'] },
+      ]);
+      assert.match(body.prompt, /@subject1/);
+      assert.match(body.prompt, /@subject2/);
+    }, 'https://example.com/vidu-reference.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('dynamic Atlas models stop before submission when an official required field is missing', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'kwaivgi/kling-effects',
+    images: ['https://example.com/source.png'],
+  }, {
+    modelType: 'Video',
+    modelSchema: {
+      type: 'object',
+      required: ['model', 'effect_scene', 'image'],
+      properties: {
+        model: { type: 'string' },
+        effect_scene: { type: 'string', enum: ['firework_2026', 'snowglobe'] },
+        image: { type: 'string' },
+      },
+    },
+    fetchImpl: async () => { throw new Error('must not submit'); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_model_parameters');
+  assert.match(result.error, /effect_scene/);
+  assert.match(result.error, /模型专用参数 JSON/);
+});
+
+test('dynamic Atlas schemas reject a model used in the wrong node type', async () => {
+  const result = await atlas.generateImage(provider, {
+    model: 'example/video-model',
+    prompt: 'test',
+  }, {
+    modelType: 'Video',
+    modelSchema: {
+      type: 'object',
+      required: ['model', 'prompt'],
+      properties: { model: { type: 'string' }, prompt: { type: 'string' } },
+    },
+    fetchImpl: async () => { throw new Error('must not submit'); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_model_parameters');
+  assert.match(result.error, /不能在图像节点中调用/);
+});
+
+
+test('dynamic Atlas oneOf schemas select video continuation without conflicting image or audio fields', async () => {
+  const model = 'alibaba/wan-2.7/image-to-video';
+  const result = await atlas.generateVideo(provider, {
+    model,
+    prompt: 'continue the source clip',
+    images: ['https://example.com/reference.png'],
+    videos: ['https://example.com/source.mp4'],
+    audios: ['https://example.com/voice.mp3'],
+  }, {
+    modelType: 'Video',
+    modelSchema: {
+      type: 'object',
+      required: ['model'],
+      properties: {
+        model: { type: 'string' },
+        prompt: { type: 'string' },
+        image: { type: 'string' },
+        last_image: { type: 'string' },
+        video: { type: 'string' },
+        audio: { type: 'string' },
+      },
+      oneOf: [
+        { title: 'first-frame', required: ['image'], not: { anyOf: [{ required: ['last_image'] }, { required: ['video'] }, { required: ['audio'] }] } },
+        { title: 'first-frame-with-audio', required: ['image', 'audio'], not: { anyOf: [{ required: ['last_image'] }, { required: ['video'] }] } },
+        { title: 'first-and-last-frame', required: ['image', 'last_image'], not: { anyOf: [{ required: ['video'] }, { required: ['audio'] }] } },
+        { title: 'first-and-last-frame-with-audio', required: ['image', 'last_image', 'audio'], not: { required: ['video'] } },
+        { title: 'video-continuation', required: ['video'], not: { anyOf: [{ required: ['image'] }, { required: ['last_image'] }, { required: ['audio'] }] } },
+        { title: 'video-continuation-with-last-frame', required: ['video', 'last_image'], not: { anyOf: [{ required: ['image'] }, { required: ['audio'] }] } },
+      ],
+    },
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.video, 'https://example.com/source.mp4');
+      assert.ok(!('image' in body));
+      assert.ok(!('last_image' in body));
+      assert.ok(!('audio' in body));
+    }, 'https://example.com/continued.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('dynamic Atlas oneOf schemas select the most specific image mode', async () => {
+  const model = 'alibaba/wan-2.7/image-to-video';
+  const result = await atlas.generateVideo(provider, {
+    model,
+    prompt: 'animate between the two frames with the supplied audio',
+    images: ['https://example.com/start.png', 'https://example.com/end.png'],
+    audios: ['https://example.com/voice.mp3'],
+  }, {
+    modelType: 'Video',
+    modelSchema: {
+      type: 'object',
+      required: ['model'],
+      properties: {
+        model: { type: 'string' },
+        prompt: { type: 'string' },
+        image: { type: 'string' },
+        last_image: { type: 'string' },
+        video: { type: 'string' },
+        audio: { type: 'string' },
+      },
+      oneOf: [
+        { title: 'first-frame', required: ['image'], not: { anyOf: [{ required: ['last_image'] }, { required: ['video'] }, { required: ['audio'] }] } },
+        { title: 'first-frame-with-audio', required: ['image', 'audio'], not: { anyOf: [{ required: ['last_image'] }, { required: ['video'] }] } },
+        { title: 'first-and-last-frame', required: ['image', 'last_image'], not: { anyOf: [{ required: ['video'] }, { required: ['audio'] }] } },
+        { title: 'first-and-last-frame-with-audio', required: ['image', 'last_image', 'audio'], not: { required: ['video'] } },
+        { title: 'video-continuation', required: ['video'], not: { anyOf: [{ required: ['image'] }, { required: ['last_image'] }, { required: ['audio'] }] } },
+      ],
+    },
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.image, 'https://example.com/start.png');
+      assert.equal(body.last_image, 'https://example.com/end.png');
+      assert.equal(body.audio, 'https://example.com/voice.mp3');
+      assert.ok(!('video' in body));
+    }, 'https://example.com/animated.mp4'),
   });
   assert.equal(result.ok, true);
 });
