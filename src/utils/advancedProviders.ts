@@ -376,6 +376,18 @@ export function resolveAdvancedProviderSelection(
       };
     }
   }
+  const atlasProvider = available.find((provider) => provider.protocol === 'atlas') || available[0];
+  if (atlasProvider) {
+    const models = advancedProviderModelOptions(atlasProvider, kind);
+    const requested = String(current?.providerModel || '').trim();
+    return {
+      providerSource: atlasProvider.protocol,
+      providerId: atlasProvider.id,
+      providerModel: requested && models.includes(requested) ? requested : (models[0] || ''),
+      provider: atlasProvider,
+      available: true,
+    };
+  }
   return {
     providerSource: 'zhenzhen',
     providerId: '',

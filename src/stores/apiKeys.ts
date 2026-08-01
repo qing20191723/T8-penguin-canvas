@@ -53,7 +53,7 @@ function atlasCatalogKind(model: any): AtlasCatalogKind {
 
 async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> {
   const providers = (Array.isArray(settings.advancedProviders) ? settings.advancedProviders : [])
-    .filter((provider) => provider?.protocol !== 'jimeng-cli');
+    .filter((provider) => provider?.protocol === 'atlas');
   const atlasIndex = providers.findIndex((provider) => provider?.protocol === 'atlas');
   if (atlasIndex < 0) return { ...settings, advancedProviders: providers };
 

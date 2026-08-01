@@ -1,2 +1,0 @@
-finalize public Atlas-only provider UI
-registered workflow trigger
