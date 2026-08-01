@@ -256,7 +256,7 @@ function creatorSuggestionReceipt(
 }
 
 
-const CODEX_CONNECT_PROMPT = '请安装或更新贞贞无限画布 Skill，安全连接当前画布，然后根据我下一句话直接开始规划；先给可编辑方案，不自动生成。';
+const CODEX_CONNECT_PROMPT = '请安装或更新清尘无限画布 Skill，安全连接当前画布，然后根据我下一句话直接开始规划；先给可编辑方案，不自动生成。';
 
 const CODEX_SCOPE_LABELS: Partial<Record<T8AgentControlScope, string>> = {
   'canvas:read': '查看画布',
@@ -3074,17 +3074,17 @@ export default function CreatorAgentPanel(props: CreatorAgentPanelProps) {
         } else if (event.type === 'assistant.response.completed') {
           setScreenReaderAnnouncement({
             eventId: event.eventId,
-            text: '贞贞创作 Agent 回复完成。下面有 3 个可直接继续的建议。',
+            text: '清尘创作 Agent 回复完成。下面有 3 个可直接继续的建议。',
           });
         } else if (event.type === 'assistant.response.stopped') {
           setScreenReaderAnnouncement({
             eventId: event.eventId,
-            text: '贞贞创作 Agent 回复已停止。画布里的生成任务没有被取消。',
+            text: '清尘创作 Agent 回复已停止。画布里的生成任务没有被取消。',
           });
         } else if (event.type === 'assistant.response.failed') {
           setScreenReaderAnnouncement({
             eventId: event.eventId,
-            text: '贞贞创作 Agent 回复中断。你的要求已经保留，可以直接重试。',
+            text: '清尘创作 Agent 回复中断。你的要求已经保留，可以直接重试。',
           });
         }
         cursor = Math.max(cursor, Number(event.sequence) || cursor);
@@ -4652,7 +4652,7 @@ export default function CreatorAgentPanel(props: CreatorAgentPanelProps) {
         data-motion-active={!open && launcherPageVisible && launcherEffectsEnabled ? 'true' : 'false'}
         data-effects-enabled={launcherEffectsEnabled ? 'true' : 'false'}
         style={launcherStyle}
-        aria-label={`${open ? '关闭' : '打开'}贞贞创作 Agent；当前状态：${launcherStatusLabel}；装饰特效${launcherEffectsEnabled ? '已开启' : '已关闭'}`}
+        aria-label={`${open ? '关闭' : '打开'}清尘创作 Agent；当前状态：${launcherStatusLabel}；装饰特效${launcherEffectsEnabled ? '已开启' : '已关闭'}`}
         title={`AI 创作助手 · ${launcherStatusLabel}`}
         aria-controls="t8-creator-agent-panel"
         aria-expanded={open}
@@ -4676,7 +4676,7 @@ export default function CreatorAgentPanel(props: CreatorAgentPanelProps) {
           title={launcherStatusLabel}
           aria-hidden="true"
         />
-        <span className="sr-only">贞贞创作 Agent，{launcherStatusLabel}</span>
+        <span className="sr-only">清尘创作 Agent，{launcherStatusLabel}</span>
       </button>
   );
 
@@ -4694,7 +4694,7 @@ export default function CreatorAgentPanel(props: CreatorAgentPanelProps) {
           data-theme-mode={props.themeMode}
           data-effects-enabled={launcherEffectsEnabled ? 'true' : 'false'}
           style={panelStyle}
-          aria-label="贞贞创作 Agent"
+          aria-label="清尘创作 Agent"
           aria-labelledby="t8-creator-agent-title"
           onDragOver={(event) => event.preventDefault()}
           onDrop={onDrop}
@@ -4715,7 +4715,7 @@ export default function CreatorAgentPanel(props: CreatorAgentPanelProps) {
             <div className="t8-creator-agent-brand">
               <span><Bot size={18} /></span>
               <div>
-                <strong id="t8-creator-agent-title">贞贞创作 Agent</strong>
+                <strong id="t8-creator-agent-title">清尘创作 Agent</strong>
                 <small>{capabilityReady ? '一句话开工' : '正在准备创作能力'}</small>
               </div>
             </div>

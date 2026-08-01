@@ -215,7 +215,7 @@ function referenceBreakdownProductionSource(plan = null) {
 
 function creatorDeliveryPackageName(value, canvasTitle = '') {
   const fallbackDate = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
-  const fallback = `${String(canvasTitle || '贞贞作品').trim() || '贞贞作品'}-${fallbackDate}`;
+  const fallback = `${String(canvasTitle || '清尘作品').trim() || '清尘作品'}-${fallbackDate}`;
   const normalized = String(value || fallback)
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
     .replace(/[. ]+$/g, '')
@@ -248,7 +248,7 @@ function createDeliveryIntentPlan(session, document, prompt = '') {
     profileLabel: '已验证素材',
     brief: {
       goal: String(prompt || '把当前作品整理成可核验交付包').slice(0, 2_000),
-      title: session.context?.canvasTitle || session.title || '贞贞作品',
+      title: session.context?.canvasTitle || session.title || '清尘作品',
       summary: '等待选择本机交付位置',
     },
     questions: [{
@@ -1790,7 +1790,7 @@ function createCreatorAgentRouter(options = {}) {
         operationId: `creator-delivery-${draft.snapshot.collection.selectionDigest.slice(0, 24)}`,
         sessionId: scope.sessionId,
         actorId: scope.actorId,
-        clientName: '贞贞创作 Agent',
+        clientName: '清尘创作 Agent',
         projectId: scope.projectId,
         canvasId: scope.canvasId,
         payload: draft.snapshot,

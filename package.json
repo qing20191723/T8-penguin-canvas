@@ -6,13 +6,13 @@
   "description": "Atlas Canvas — AI 无限画布工作流（基于 Atlas Cloud 100+ 模型）",
   "author": "qing20191723",
   "license": "MIT",
-  "homepage": "https://github.com/T8mars/T8-penguin-canvas",
+  "homepage": "https://github.com/qing20191723/T8-penguin-canvas",
   "repository": {
     "type": "git",
-    "url": "https://github.com/T8mars/T8-penguin-canvas.git"
+    "url": "https://github.com/qing20191723/T8-penguin-canvas.git"
   },
   "bugs": {
-    "url": "https://github.com/T8mars/T8-penguin-canvas/issues"
+    "url": "https://github.com/qing20191723/T8-penguin-canvas/issues"
   },
   "keywords": [
     "ai",
@@ -117,8 +117,8 @@
     "vite": "^6.0.0"
   },
   "build": {
-    "appId": "cn.t8star.penguin-canvas",
-    "productName": "T8-PenguinCanvas",
+    "appId": "com.qingchen.atlascanvas",
+    "productName": "Qingchen-AtlasCanvas",
     "directories": {
       "output": "dist_electron",
       "buildResources": "electron/build-resources"
@@ -303,7 +303,7 @@
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
-      "shortcutName": "贞贞的无限画布",
+      "shortcutName": "清尘无限画布",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true
     }

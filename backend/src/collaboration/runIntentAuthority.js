@@ -429,7 +429,7 @@ function providerDeclarationForNode(node, context = {}) {
       if (!SEEDANCE_NZ_LLM_MODEL_SET.has(model)) {
         throw authorityError(
           'intent_execution_model_unresolved',
-          '贞贞的平价AI小屋模型不在已验证模型列表中',
+          'Atlas Cloud模型不在已验证模型列表中',
           [node.id],
         );
       }

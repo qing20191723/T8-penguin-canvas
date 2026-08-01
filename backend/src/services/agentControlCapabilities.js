@@ -67,20 +67,20 @@ function classifiedCredentialField(value) {
 function runtimeCredentialContract(entry) {
   const provider = String(entry?.provider || '');
   if (provider === 'seedance-nz') {
-    return { fields: ['zhenzhenSd2ApiKey'], label: '贞贞的平价AI小屋 API Key' };
+    return { fields: ['zhenzhenSd2ApiKey'], label: 'Atlas Cloud API Key' };
   }
   if (provider === 'fal') {
-    return { fields: ['zhenzhenApiKey'], label: '贞贞AI工坊 API Key' };
+    return { fields: ['zhenzhenApiKey'], label: '清尘AI工坊 API Key' };
   }
   if (provider === 'zhenzhen') {
     if (entry?.kind === 'llm') {
-      return { fields: ['llmApiKey'], label: '贞贞AI工坊独立 LLM Key' };
+      return { fields: ['llmApiKey'], label: '清尘AI工坊独立 LLM Key' };
     }
     const hint = [entry?.id, entry?.model, entry?.action, entry?.family].filter(Boolean).join(' ');
     const classified = classifiedCredentialField(hint);
     return {
       fields: classified ? [classified, 'zhenzhenApiKey'] : ['zhenzhenApiKey'],
-      label: classified ? '对应分类 Key 或贞贞AI工坊默认 Key' : '贞贞AI工坊 API Key',
+      label: classified ? '对应分类 Key 或清尘AI工坊默认 Key' : '清尘AI工坊 API Key',
     };
   }
   if (provider === 'grok-oauth') {

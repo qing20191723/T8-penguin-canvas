@@ -206,7 +206,7 @@ export default function AgentControlPairingModal() {
           </div>
           <div className="min-w-0 flex-1">
             <h2 id="agent-control-pairing-title" className="text-base font-semibold">
-              Agent 请求连接贞贞无限画布
+              Agent 请求连接清尘无限画布
             </h2>
             <p
               id="agent-control-pairing-description"

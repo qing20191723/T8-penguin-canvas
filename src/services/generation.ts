@@ -338,14 +338,14 @@ export async function submitSeedreamNz(
     headers: providerSubmissionHeaders(transport),
     body: JSON.stringify(req),
   });
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋图像任务提交');
+  const data = await safeJsonResponse(r, 'Atlas Cloud图像任务提交');
   if (!r.ok || !data.success) throw providerResponseError(r, data);
   return withProviderTransportTrace(data.data, r);
 }
 
 export async function querySeedreamNz(taskId: string): Promise<ImageQueryResult> {
   const r = await fetch(`/api/proxy/image/seedance-nz/status/${encodeURIComponent(taskId)}`);
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋图像任务查询');
+  const data = await safeJsonResponse(r, 'Atlas Cloud图像任务查询');
   if (!r.ok) throw providerResponseError(r, data);
   return withProviderTransportTrace(
     data.data || { status: data.success ? 'pending' : 'failed', progress: '0%', error: data?.error },
@@ -447,14 +447,14 @@ export async function submitMidjourneyNz(
     headers: providerSubmissionHeaders(transport),
     body: JSON.stringify(req),
   });
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋 Midjourney 任务提交');
+  const data = await safeJsonResponse(r, 'Atlas Cloud Midjourney 任务提交');
   if (!r.ok || !data.success) throw providerResponseError(r, data);
   return withProviderTransportTrace(data.data || {}, r) as MidjourneyNzTaskResult;
 }
 
 export async function queryMidjourneyNz(taskId: string): Promise<MidjourneyNzTaskResult> {
   const r = await fetch(`/api/proxy/image/seedance-nz/midjourney/status/${encodeURIComponent(taskId)}`);
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋 Midjourney 任务查询');
+  const data = await safeJsonResponse(r, 'Atlas Cloud Midjourney 任务查询');
   if (!r.ok) throw providerResponseError(r, data);
   return withProviderTransportTrace(
     data.data || { status: data.success ? 'pending' : 'failed', error: data?.error },
@@ -477,7 +477,7 @@ export interface FalSubmitRequest {
   n?: number;
   /** 输出格式 png / jpeg / webp */
   format?: 'png' | 'jpeg' | 'webp';
-  /** 同步模式(true 会在提交请求中附加 sync_mode:true,贞贞上游如果接受会同步返 images) */
+  /** 同步模式(true 会在提交请求中附加 sync_mode:true,清尘上游如果接受会同步返 images) */
   sync?: boolean;
 
   // === gpt-fal 专属 ===
@@ -502,7 +502,7 @@ export interface FalSubmitRequest {
   seed?: number;
   system_prompt?: string;
   enable_web_search?: boolean;
-  /** 'image_url'(上传贞贞取 URL) | 'base64' 默认 'image_url' */
+  /** 'image_url'(上传清尘取 URL) | 'base64' 默认 'image_url' */
   image_mode?: 'image_url' | 'base64';
   providerParams?: Record<string, any>;
 }
@@ -702,7 +702,7 @@ export interface LlmMessage {
 export interface GenerateLlmRequest {
   model: string;
   messages: LlmMessage[];
-  /** 内置 LLM 平台；缺省保持贞贞 AI 工坊独立 LLM Key。 */
+  /** 内置 LLM 平台；缺省保持清尘 AI 工坊独立 LLM Key。 */
   source?: 'zhenzhen' | 'seedance-nz';
   temperature?: number;
   max_tokens?: number;
@@ -1514,7 +1514,7 @@ export async function transcribeWhisper(
       response_format: req.responseFormat || 'json',
     }),
   });
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋 Whisper 转写');
+  const data = await safeJsonResponse(r, 'Atlas Cloud Whisper 转写');
   if (!r.ok || !data.success) throw providerResponseError(r, data);
   return withProviderTransportTrace(data.data, r) as WhisperTranscribeResult;
 }
@@ -1645,14 +1645,14 @@ export async function submitSunoNz(
     headers: providerSubmissionHeaders(transport),
     body: JSON.stringify(req),
   });
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋 Suno');
+  const data = await safeJsonResponse(r, 'Atlas Cloud Suno');
   if (!r.ok || !data.success) throw providerResponseError(r, data);
   return withProviderTransportTrace(data.data, r) as SunoNzTaskResult;
 }
 
 export async function querySunoNz(taskId: string): Promise<SunoNzTaskResult> {
   const r = await fetch(`/api/proxy/audio/suno-nz/status/${encodeURIComponent(taskId)}`);
-  const data = await safeJsonResponse(r, '贞贞的平价AI小屋 Suno');
+  const data = await safeJsonResponse(r, 'Atlas Cloud Suno');
   if (!r.ok || !data.success) throw providerResponseError(r, data);
   return withProviderTransportTrace(data.data, r) as SunoNzTaskResult;
 }

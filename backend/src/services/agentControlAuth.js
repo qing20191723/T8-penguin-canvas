@@ -244,7 +244,7 @@ function createAgentControlAuthService(options = {}) {
     cleanup();
     const normalized = String(accessToken || '').trim();
     if (!/^[A-Za-z0-9_-]{43,128}$/.test(normalized)) {
-      throw new AgentControlAuthError('PAIRING_REQUIRED', '请先在贞贞无限画布中批准 Agent 配对', 401);
+      throw new AgentControlAuthError('PAIRING_REQUIRED', '请先在清尘无限画布中批准 Agent 配对', 401);
     }
     const session = sessions.get(sha256(normalized));
     if (!session || session.revokedAt || session.expiresAt <= now()) {

@@ -1,7 +1,7 @@
 /**
  * 上游 API 代理路由
  * 1. 隐藏 API Key,前端只通过 /api/proxy/* 调用
- * 2. 自动注入对应的 Key(贞贞工坊 / LLM 独立)
+ * 2. 自动注入对应的 Key(Atlas Cloud / LLM 独立)
  * 3. 图像生成结果自动转存到 /output 并返回本地 URL
  */
 const express = require('express');
@@ -1410,7 +1410,7 @@ function applyClassifiedKey(settings, hint) {
 // 修复 v1.2.9.14 之前的两类 bug：
 //   ① 旧路由先校验 settings.zhenzhenApiKey 非空 → 再 applyClassifiedKey；
 //      若用户「只配置了分类专属 key 而通用 key 留空」，会被第一道检查误拦，
-//      报「未配置贞贞工坊 API Key」，但其实专属 key 已存在；
+//      报「未配置Atlas Cloud API Key」，但其实专属 key 已存在；
 //   ② 即使 zhenzhenApiKey 是错误值（如 '123'），按旧顺序通过校验后 applyClassifiedKey
 //      仍能用 sunoApiKey 覆盖，但用户错配了 audio/upload 这类「完全没调 applyClassifiedKey」
 //      的子路由 → Suno 上传步骤直接用 zhenzhenApiKey='123' 上传 → 上游返回令牌错误。
@@ -1436,21 +1436,21 @@ function ensureKey(settings, res, hint, label) {
   applyClassifiedKey(settings, hint || '');
   if (!settings.zhenzhenApiKey) {
     const tip = label
-      ? `未配置 ${label} 专属 API Key，且贞贞工坊通用 API Key 也为空（请在【设置】中至少填写其中一个）`
-      : '未配置贞贞工坊 API Key（请在【设置】中填写）';
+      ? `未配置 ${label} 专属 API Key，且Atlas Cloud通用 API Key 也为空（请在【设置】中至少填写其中一个）`
+      : '未配置Atlas Cloud API Key（请在【设置】中填写）';
     res.status(400).json({ success: false, error: tip });
     return false;
   }
   return true;
 }
 
-function ensureDefaultZhenzhenKey(settings, res, label = '贞贞工坊') {
+function ensureDefaultZhenzhenKey(settings, res, label = 'Atlas Cloud') {
   if (!settings) {
     res.status(400).json({ success: false, error: '未找到 settings 文件，请先在【设置】中配置 API Key' });
     return false;
   }
   if (!settings.zhenzhenApiKey) {
-    res.status(400).json({ success: false, error: `${label} 使用通用贞贞 API Key，请先在【设置】中填写贞贞工坊通用 API Key` });
+    res.status(400).json({ success: false, error: `${label} 使用通用清尘 API Key，请先在【设置】中填写Atlas Cloud通用 API Key` });
     return false;
   }
   return true;
@@ -1678,8 +1678,8 @@ function ensureKeyOrSelectedGroup(settings, res, hint = '', label = '', provider
   applyClassifiedKey(settings, hint || '');
   if (settings.zhenzhenApiKey || hasSelectedProviderGroup(providerParams)) return true;
   const tip = label
-    ? `未配置 ${label} 专属 API Key，且贞贞工坊通用 API Key 也为空（如已绑定 New API 分组令牌，请在节点上选择分组）`
-    : '未配置贞贞工坊 API Key（请在【设置】中填写，或绑定 New API 后在节点选择分组）';
+    ? `未配置 ${label} 专属 API Key，且Atlas Cloud通用 API Key 也为空（如已绑定 New API 分组令牌，请在节点上选择分组）`
+    : '未配置Atlas Cloud API Key（请在【设置】中填写，或绑定 New API 后在节点选择分组）';
   res.status(400).json({ success: false, error: tip });
   return false;
 }
@@ -1706,7 +1706,7 @@ async function applyZhenzhenProviderContext(settings, options = {}) {
     settings.zhenzhenApiKey = result.apiKey;
   }
   if (selectedGroup && !settings.zhenzhenApiKey) {
-    throw new Error('已选择分组令牌，但当前未找到可用 API Key；请在 API Key 设置里启用并绑定 New API 分组令牌，或改用通用贞贞 API Key');
+    throw new Error('已选择分组令牌，但当前未找到可用 API Key；请在 API Key 设置里启用并绑定 New API 分组令牌，或改用通用清尘 API Key');
   }
   const taskMeta = {
     ...(result?.taskMeta && typeof result.taskMeta === 'object' ? result.taskMeta : {}),
@@ -2771,7 +2771,7 @@ function sunoNzCompletedOutputFailure(result, materialized) {
 }
 
 // LLM 多模态 image_url 预处理:
-//   上游 LLM 服务(贞贞工坊)无法访问本地 /files/* 路径,需提前转成 base64 dataURL inline。
+//   上游 LLM 服务(Atlas Cloud)无法访问本地 /files/* 路径,需提前转成 base64 dataURL inline。
 //   - data: 保留
 //   - http(s):// 保留(上游可访问)
 //   - /files/* → 本地拉 buffer 转 base64 dataURL
@@ -3037,7 +3037,7 @@ router.post('/image/seedance-nz/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitImageTask(req.body || {}, apiKey);
@@ -3074,7 +3074,7 @@ router.get('/image/seedance-nz/status/:tid', async (req, res) => {
   const remembered = recallTaskMeta(req.params.tid, 'seedance-nz-image');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+    return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   }
   try {
     const result = await seedanceNz.queryImageTask(req.params.tid, apiKey);
@@ -3203,13 +3203,13 @@ async function materializeSeedanceNzMidjourneyResult(result, taskId, resultFamil
   };
 }
 
-// 贞贞的平价AI小屋 Midjourney v1 动作协议。该路由与上方原贞贞AI工坊
+// Atlas Cloud Midjourney v1 动作协议。该路由与上方原清尘AI工坊
 // /mj/* 三路由完全隔离，避免 API Key、动作参数和轮询协议互相串线。
 router.post('/image/seedance-nz/midjourney/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitMidjourneyAction(req.body || {}, apiKey);
@@ -3302,7 +3302,7 @@ router.get('/image/seedance-nz/midjourney/status/:tid', async (req, res) => {
   const remembered = recallTaskMeta(req.params.tid, 'seedance-nz-midjourney');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+    return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   }
   try {
     const result = await seedanceNz.queryMidjourneyTask(req.params.tid, apiKey);
@@ -3393,7 +3393,7 @@ router.post('/video/happyhorse/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitHappyHorseTask(req.body || {}, apiKey);
@@ -3426,7 +3426,7 @@ router.get('/video/happyhorse/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'happyhorse-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -3473,7 +3473,7 @@ router.post('/video/hailuo/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitHailuoTask(req.body || {}, apiKey);
@@ -3506,7 +3506,7 @@ router.get('/video/hailuo/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'hailuo-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -3553,7 +3553,7 @@ router.post('/video/kling/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitKlingTask(req.body || {}, apiKey);
@@ -3586,7 +3586,7 @@ router.get('/video/kling/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'kling-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -3633,7 +3633,7 @@ router.post('/video/upscaler/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitUpscalerTask(req.body || {}, apiKey);
@@ -3666,7 +3666,7 @@ router.get('/video/upscaler/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'upscaler-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -3713,7 +3713,7 @@ router.post('/video/vidu/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitViduTask(req.body || {}, apiKey);
@@ -3746,7 +3746,7 @@ router.get('/video/vidu/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'vidu-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -3793,7 +3793,7 @@ router.post('/video/wan/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitWanTask(req.body || {}, apiKey);
@@ -3826,7 +3826,7 @@ router.get('/video/wan/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'wan-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -3899,7 +3899,7 @@ router.post('/audio/suno-nz/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitSunoMusicTask(req.body || {}, apiKey);
@@ -3938,7 +3938,7 @@ router.get('/audio/suno-nz/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'suno-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.querySunoMusicTask(req.params.tid, apiKey, {
       resultFamily: remembered?.resultFamily,
@@ -3976,7 +3976,7 @@ router.post('/audio/seed-audio/submit', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.submitAudioTask(req.body || {}, apiKey);
@@ -4000,7 +4000,7 @@ router.get('/audio/seed-audio/status/:tid', async (req, res) => {
   const settings = loadRawSettings();
   const remembered = recallTaskMeta(req.params.tid, 'seed-audio-nz');
   const apiKey = String(remembered?.apiKey || settings?.zhenzhenSd2ApiKey || '').trim();
-  if (!apiKey) return res.status(400).json({ success: false, error: '缺少贞贞的平价AI小屋 API Key' });
+  if (!apiKey) return res.status(400).json({ success: false, error: '缺少Atlas Cloud API Key' });
   try {
     const result = await seedanceNz.queryAudioTask(req.params.tid, apiKey);
     const materialized = await materializeRemoteTaskOutput({
@@ -4045,7 +4045,7 @@ router.post('/audio/whisper/transcribe', async (req, res) => {
   const settings = loadRawSettings();
   const apiKey = String(settings?.zhenzhenSd2ApiKey || '').trim();
   if (!apiKey) {
-    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“贞贞的平价AI小屋 API Key”' });
+    return res.status(400).json({ success: false, error: '请先在 API 设置中填写“Atlas Cloud API Key”' });
   }
   try {
     const result = await seedanceNz.transcribeAudio(req.body || {}, apiKey);
@@ -4482,7 +4482,7 @@ router.post('/image/fal/submit', async (req, res) => {
     aspect_ratio, resolution, safety_tolerance, seed,
     system_prompt, enable_web_search, image_mode,
   } = req.body || {};
-  // FAL 全部固定使用通用贞贞 API Key，不参与 New API 分组令牌。
+  // FAL 全部固定使用通用清尘 API Key，不参与 New API 分组令牌。
   if (!ensureDefaultZhenzhenKey(settings, res, '图像 FAL')) return;
   let apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
@@ -4705,7 +4705,7 @@ router.post('/image/fal/query', async (req, res) => {
 //   上游：{ZHENZHEN_BASE_URL}/{mj-turbo|mj-fast|mj-relax}/mj/submit/imagine
 //          {ZHENZHEN_BASE_URL}/{...}/mj/task/{id}/fetch
 //          {ZHENZHEN_BASE_URL}/{...}/mj/submit/upload-discord-images
-//   服从贞贞工坊集中 Key（同上其他 zhenzhen 路由）。
+//   服从Atlas Cloud集中 Key（同上其他 zhenzhen 路由）。
 // ============================================================================
 const MJ_SPEED_MAP = { turbo: 'mj-turbo', fast: 'mj-fast', relax: 'mj-relax' };
 function mjSpeedSeg(speed) {
@@ -4919,16 +4919,16 @@ function resolveBuiltInLlmProvider(settings, requestedSource, model) {
       source,
       apiKey: String(settings?.zhenzhenSd2ApiKey || ''),
       baseUrl: config.ZHENZHEN_SD2_BASE_URL,
-      label: '贞贞的平价AI小屋',
+      label: 'Atlas Cloud',
       modelAllowed: SEEDANCE_NZ_LLM_MODEL_SET.has(normalizedModel),
-      missingKeyError: '未配置贞贞的平价AI小屋 API Key',
+      missingKeyError: '未配置Atlas Cloud API Key',
     };
   }
   return {
     source,
     apiKey: String(settings?.llmApiKey || ''),
     baseUrl: config.ZHENZHEN_BASE_URL,
-    label: '贞贞的AI工坊-独立LLM Key',
+    label: 'Atlas Cloud-独立LLM Key',
     modelAllowed: true,
     missingKeyError: '未配置 LLM 独立 API Key',
   };
@@ -5108,7 +5108,7 @@ router.post('/llm', async (req, res) => {
   if (!provider.modelAllowed) {
     return res.status(400).json({
       success: false,
-      error: `贞贞的平价AI小屋不支持模型 ${String(model).slice(0, 240)}，请从平台模型列表重新选择。`,
+      error: `Atlas Cloud不支持模型 ${String(model).slice(0, 240)}，请从平台模型列表重新选择。`,
     });
   }
   const inputHadVideos = hasLlmVideoParts(messages);
@@ -5235,7 +5235,7 @@ router.post('/llm', async (req, res) => {
 
 // ========================================================================
 // 视频生成(异步) — 完全对齐 gpt-image-2-web
-// 协议(贞贞工坊): POST /v2/videos/generations + GET /v2/videos/generations/:tid
+// 协议(Atlas Cloud): POST /v2/videos/generations + GET /v2/videos/generations/:tid
 //
 // 通过 model 字段自动选择上游 payload 协议:
 //   - veo-omni-10s  → Veo Omni 协议: POST /v1/videos multipart
@@ -5582,7 +5582,7 @@ router.post('/video/fal/submit', async (req, res) => {
   const rawApiModel = String(apiModel || '').trim();
   // 历史节点里可能保存过日期版 Sora2 选项；T8 现在只暴露稳定的 sora-2 FAL。
   const effectiveApiModel = /^sora-2(?:-\d{4}-\d{2}-\d{2})?$/.test(rawApiModel) ? 'sora-2' : rawApiModel;
-  // FAL 全部固定使用通用贞贞 API Key，不参与 New API 分组令牌。
+  // FAL 全部固定使用通用清尘 API Key，不参与 New API 分组令牌。
   if (!ensureDefaultZhenzhenKey(settings, res, '视频 FAL')) return;
   let apiKey = settings.zhenzhenApiKey;
   const baseUrl = config.ZHENZHEN_BASE_URL;
@@ -7046,7 +7046,7 @@ router.get('/seedance/query', async (req, res) => {
 
 // ========================================================================
 // 音频生成(Suno - 异步)
-// 协议(贞贞工坊):POST /suno/generate + GET /suno/feed/:clipIds + POST /suno/submit/music
+// 协议(Atlas Cloud):POST /suno/generate + GET /suno/feed/:clipIds + POST /suno/submit/music
 // 模式:generate / cover / extend
 // 严格对齐主项目 gpt-image-2-web 的 SUNO_MV_MAP (7 个版本)
 // ========================================================================

@@ -112,7 +112,7 @@ async function selectInstance(instanceId = '', options = {}) {
     return assertCompatibleInstance(selected, options);
   }
   if (!instances.length) {
-    throw new AgentClientError('APP_NOT_RUNNING', '没有发现可连接的贞贞无限画布实例', 0, { instances });
+    throw new AgentClientError('APP_NOT_RUNNING', '没有发现可连接的清尘无限画布实例', 0, { instances });
   }
   if (instances.length > 1) {
     throw new AgentClientError(

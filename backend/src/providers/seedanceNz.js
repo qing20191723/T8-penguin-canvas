@@ -1832,7 +1832,7 @@ function normalizeMidjourneyStatus(value) {
 }
 
 async function submitMidjourneyAction(request, apiKey, options = {}) {
-  if (!midjourneyText(apiKey)) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!midjourneyText(apiKey)) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const built = await buildMidjourneyPayload(request, apiKey, options);
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
@@ -1862,7 +1862,7 @@ async function submitMidjourneyAction(request, apiKey, options = {}) {
 }
 
 async function queryMidjourneyTask(taskId, apiKey, options = {}) {
-  if (!midjourneyText(apiKey)) throw new Error('缺少贞贞的平价AI小屋 API Key');
+  if (!midjourneyText(apiKey)) throw new Error('缺少Atlas Cloud API Key');
   const safeTaskId = requiredTaskId(taskId, 'seedance.nz Midjourney 任务查询');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
@@ -2731,7 +2731,7 @@ async function buildHappyHorsePayload(request, apiKey, options = {}) {
 }
 
 async function submitHappyHorseTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildHappyHorsePayload(request, apiKey, options);
@@ -2750,7 +2750,7 @@ async function submitHappyHorseTask(request, apiKey, options = {}) {
 }
 
 async function submitHailuoTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildHailuoPayload(request, apiKey, options);
@@ -2769,7 +2769,7 @@ async function submitHailuoTask(request, apiKey, options = {}) {
 }
 
 async function submitKlingTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildKlingPayload(request, apiKey, options);
@@ -2788,7 +2788,7 @@ async function submitKlingTask(request, apiKey, options = {}) {
 }
 
 async function submitUpscalerTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildUpscalerPayload(request, apiKey, options);
@@ -2807,7 +2807,7 @@ async function submitUpscalerTask(request, apiKey, options = {}) {
 }
 
 async function submitViduTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildViduPayload(request, apiKey, options);
@@ -2826,7 +2826,7 @@ async function submitViduTask(request, apiKey, options = {}) {
 }
 
 async function submitWanTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildWanPayload(request, apiKey, options);
@@ -3048,7 +3048,7 @@ function normalizeSunoMusicResponse(data, options = {}) {
 }
 
 async function submitSunoMusicTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildSunoMusicPayload(request, apiKey, options);
@@ -3072,7 +3072,7 @@ async function submitSunoMusicTask(request, apiKey, options = {}) {
 }
 
 async function querySunoMusicTask(taskId, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('缺少贞贞的平价AI小屋 API Key');
+  if (!String(apiKey || '').trim()) throw new Error('缺少Atlas Cloud API Key');
   const safeTaskId = requiredTaskId(taskId, 'seedance.nz Suno 任务查询');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
@@ -3133,7 +3133,7 @@ async function buildAudioPayload(request, apiKey, options = {}) {
 }
 
 async function submitAudioTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildAudioPayload(request, apiKey, options);
@@ -3152,7 +3152,7 @@ async function submitAudioTask(request, apiKey, options = {}) {
 }
 
 async function queryAudioTask(taskId, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('缺少贞贞的平价AI小屋 API Key');
+  if (!String(apiKey || '').trim()) throw new Error('缺少Atlas Cloud API Key');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const response = await fetchProviderResponse(fetchImpl, `${baseUrl}/v1/audio/generations/${encodeURIComponent(taskId)}`, {
@@ -3230,7 +3230,7 @@ function normalizeWhisperSegments(payload) {
 }
 
 async function transcribeAudio(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const source = String(request.audioUrl || request.audio || request.source || '').trim();
   if (!source) throw new Error('Whisper 必须连接或上传 1 个音频/视频素材');
   const model = String(request.model || WHISPER_MODEL).trim().toLowerCase();
@@ -3281,7 +3281,7 @@ async function transcribeAudio(request, apiKey, options = {}) {
 }
 
 async function submitImageTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildImagePayload(request, apiKey, options);
@@ -3344,7 +3344,7 @@ function imageTaskResultUrls(record, nested) {
 }
 
 async function queryImageTask(taskId, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('缺少贞贞的平价AI小屋 API Key');
+  if (!String(apiKey || '').trim()) throw new Error('缺少Atlas Cloud API Key');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const response = await fetchProviderResponse(fetchImpl, `${baseUrl}/v1/image/generations/${encodeURIComponent(taskId)}`, {
@@ -3367,7 +3367,7 @@ async function queryImageTask(taskId, apiKey, options = {}) {
 }
 
 async function submitTask(request, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+  if (!String(apiKey || '').trim()) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const built = await buildPayload(request, apiKey, options);
@@ -3394,7 +3394,7 @@ function normalizeStatus(value) {
 }
 
 async function queryTask(taskId, apiKey, options = {}) {
-  if (!String(apiKey || '').trim()) throw new Error('缺少贞贞的平价AI小屋 API Key');
+  if (!String(apiKey || '').trim()) throw new Error('缺少Atlas Cloud API Key');
   const fetchImpl = getFetchImpl(options);
   const baseUrl = cleanBaseUrl(options.baseUrl);
   const response = await fetchProviderResponse(fetchImpl, `${baseUrl}/v1/videos/${encodeURIComponent(taskId)}`, {

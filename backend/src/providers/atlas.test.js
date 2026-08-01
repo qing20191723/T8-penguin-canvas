@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const atlas = require('./atlas');
 
+// Regression coverage mirrors the public Atlas LLM, image, and video node routes.
 const provider = {
   id: 'atlas',
   protocol: 'atlas',
@@ -11,6 +12,7 @@ const provider = {
   videoModels: [
     'kwaivgi/kling-v3.0-std/text-to-video',
     'atlascloud/wan-2.7-spicy/image-to-video',
+    'atlascloud/wan-2.7-spicy/reference-to-video',
     'alibaba/wan-2.7/reference-to-video',
     'alibaba/wan-2.7/video-edit',
   ],
@@ -141,4 +143,48 @@ test('Atlas LLM uses the official OpenAI-compatible v1 chat endpoint', async () 
   assert.equal(requestedUrl, 'https://api.atlascloud.ai/v1/chat/completions');
   assert.equal(result.ok, true);
   assert.equal(result.text, 'pong');
+});
+
+test('Spicy reference-to-video binds every image with attached_subject syntax', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'atlascloud/wan-2.7-spicy/reference-to-video',
+    prompt: 'The subjects walk forward together.',
+    images: [
+      'https://example.com/subject-1.png',
+      'https://example.com/subject-2.png',
+      'https://example.com/subject-3.png',
+    ],
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.model, 'atlascloud/wan-2.7-spicy/reference-to-video');
+      assert.equal(body.images.length, 3);
+      for (let index = 1; index <= 3; index += 1) {
+        assert.match(body.prompt, new RegExp(`attached_subject@image${index}`));
+      }
+      assert.equal(body.prompt_extend, false);
+    }, 'https://example.com/spicy-reference.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Alibaba Wan reference-to-video adds ordered character labels', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'alibaba/wan-2.7/reference-to-video',
+    prompt: 'They interact naturally in one continuous shot.',
+    images: ['https://example.com/character-a.png', 'https://example.com/character-b.png'],
+    videos: ['https://example.com/character-c.mp4'],
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.deepEqual(body.images, [
+        'https://example.com/character-a.png',
+        'https://example.com/character-b.png',
+      ]);
+      assert.deepEqual(body.videos, ['https://example.com/character-c.mp4']);
+      assert.match(body.prompt, /character1/i);
+      assert.match(body.prompt, /character2/i);
+      assert.match(body.prompt, /character3/i);
+      assert.equal(body.prompt_extend, false);
+    }, 'https://example.com/alibaba-reference.mp4'),
+  });
+  assert.equal(result.ok, true);
 });

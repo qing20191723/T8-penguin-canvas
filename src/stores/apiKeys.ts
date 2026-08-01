@@ -4,7 +4,7 @@ import * as api from '../services/api';
 
 // 主 Key 的固定 base URL
 export const FIXED_ZHENZHEN_BASE = 'https://ai.t8star.org';
-// 沿用历史字段名，实际承载贞贞平价 AI 小屋的 LLM / 视频 / 图片 / 音频接口。
+// 沿用历史字段名，实际承载清尘平价 AI 小屋的 LLM / 视频 / 图片 / 音频接口。
 export const FIXED_ZHENZHEN_SD2_BASE = 'https://api.seedance.nz';
 export const RH_BASE = 'https://www.runninghub.cn';
 export const RH_INTL_BASE = 'https://www.runninghub.ai';
@@ -17,6 +17,7 @@ const ATLAS_PREFERRED_IMAGE_MODELS = [
 const ATLAS_PREFERRED_VIDEO_MODELS = [
   'kwaivgi/kling-v3.0-std/text-to-video',
   'atlascloud/wan-2.7-spicy/image-to-video',
+  'atlascloud/wan-2.7-spicy/reference-to-video',
   'alibaba/wan-2.7/reference-to-video',
   'alibaba/wan-2.7/video-edit',
 ];

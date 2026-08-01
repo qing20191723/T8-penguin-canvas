@@ -3160,109 +3160,6 @@ function isRadialMenuPaneTarget(target: EventTarget | null): boolean {
   return !!el.closest('.react-flow__pane, .react-flow__background, .react-flow__renderer');
 }
 
-type ModelUsageHelpSection = {
-  title: string;
-  paragraphs?: readonly string[];
-  items?: readonly string[];
-};
-
-type ModelUsageHelpTabId = 'budget-house' | 'workshop';
-
-const ZHENZHEN_BUDGET_HOUSE_MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
-  {
-    title: '渠道与宽审核',
-    paragraphs: [
-      '与贞贞的AI工坊不同，模型以国内模型以及一些海外核心模型为主，使用完全不同的渠道，部分模型价格更优惠。',
-      '支持宽审核开通；请合规使用，需要宽审核版 Seedream 等模型可联系 T8 开通。除版权内容外，图像及视频均可正常生成。',
-    ],
-  },
-  {
-    title: '视频模型',
-    items: [
-      'Seedance 2.0 官方特价版：价格比字节签约价格还优惠一点，不排队、不卡人脸，并支持宽审核（版权除外）。720P 约 1 元/秒，480P Mini 不到 0.25 元/秒。',
-      'zhenzhen-video-gk-v15：480P 15 秒约 0.35 元，720P 15 秒约 0.63 元；模型能力类似 Grok Imagine 1.5。',
-      'zhenzhen-video-g-omni-flash：支持视频编辑；模型能力类似 Veo Omni。',
-    ],
-  },
-  {
-    title: '图像模型',
-    items: [
-      'zhenzhen-image-g-v2-lowprice：特价 1K 不到 0.04 元、2K 约 0.09 元、4K 约 0.12 元；模型能力类似 GPT Image 2。',
-      'zhenzhen-image-nb-2：1K / 2K 约 0.16 元，4K 约 0.24 元；模型能力类似 Nano Banana 2。',
-      'zhenzhen-image-nb-pro：1K 约 0.32 元，4K 约 0.41 元；模型能力类似 Nano Banana Pro。',
-      'midjourney-imagine：4 图约 0.39 元起，支持 V8.2。',
-      'dola-seedream-5.0-pro-i2i：敏感类目最佳模型，需要联系 T8 开通。',
-      'zhenzhen-image-gk-v15-edit：审核等级比 dola-seedream-5.0-pro-i2i 稍高、比其他模型低，作为第二推荐；模型能力类似 Grok Image 1.5 Edit。',
-    ],
-  },
-];
-
-const ZHENZHEN_WORKSHOP_MODEL_USAGE_HELP_SECTIONS: readonly ModelUsageHelpSection[] = [
-  {
-    title: '特别注意事项',
-    paragraphs: [
-      '如果不小心网页崩溃等，但是实际任务没失败，需要去网站异步任务看下，有个蓝色的TASKID，点进去可以看到下载地址，手动下载。另外fal模型会预扣3.4个币，生成结束后会多退少补。seedance2.0模型会预扣10个币，生成结束后多退少补',
-    ],
-  },
-  {
-    title: '图像模型注意事项（2K，4K只有FAL长期稳定，其他都不保证稳定）',
-    items: [
-      '2026.06.25谷歌香蕉模型从preview模型升级为正式版，模型名字需要修改，如之前是 gemini-3-pro-image-preview ，需要改为 gemini-3-pro-image，请求的模型名字之前带preview 的都去掉preview以下是新名字gemini-3-pro-image，gemini-3-pro-image-2k，gemini-3-pro-image-4k，gemini-3.1-flash-image，gemini-3.1-flash-image-512px，gemini-3.1-flash-image-2k，gemini-3.1-flash-image-4k，特殊的nano-banana-pro模型不需要修改',
-      'gpt-image-2模型，新增azure特价分组，固定0.3积分，支持2K,4K，目前稳定（2K,4K没法保证永久稳定，最稳定是FAL模型方法），支持质量参数传入！（2026.06.17）',
-      'gpt-image-2-all模型（default分组）只能出1K图，速度最快，最稳定，审核最松',
-      'gpt-image-2模型（default分组）可以出1K，2K，4K图，2K，4K不一定稳定，如果提示系统错误，降低分辨率重试，超过1K，需要选择分辨率， auto不支持1K以上',
-      'gpt-image-2-fal模型，兜底模型，支持2K，4K，价格较贵',
-      'gpt-image-2-2k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0.1积分,2026.06.10新增（default分组）',
-      'gpt-image-2-4k模型是备用模型，非gpt-image-2模型分支，直接支持2k，目前0.1积分,2026.06.10新增（default分组）',
-      'nano-banana-2和nano-banana-pro模型，需要用gemini优质分组，default分组不稳定（尤其4K）',
-      'nano-banana-2-fal和nano-banana-pro-fal模型，兜底模型，支持4K，价格较贵',
-      'grok-4.2-image模型（Default分组），审核最松，可以做各种姿势，支持多图编辑，保持一致性需要单独写保证脸部100%一致性不变',
-      'MJ系列模型（Default分组），不同模型的用法都不一样，参考官方，推荐用fast模式，relax模式封号比较严重',
-    ],
-  },
-  {
-    title: '视频模型注意事项',
-    items: [
-      '20250624更新，seedance2.0新增mini模型（720P是满血版的一半），支持原生4K，电影级质感（仅满血720P可选）',
-      'seedance2.0（Default分组）非远景推荐480P+FAST模式，质量吊打快乐马，价格只要5个币15秒，后续用flashvsr放大即可，720P满血15秒大概15币，不排队，支持真人',
-      'seedance2.0（sd-global分组）需要联系T8微信单独开通，只支持企业开通，由于除版权外基本无审核，防止有人搞色情，需要签协议才能开通，价格和上面一样',
-      'veo3.1模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是veo&grok备用分组2的veo3.1模型和默认分组的fal模型',
-      'veo-omni模型，需要使用default分组（veo-omnii模型是2026.06.06刚上架的）',
-      'grok-video模型，需要看下网站左侧分类教程，有多个分组可用，目前比较稳的是fal模型和默认分组，新增支持最新imagine 1.5模型（支持图生视频FAL模型），最佳SD平替（default分组），以及veo&grok备用分组2，支持15秒多参生视频，2026.06.11修复grok-video-3模型的defualt默认分组，直接升级成imagine 1.5模型，0.5积分10秒，2026.06.12新增grok-video-1.5-6s，grok-video-1.5-10s，grok-video-1.5-15s模型，默认720P，分组default，3个模型，分别是0.5，0.7，0.7积分，最佳SD2.0平替',
-      'sora-2模型，支持sora-vip分组以及default默认分组的FAL模型（sora-vip分组是2026.06.06刚修复的）',
-    ],
-  },
-  {
-    title: '音频模型注意事项',
-    paragraphs: [
-      'suno v5.5模型（Default分组）支持生成，翻唱，延长，一次生成两首歌，翻唱模式情况下，如果是版权歌曲大概率会失败，需要做各种前置处理，可以在网站异步任务查看。',
-    ],
-  },
-  {
-    title: 'LLM模型注意事项',
-    paragraphs: [
-      'LLM模型有时候因为官方问题会出现速度慢，失败等现象，这时候换个模型即可或者换一下分组即可，预置了多个模型。',
-    ],
-  },
-];
-
-const MODEL_USAGE_HELP_TABS: readonly {
-  id: ModelUsageHelpTabId;
-  label: string;
-  sections: readonly ModelUsageHelpSection[];
-}[] = [
-  {
-    id: 'budget-house',
-    label: '贞贞的平价AI小屋',
-    sections: ZHENZHEN_BUDGET_HOUSE_MODEL_USAGE_HELP_SECTIONS,
-  },
-  {
-    id: 'workshop',
-    label: '贞贞的AI工坊',
-    sections: ZHENZHEN_WORKSHOP_MODEL_USAGE_HELP_SECTIONS,
-  },
-];
-
 function getReactFlowHandleInfo(target: EventTarget | null): {
   nodeId: string;
   handleType: 'source' | 'target';
@@ -4145,8 +4042,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const connectionPanModeRef = useRef(false);
   const connectionPanPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [connectionPanModeActive, setConnectionPanModeActive] = useState(false);
-  const [modelHelpOpen, setModelHelpOpen] = useState(false);
-  const [modelHelpTab, setModelHelpTab] = useState<ModelUsageHelpTabId>('budget-house');
+  const [, setModelHelpOpen] = useState(false);
   const [radialSettingsOpen, setRadialSettingsOpen] = useState(false);
   const altDragCloneRef = useRef<{
     placeholderIds: Map<string, string>; // origId -> placeholderId
@@ -8239,7 +8135,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         text: item.text,
         name: item.name,
       })),
-      tags: ['T8', '贞贞画布'],
+      tags: ['清尘', '清尘画布'],
     });
     if (!result.success) {
       logBus.warn(result.error || '发送到 Eagle 失败，请确认 Eagle 已启动并开启本地 API', 'Eagle');
@@ -8261,7 +8157,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         text: item.text,
         name: item.name,
       })),
-      tags: ['T8', '贞贞画布'],
+      tags: ['清尘', '清尘画布'],
     });
     if (!result.success) {
       const message = result.error || '发送到 Figma 失败：画布会自动启动本机 bridge，请确认 Figma 插件窗口已打开';
@@ -8291,7 +8187,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         text: item.text,
         name: item.name,
       })),
-      tags: ['T8', '贞贞画布', 'Photoshop'],
+      tags: ['清尘', '清尘画布', 'Photoshop'],
       sourceCanvasId: activeId || undefined,
       sourceLabel: sendModal.sourceLabel || 'T8 画布',
     });
@@ -11235,19 +11131,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
   }, [getViewport, onConnect, resetConnectionPanMode, setConnectionPanMode, setViewport, shortcuts]);
 
-  useEffect(() => {
-    if (!modelHelpOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (!target?.closest('.t8-canvas-shell')) return;
-      if (target.closest('[data-canvas-floating-ui="model-help-panel"], [data-canvas-floating-ui="model-help-toggle"]')) {
-        return;
-      }
-      setModelHelpOpen(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown, true);
-    return () => window.removeEventListener('pointerdown', onPointerDown, true);
-  }, [modelHelpOpen]);
 
   // ===== 全局 SHIFT+Handle 批量移线拦截器 =====
   // 原因: ReactFlow 的 multiSelectionKeyCode 包含 'Shift'，导致按住 SHIFT 在 handle 上 mousedown
@@ -13131,239 +13014,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     );
   }
 
-  const floatingControlRail = (
-    <>
-      <div className="t8-control-rail nodrag nopan" data-canvas-floating-ui="control-rail">
-        <div className="t8-control-stack">
-          <div
-            className="t8-control-rail-creator-slot"
-            data-canvas-floating-ui="creator-agent-launcher-slot"
-          />
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-control-rail-doctor t8-mini-icon-button${workflowDoctorEnabled ? ' is-active' : ''}`}
-            data-canvas-floating-ui="workflow-doctor-toggle"
-            data-workflow-doctor-enabled={workflowDoctorEnabled ? 'true' : 'false'}
-            aria-label={workflowDoctorEnabled ? '关闭工作流医生' : '开启工作流医生'}
-            title={workflowDoctorEnabled
-              ? '工作流医生：已开启（点击关闭运行前诊断）'
-              : '工作流医生：已关闭（点击开启运行前诊断）'}
-            aria-pressed={workflowDoctorEnabled}
-            onClick={(event) => {
-              event.stopPropagation();
-              toggleWorkflowDoctor();
-            }}
-          >
-            <LucideIcons.Stethoscope size={16} />
-          </button>
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-mini-icon-button${modelHelpOpen ? ' is-active' : ''}`}
-            data-canvas-floating-ui="model-help-toggle"
-            aria-label="模型注意事项"
-            title="模型注意事项"
-            aria-expanded={modelHelpOpen}
-            onClick={(event) => {
-              event.stopPropagation();
-              setModelHelpOpen((value) => {
-                const next = !value;
-                if (next) {
-                  setRadialSettingsOpen(false);
-                  setCreativeDeskEditing(false);
-                  setFarmCanvasEditing(false);
-                }
-                return next;
-              });
-            }}
-          >
-            <LucideIcons.CircleHelp size={16} />
-          </button>
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-control-rail-placement-shelf t8-mini-icon-button${!placementShelfHidden ? ' is-active' : ''}`}
-            data-canvas-floating-ui="placement-shelf-toggle"
-            aria-label={placementShelfHidden ? '展开放置栏' : '折叠放置栏'}
-            title={placementShelfHidden ? '展开放置栏' : '折叠放置栏'}
-            aria-expanded={!placementShelfHidden}
-            aria-pressed={!placementShelfHidden}
-            onClick={(event) => {
-              event.stopPropagation();
-              setPlacementShelfHidden((value) => !value);
-            }}
-          >
-            <LucideIcons.Archive size={16} />
-          </button>
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-control-rail-creative-desk t8-mini-icon-button${creativeDeskEditing ? ' is-active' : ''}`}
-            data-canvas-floating-ui="creative-desk-toggle"
-            aria-label="创作台背景"
-            title="创作台背景"
-            aria-expanded={creativeDeskEditing}
-            onClick={(event) => {
-              event.stopPropagation();
-              setCreativeDeskEditing((value) => {
-                const next = !value;
-                if (next) {
-                  setRadialSettingsOpen(false);
-                  setModelHelpOpen(false);
-                  setFarmCanvasEditing(false);
-                }
-                return next;
-              });
-            }}
-          >
-            <LucideIcons.Images size={16} />
-          </button>
-          <button
-            type="button"
-            className={`t8-control-rail-help t8-control-rail-radial t8-mini-icon-button${radialSettingsOpen ? ' is-active' : ''}`}
-            data-canvas-floating-ui="radial-settings-toggle"
-            aria-label="中键圆盘设置"
-            title="中键圆盘设置"
-            aria-expanded={radialSettingsOpen}
-            onClick={(event) => {
-              event.stopPropagation();
-              setRadialSettingsOpen((value) => {
-                const next = !value;
-                if (next) {
-                  setModelHelpOpen(false);
-                  setCreativeDeskEditing(false);
-                  setFarmCanvasEditing(false);
-                }
-                return next;
-              });
-            }}
-          >
-            <LucideIcons.Settings2 size={16} />
-          </button>
-          <ThemeMusicToggle template={currentTemplate} />
-          <Controls
-            fitViewOptions={CANVAS_OVERVIEW_FIT_OPTIONS}
-            style={{
-              background: isFarmStory
-                ? themeTokens.panelBg
-                : isOp
-                ? themeTokens.panelBg
-                : isDark ? 'rgba(20,20,22,.9)' : 'rgba(255,255,255,.9)',
-              border: isFarmStory
-                ? `3px solid ${themeTokens.secondary}`
-                : isOp
-                ? `3px solid ${themeTokens.textMain}`
-                : `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.08)'}`,
-              borderRadius: isFarmStory ? 10 : isOp ? '16px 16px 8px 8px' : 8,
-              boxShadow: isFarmStory ? `4px 4px 0 ${themeTokens.edge}` : isOp ? `4px 4px 0 ${themeTokens.textMain}` : undefined,
-            }}
-          />
-        </div>
-        {!placementShelfHidden && (
-          <PlacementShelf
-            items={placementShelfItems}
-            open={placementShelfOpen}
-            isDark={isDark}
-            isPixel={isPixel}
-            onToggle={() => setPlacementShelfOpen((prev) => !prev)}
-            onHide={() => setPlacementShelfHidden(true)}
-            onClear={clearPlacementShelf}
-            onMoveNode={movePlacementShelfNode}
-            onRemove={(id) => setPlacementShelfItems((prev) => prev.filter((item) => item.id !== id))}
-          />
-        )}
-      </div>
-      <RadialMenuSettingsModal open={radialSettingsOpen} onClose={() => setRadialSettingsOpen(false)} />
-      {modelHelpOpen && (
-        <div
-          className="t8-model-help-panel nodrag nopan"
-          data-canvas-floating-ui="model-help-panel"
-          role="dialog"
-          aria-modal="false"
-          aria-label="模型注意事项"
-        >
-          <div className="t8-model-help-panel__header">
-            <div>
-              <div className="t8-model-help-panel__eyebrow">MODEL NOTES</div>
-              <h2>模型注意事项</h2>
-            </div>
-            <button
-              type="button"
-              className="t8-model-help-panel__close t8-mini-icon-button"
-              aria-label="关闭说明"
-              title="关闭说明"
-              onClick={(event) => {
-                event.stopPropagation();
-                setModelHelpOpen(false);
-              }}
-            >
-              <LucideIcons.X size={16} />
-            </button>
-          </div>
-          <div className="t8-model-help-panel__tabs" role="tablist" aria-label="模型平台">
-            {MODEL_USAGE_HELP_TABS.map((tab, tabIndex) => {
-              const active = tab.id === modelHelpTab;
-              return (
-                <button
-                  key={tab.id}
-                  id={`model-help-tab-${tab.id}`}
-                  type="button"
-                  className={`t8-model-help-panel__tab${active ? ' is-active' : ''}`}
-                  role="tab"
-                  aria-selected={active}
-                  aria-controls={`model-help-panel-${tab.id}`}
-                  tabIndex={active ? 0 : -1}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setModelHelpTab(tab.id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const nextIndex = event.key === 'Home'
-                      ? 0
-                      : event.key === 'End'
-                        ? MODEL_USAGE_HELP_TABS.length - 1
-                        : (tabIndex + (event.key === 'ArrowRight' ? 1 : -1) + MODEL_USAGE_HELP_TABS.length)
-                          % MODEL_USAGE_HELP_TABS.length;
-                    const nextTab = MODEL_USAGE_HELP_TABS[nextIndex];
-                    setModelHelpTab(nextTab.id);
-                    window.requestAnimationFrame(() => {
-                      document.getElementById(`model-help-tab-${nextTab.id}`)?.focus();
-                    });
-                  }}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="t8-model-help-panel__body">
-            <div
-              id={`model-help-panel-${modelHelpTab}`}
-              className="t8-model-help-panel__text"
-              role="tabpanel"
-              aria-labelledby={`model-help-tab-${modelHelpTab}`}
-            >
-              {MODEL_USAGE_HELP_TABS.find((tab) => tab.id === modelHelpTab)?.sections.map((section) => (
-                <section className="t8-model-help-panel__section" key={section.title}>
-                  <h3>{section.title}：</h3>
-                  {section.paragraphs?.map((paragraph) => (
-                    <p key={paragraph}>{paragraph}</p>
-                  ))}
-                  {section.items ? (
-                    <ul>
-                      {section.items.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
+  const floatingControlRail = null;
 
   const creatorCanvasContext = useMemo(() => buildCreatorCanvasContext(
     nodes,
@@ -13528,10 +13179,10 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onRetryRunAttempt={handleRetryProjectRunAttempt}
         onDoctorHighlightsChange={handleDoctorHighlightsChange}
       />
-      {loaded && loadedCanvasId === activeId && activeId && activeProjectId && (
+      {false && loaded && loadedCanvasId === activeId && activeId && activeProjectId && (
         <CreatorAgentPanel
-          projectId={activeProjectId}
-          canvasId={activeId}
+          projectId={activeProjectId || ''}
+          canvasId={activeId || ''}
           canvasRevision={activeCanvasRevision}
           canvasTitle={canvases.find((canvas) => canvas.id === activeId)?.name || '当前画布'}
           nodeCount={nodes.length}

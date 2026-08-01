@@ -2821,7 +2821,7 @@ function resolveBriefProviders(brief, options = {}) {
   if (audio.id) {
     throw new AgentControlCreativeError(
       'CREATIVE_AUDIO_PROVIDER_UNSUPPORTED',
-      '当前 Audio 节点只证明了贞贞平台路由；请先用 model list --kind audio 选择可用模型',
+      '当前 Audio 节点只证明了清尘平台路由；请先用 model list --kind audio 选择可用模型',
       409,
     );
   }

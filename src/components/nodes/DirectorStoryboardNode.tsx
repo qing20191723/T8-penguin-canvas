@@ -2577,14 +2577,14 @@ const DirectorStoryboardNode = ({ id, data, selected }: NodeProps) => {
             title="Seedance API 来源"
           >
             <option value="auto">主力 API（自动：优先平价AI小屋）</option>
-            <option value="seedance-nz">贞贞的平价AI小屋 · api.seedance.nz</option>
-            <option value="zhenzhen-legacy">贞贞的AI工坊（海外） · ai.t8star.org</option>
+            <option value="seedance-nz">Atlas Cloud · api.seedance.nz</option>
+            <option value="zhenzhen-legacy">Atlas Cloud（海外） · ai.t8star.org</option>
             {videoProviders.map((provider) => <option key={provider.id} value={`advanced:${provider.id}`}>{provider.label} · {provider.protocol}</option>)}
           </select>
         </div>
         {isSeedanceNzSelected && !hasSeedanceNzKey && (
           <div className="rounded border px-2 py-1 text-[10px]" style={{ borderColor: 'var(--t8-warning, #f59e0b)', color: 'var(--t8-warning, #f59e0b)' }}>
-            尚未配置“贞贞的平价AI小屋 API Key”，请先到 API 设置填写。
+            尚未配置“Atlas Cloud API Key”，请先到 API 设置填写。
           </div>
         )}
         <div className="grid grid-cols-4 gap-1.5">
