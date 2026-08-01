@@ -3,12 +3,10 @@
 /**
  * Render public Web entry point.
  *
- * Keep the original T8 backend and canvas nodes unchanged. This process opens
- * Render's public port first, serves the built frontend, then starts the full
- * desktop-grade backend as an internal child process and proxies API/media
- * requests to it. Render can therefore mark the service reachable immediately
- * instead of waiting for SQLite, project recovery, collaboration, and every
- * optional route to finish initializing.
+ * This process opens Render's public port first, serves the built frontend,
+ * then starts the full Qingchen Canvas backend as an internal child process
+ * and proxies API/media requests to it. Render can therefore mark the service
+ * reachable immediately instead of waiting for SQLite and recovery work.
  */
 
 const fs = require('fs');
@@ -58,7 +56,7 @@ let shuttingDown = false;
 function publicStatus() {
   return {
     success: true,
-    service: 't8-atlas-share',
+    service: 'qingchen-atlas-canvas',
     phase,
     backendReady,
     publicAddress: `http://${PUBLIC_HOST}:${PUBLIC_PORT}`,
@@ -106,7 +104,7 @@ function proxyToBackend(req, res) {
     res.status(502).json({
       success: false,
       code: 'backend_proxy_unavailable',
-      error: backendError || error.message || 'T8 后端暂不可用',
+      error: backendError || error.message || '清尘无限画布后端暂不可用',
       phase,
     });
   });
@@ -123,7 +121,7 @@ publicApp.use((req, res, next) => {
     return res.status(503).json({
       success: false,
       code: phase === 'failed' ? 'backend_start_failed' : 'backend_starting',
-      error: backendError || '清尘画布后端正在启动，请稍候重试。',
+      error: backendError || '清尘无限画布后端正在启动，请稍候重试。',
       phase,
     });
   }
@@ -144,10 +142,10 @@ publicApp.use(express.static(frontendDist, {
 
 function loadingPage() {
   const failed = phase === 'failed';
-  const title = failed ? '清尘画布后端启动失败' : '清尘无限画布正在启动';
+  const title = failed ? '清尘无限画布后端启动失败' : '正在启动清尘无限画布';
   const detail = failed
-    ? '公网网页已经上线，但完整后端没有成功加载。请检查 Render 日志中的 [render] backend child 信息。'
-    : 'Render 已开放公网端口，正在加载 T8 后端与 Atlas 能力。页面会在准备完成后自动刷新。';
+    ? '公网网页已经上线，但完整后端没有成功加载。请检查 Render 日志中的后端子进程信息。'
+    : 'Render 已开放公网端口，正在加载清尘无限画布后端与 Atlas 能力。页面会在准备完成后自动刷新。';
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title><style>
@@ -190,7 +188,7 @@ async function waitForInternalBackend(child) {
     if (await internalBackendIsReady()) {
       backendReady = true;
       phase = 'ready';
-      console.log(`[render] full T8 backend ready at http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
+      console.log(`[render] 清尘无限画布后端已就绪：http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -199,7 +197,8 @@ async function waitForInternalBackend(child) {
 
 function startFullBackend() {
   phase = 'starting-backend';
-  console.log(`[render] starting full T8 backend at http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
+  console.log('正在启动清尘无限画布');
+  console.log(`[render] 内部后端地址：http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
   backendChild = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
     cwd: repositoryRoot,
     env: {
@@ -216,13 +215,13 @@ function startFullBackend() {
     backendReady = false;
     phase = 'failed';
     backendError = error.message || String(error);
-    console.error('[render] backend child failed to start:', backendError);
+    console.error('[render] 清尘无限画布后端启动失败：', backendError);
   });
   backendChild.once('exit', (code, signal) => {
     backendReady = false;
     if (!shuttingDown) {
       phase = 'failed';
-      backendError = `T8 backend exited (code=${code ?? 'null'}, signal=${signal || 'none'})`;
+      backendError = `清尘无限画布后端已退出（code=${code ?? 'null'}, signal=${signal || 'none'}）`;
       console.error(`[render] ${backendError}`);
     }
   });
@@ -230,13 +229,13 @@ function startFullBackend() {
 }
 
 const publicServer = publicApp.listen(PUBLIC_PORT, PUBLIC_HOST, () => {
-  console.log(`[render] public bootstrap listening on http://${PUBLIC_HOST}:${PUBLIC_PORT}`);
-  console.log(`[render] serving frontend from ${frontendDist}`);
+  console.log(`[render] 公网引导服务已监听：http://${PUBLIC_HOST}:${PUBLIC_PORT}`);
+  console.log(`[render] 前端目录：${frontendDist}`);
   setImmediate(startFullBackend);
 });
 
 publicServer.on('error', (error) => {
-  console.error('[render] public server failed:', error);
+  console.error('[render] 公网服务启动失败：', error);
   process.exitCode = 1;
 });
 
@@ -244,7 +243,7 @@ function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   phase = 'stopping';
-  console.log(`[render] received ${signal}; stopping public and internal servers`);
+  console.log(`[render] 收到 ${signal}，正在停止公网和内部服务`);
   if (backendChild && backendChild.exitCode === null) backendChild.kill(signal);
   publicServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 8000).unref();
