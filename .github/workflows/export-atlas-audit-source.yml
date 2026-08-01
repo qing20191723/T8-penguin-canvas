@@ -1,0 +1,33 @@
+name: Export Atlas audit source
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    if: github.event.pull_request.head.ref == 'fix/atlas-only-qingchen-config' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/atlas-only-qingchen-config
+          fetch-depth: 1
+
+      - name: Archive repository source
+        shell: bash
+        run: |
+          tar --exclude=.git --exclude=node_modules --exclude=dist -czf /tmp/atlas-audit-source.tar.gz .
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-audit-source
+          path: /tmp/atlas-audit-source.tar.gz
+          retention-days: 1
