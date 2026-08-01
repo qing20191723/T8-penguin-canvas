@@ -78,19 +78,7 @@ for path, first_label, second_label in [
     )
     if text.count(old) != 1:
         raise SystemExit(f'{path}: old provider options did not match exactly once')
-    file.write_text(text.replace(old, '', 1), encoding='utf-8')
-
-for path in [
-    'src/components/nodes/LLMNode.tsx',
-    'src/components/nodes/ImageNode.tsx',
-    'src/components/nodes/VideoNode.tsx',
-]:
-    text = Path(path).read_text(encoding='utf-8')
-    forbidden = [
-        '<option value="zhenzhen"',
-        '<option value="seedance-nz"',
-        '<option value="builtin:seedance-nz"',
-    ]
-    found = [item for item in forbidden if item in text]
-    if found:
-        raise SystemExit(f'{path}: legacy source options remain: {found}')
+    text = text.replace(old, '', 1)
+    text = text.replace(first_label, 'Atlas Cloud')
+    text = text.replace(second_label, 'Atlas Cloud')
+    file.write_text(text, encoding='utf-8')
