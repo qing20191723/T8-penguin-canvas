@@ -59,7 +59,7 @@ jobs:
               ('贞贞工坊', 'Atlas Cloud'),
               ('贞贞', '清尘'),
           ]
-          suffixes = {'.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.md', '.html', '.css'}
+          suffixes = {'.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.md', '.html', '.css', '.yaml', '.yml'}
           for root_name in ['tools', '.agents']:
               root = Path(root_name)
               if not root.exists():
