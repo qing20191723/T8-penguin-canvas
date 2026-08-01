@@ -16,21 +16,28 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Print exact collaboration preflight call context
+      - name: Inspect collaboration feature gating and request auth
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
           needles = [
+              'COLLAB_MANAGEMENT_TOKEN',
+              'collaborationEnabled',
+              'collaboration_enabled',
+              'enableCollaboration',
+              'project-local',
+              'isElectron',
+              'electronAPI',
+              'management-token',
+              'MANAGEMENT_AUTHORITY_HEADER',
               'getCollaborationExecutionPolicy',
-              'execution-policy',
-              'collaboration_management_auth_required',
-              'buildRunPreflight',
-              'runPreflight',
           ]
-          roots = [Path('src'), Path('backend/src')]
+          roots = [Path('src'), Path('backend/src'), Path('electron')]
           for root in roots:
+              if not root.exists():
+                  continue
               for path in root.rglob('*'):
                   if not path.is_file() or path.suffix not in {'.ts', '.tsx', '.js', '.cjs'}:
                       continue
@@ -44,12 +51,11 @@ jobs:
                   print(f'\n===== {path} =====')
                   shown = set()
                   for i in hits:
-                      start = max(0, i - 18)
-                      end = min(len(lines), i + 24)
-                      key = (start, end)
-                      if key in shown:
+                      start = max(0, i - 12)
+                      end = min(len(lines), i + 16)
+                      if (start, end) in shown:
                           continue
-                      shown.add(key)
+                      shown.add((start, end))
                       print(f'--- lines {start+1}-{end} ---')
                       for j in range(start, end):
                           print(f'{j+1:6}: {lines[j]}')
