@@ -1,6 +1,7 @@
 name: Repair Render root start
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
 
@@ -13,14 +14,14 @@ concurrency:
 
 jobs:
   repair:
-    if: github.head_ref == 'fix/upload-autosize-atlas-pro-models'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'fix/upload-autosize-atlas-pro-models'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - name: Checkout Atlas repair branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: fix/upload-autosize-atlas-pro-models
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -149,4 +150,4 @@ jobs:
             exit 0
           fi
           git commit -m 'fix: make public model sources Atlas-only'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:fix/upload-autosize-atlas-pro-models
