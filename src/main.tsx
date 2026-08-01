@@ -2,6 +2,9 @@ import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles/index.css';
+import { installPublicCollaborationPolicyTransport } from './utils/publicCollaborationPolicyTransport';
+
+installPublicCollaborationPolicyTransport();
 
 const CollaborationWorkspace = lazy(() => import('./components/CollaborationWorkspace'));
 
