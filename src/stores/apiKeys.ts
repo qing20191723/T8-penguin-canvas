@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AdvancedProviderConfig, ApiSettings } from '../types/canvas';
 import * as api from '../services/api';
+import { ATLAS_RUNTIME_CREDENTIAL_MARKER } from '../config/atlasOnlyRuntime';
 
 /** Atlas Cloud 官方接口根地址。 */
 export const ATLAS_GENERATION_BASE_URL = 'https://api.atlascloud.ai/api/v1';
@@ -73,44 +74,44 @@ function ensureAtlasAndCustomProviders(settings: { advancedProviders?: AdvancedP
   ));
 
   const atlas: AdvancedProviderConfig = {
-  ...(atlasSource || {}),
-  id: 'atlas',
-  label: 'Atlas Cloud',
-  protocol: 'atlas',
-  baseUrl: ATLAS_GENERATION_BASE_URL,
-  enabled: true,
-  imageModels: Array.isArray(atlasSource?.imageModels) && atlasSource.imageModels.length
-    ? atlasSource.imageModels
-    : ATLAS_FALLBACK_IMAGE_MODELS,
-  videoModels: Array.isArray(atlasSource?.videoModels) && atlasSource.videoModels.length
-    ? atlasSource.videoModels
-    : ATLAS_FALLBACK_VIDEO_MODELS,
-  chatModels: Array.isArray(atlasSource?.chatModels) && atlasSource.chatModels.length
-    ? atlasSource.chatModels
-    : ATLAS_FALLBACK_CHAT_MODELS,
-  defaults: {
-    imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
-    videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
-    chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
-    pollIntervalMs: 3000,
-    ...(atlasSource?.defaults || {}),
-  },
-};
+    ...(atlasSource || {}),
+    id: 'atlas',
+    label: 'Atlas Cloud',
+    protocol: 'atlas',
+    baseUrl: ATLAS_GENERATION_BASE_URL,
+    enabled: true,
+    imageModels: Array.isArray(atlasSource?.imageModels) && atlasSource.imageModels.length
+      ? atlasSource.imageModels
+      : ATLAS_FALLBACK_IMAGE_MODELS,
+    videoModels: Array.isArray(atlasSource?.videoModels) && atlasSource.videoModels.length
+      ? atlasSource.videoModels
+      : ATLAS_FALLBACK_VIDEO_MODELS,
+    chatModels: Array.isArray(atlasSource?.chatModels) && atlasSource.chatModels.length
+      ? atlasSource.chatModels
+      : ATLAS_FALLBACK_CHAT_MODELS,
+    defaults: {
+      imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
+      videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
+      chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
+      pollIntervalMs: 3000,
+      ...(atlasSource?.defaults || {}),
+    },
+  };
 
-const custom: AdvancedProviderConfig = {
-  ...(customSource || {}),
-  id: 'custom-api',
-  label: customSource?.label || '自定义 API',
-  protocol: 'openai-compatible',
-  baseUrl: customSource?.baseUrl || '',
-  enabled: customSource?.enabled === true,
-  imageModels: Array.isArray(customSource?.imageModels) ? customSource.imageModels : [],
-  videoModels: Array.isArray(customSource?.videoModels) ? customSource.videoModels : [],
-  chatModels: Array.isArray(customSource?.chatModels) ? customSource.chatModels : [],
-  defaults: { ...(customSource?.defaults || {}) },
-};
+  const custom: AdvancedProviderConfig = {
+    ...(customSource || {}),
+    id: 'custom-api',
+    label: customSource?.label || '自定义 API',
+    protocol: 'openai-compatible',
+    baseUrl: customSource?.baseUrl || '',
+    enabled: customSource?.enabled === true,
+    imageModels: Array.isArray(customSource?.imageModels) ? customSource.imageModels : [],
+    videoModels: Array.isArray(customSource?.videoModels) ? customSource.videoModels : [],
+    chatModels: Array.isArray(customSource?.chatModels) ? customSource.chatModels : [],
+    defaults: { ...(customSource?.defaults || {}) },
+  };
 
-return [atlas, custom];
+  return [atlas, custom];
 }
 
 function selectDefault(models: string[], preferred: string[], current: unknown): string {
@@ -142,7 +143,6 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     }
 
     const current = providers[atlasIndex];
-    // 模型列表以 Atlas 当前公共目录为唯一来源；只有目录请求失败时才使用内置回退。
     const imageModels = uniqueModelIds(byKind.image);
     const videoModels = uniqueModelIds(byKind.video);
     const chatModels = uniqueModelIds(byKind.chat);
@@ -151,16 +151,8 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     }
 
     const defaults = { ...(current.defaults || {}) };
-    defaults.imageModel = selectDefault(
-      imageModels,
-      ATLAS_FALLBACK_IMAGE_MODELS,
-      defaults.imageModel,
-    );
-    defaults.videoModel = selectDefault(
-      videoModels,
-      ATLAS_FALLBACK_VIDEO_MODELS,
-      defaults.videoModel,
-    );
+    defaults.imageModel = selectDefault(imageModels, ATLAS_FALLBACK_IMAGE_MODELS, defaults.imageModel);
+    defaults.videoModel = selectDefault(videoModels, ATLAS_FALLBACK_VIDEO_MODELS, defaults.videoModel);
     defaults.chatModel = selectDefault(chatModels, ATLAS_FALLBACK_CHAT_MODELS, defaults.chatModel);
 
     providers[atlasIndex] = {
@@ -198,11 +190,34 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
   }
 }
 
+/**
+ * Atlas credentials are backend-owned in the Render deployment. The browser
+ * must not receive the secret, but legacy preflight still checks historical
+ * client fields. These in-memory markers tell preflight to defer credential
+ * validation to the Atlas backend adapter; they are never included in saves.
+ */
+function markBackendManagedAtlasCredential(settings: ApiSettings): ApiSettings {
+  const marker = ATLAS_RUNTIME_CREDENTIAL_MARKER;
+  return {
+    ...settings,
+    zhenzhenApiKey: settings.zhenzhenApiKey || marker,
+    zhenzhenSd2ApiKey: settings.zhenzhenSd2ApiKey || marker,
+    llmApiKey: settings.llmApiKey || marker,
+    gptImageApiKey: settings.gptImageApiKey || marker,
+    nanoBananaApiKey: settings.nanoBananaApiKey || marker,
+    mjApiKey: settings.mjApiKey || marker,
+    veoApiKey: settings.veoApiKey || marker,
+    soraApiKey: settings.soraApiKey || marker,
+    grokApiKey: settings.grokApiKey || marker,
+    seedanceApiKey: settings.seedanceApiKey || marker,
+    sunoApiKey: settings.sunoApiKey || marker,
+  };
+}
+
 async function normalizedLoadedSettings(data: Partial<ApiSettings>): Promise<ApiSettings> {
   const settings: ApiSettings = {
     ...DEFAULT,
     ...data,
-    // 历史字段保留给旧画布/旧设置兼容，但全部锁定到 Atlas 官方地址。
     zhenzhenBaseUrl: ATLAS_GENERATION_BASE_URL,
     zhenzhenSd2BaseUrl: ATLAS_GENERATION_BASE_URL,
     rhBaseUrl: '',
@@ -210,7 +225,7 @@ async function normalizedLoadedSettings(data: Partial<ApiSettings>): Promise<Api
     llmBaseUrl: ATLAS_CHAT_BASE_URL,
   };
   settings.advancedProviders = ensureAtlasAndCustomProviders(settings);
-  return hydrateAtlasCatalog(settings);
+  return markBackendManagedAtlasCredential(await hydrateAtlasCatalog(settings));
 }
 
 interface ApiKeysState {
@@ -218,13 +233,11 @@ interface ApiKeysState {
   loading: boolean;
   error: string | null;
   loaded: boolean;
-
   load: () => Promise<void>;
   save: (patch: Partial<ApiSettings>) => Promise<void>;
 }
 
 const DEFAULT: ApiSettings = {
-  // 历史 Key 字段不再用于公共 UI；保留仅为旧设置迁移。
   zhenzhenApiKey: '',
   zhenzhenBaseUrl: ATLAS_GENERATION_BASE_URL,
   zhenzhenSd2ApiKey: '',
@@ -280,8 +293,8 @@ export const useApiKeysStore = create<ApiKeysState>((set) => ({
       const data = await api.getSettings();
       const settings = await normalizedLoadedSettings(data);
       set({ settings, loading: false, loaded: true });
-    } catch (e: any) {
-      set({ loading: false, error: e?.message || '加载设置失败' });
+    } catch (error: any) {
+      set({ loading: false, error: error?.message || '加载设置失败' });
     }
   },
 
@@ -291,9 +304,9 @@ export const useApiKeysStore = create<ApiKeysState>((set) => ({
       await api.updateSettings(patch);
       const data = await api.getSettings();
       const settings = await normalizedLoadedSettings(data);
-      set({ settings, loading: false });
-    } catch (e: any) {
-      set({ loading: false, error: e?.message || '保存失败' });
+      set({ settings, loading: false, loaded: true });
+    } catch (error: any) {
+      set({ loading: false, error: error?.message || '保存失败' });
     }
   },
 }));
