@@ -5028,6 +5028,42 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         });
       } catch (e) {
         if (e instanceof api.ApiRequestError && e.status === 409) {
+          const isPublicShareMode = typeof window !== 'undefined'
+            && window.location.protocol === 'https:'
+            && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+          if (isPublicShareMode) {
+            try {
+              const authoritative = await api.getCanvasData(canvasIdForSave);
+              const authoritativeRevision = Number(authoritative.revision);
+              if (!Number.isSafeInteger(authoritativeRevision) || authoritativeRevision < 1) {
+                throw new Error('服务端没有返回有效 revision');
+              }
+              const authoritativeState = persistableCanvasPatchStateFromParts(
+                authoritative.nodes || [],
+                authoritative.edges || [],
+                migrateCreativeDeskToViewportCoordinates(authoritative.creativeDesk, authoritative.viewport),
+                sanitizeFarmCanvasState(authoritative.farmCanvas),
+                Math.max(1, Number(authoritative.nextNodeSerialId) || 1),
+              );
+              const latest = latestStateForResponse();
+              invalidateOutstandingAutosaves();
+              setCanvasRevision(canvasIdForSave, authoritativeRevision);
+              lastSavedByCanvasRef.current.set(canvasIdForSave, authoritativeState.snapshot);
+              lastSavedNodeCountByCanvasRef.current.set(canvasIdForSave, authoritativeState.nodes.length);
+              pendingSaveByCanvasRef.current.set(canvasIdForSave, pendingCanvasSaveFromState(latest.state, {
+                baseSnapshot: authoritativeState.snapshot,
+                baseRevision: authoritativeRevision,
+                conflicts: [],
+                conflicted: false,
+              }));
+              setCanvasPatchConflictMessage('');
+              logBus.info(`画布 revision 已自动同步到 r${authoritativeRevision}，正在重试保存。`, '画布同步');
+              setDragSaveTick((tick) => tick + 1);
+              return;
+            } catch (syncError) {
+              console.warn('公开分享版自动同步 revision 失败，回退到冲突保护', syncError);
+            }
+          }
           const latest = latestStateForResponse();
           const latestPending = pendingSaveByCanvasRef.current.get(canvasIdForSave) || null;
           const response = reconcileCanvasPatchAutosaveResponse({

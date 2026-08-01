@@ -454,8 +454,8 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
     ? Math.min(4, Math.max(1, Number(d?.apimartImageCount) || 1))
     : 1;
   const seedanceNzProviderLabel = isZhenzhenBudgetPlatformSelected
-    ? '贞贞的平价AI小屋'
-    : '贞贞的平价AI小屋';
+    ? 'Atlas Cloud'
+    : 'Atlas Cloud';
   const effectiveAspectRatios = isZhenzhenImageG2
     ? ZHENZHEN_IMAGE_G2_RATIOS
     : (isZhenzhenGrokImage || isZhenzhenGrokImageEdit)
@@ -886,7 +886,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       const width = Number(match?.[1]);
       const height = Number(match?.[2]);
       if (!match || width < 240 || width > 8192 || height < 240 || height > 8192) {
-        setError('贞贞的平价AI小屋 Seedream 自定义宽高必须为 240-8192，例如 2048x1536');
+        setError('Atlas Cloud Seedream 自定义宽高必须为 240-8192，例如 2048x1536');
         logBus.error(`生成中止: Seedream NZ 尺寸格式无效 ${seedreamNzResolvedSize || '(空)'}`, src);
         return;
       }
@@ -1022,7 +1022,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
       if (isMj) {
         if (isZhenzhenBudgetMjSelected) {
           if (!zhenzhenSd2ApiKey) {
-            throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+            throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
           }
           if (mjNzOperation === 'midjourney-blend' && (allRefs.length < 2 || allRefs.length > 4)) {
             throw new Error('midjourney-blend 必须提供 2–4 张参考图');
@@ -1919,9 +1919,9 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
             {isExternalSelected && providerSelection.provider
               ? `${providerSelection.provider.label || providerSelection.provider.id} · ${externalProviderModel || '未选模型'}`
               : isZhenzhenBudgetPlatformSelected
-                ? `贞贞的平价AI小屋 · ${isZhenzhenBudgetMjSelected ? mjNzOperation : apiModel}`
+                ? `Atlas Cloud · ${isZhenzhenBudgetMjSelected ? mjNzOperation : apiModel}`
               : isSeedreamNz
-                ? `贞贞的平价AI小屋 · ${seedreamNzUiModel}`
+                ? `Atlas Cloud · ${seedreamNzUiModel}`
                 : `${modelDef.label} · ${modelDef.description}`}
           </div>
         </div>
@@ -1941,7 +1941,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 {isExternalSelected && providerSelection.provider
                   ? providerSelection.provider.label
                   : isZhenzhenBudgetPlatformSelected
-                    ? '贞贞的平价AI小屋'
+                    ? 'Atlas Cloud'
                     : '默认贞贞工坊'}
               </span>
             </button>
@@ -2003,8 +2003,6 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                     style={{ background: '#18181b', color: '#ffffff' }}
                     className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
                   >
-                    <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>贞贞工坊（默认）</option>
-                    <option value="builtin:seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>贞贞的平价AI小屋</option>
                     {imageAdvancedProviders.map((provider) => (
                       <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
                         {provider.label || provider.id}
@@ -2499,7 +2497,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-cyan-400/60"
               >
                 <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>贞贞的AI工坊（海外） · 原 Seedream</option>
-                <option value="seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>贞贞的平价AI小屋 · api.seedance.nz</option>
+                <option value="seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>Atlas Cloud · api.seedance.nz</option>
               </select>
             </div>
             {isSeedreamNz && (
@@ -2518,7 +2516,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 </div>
                 <div className="text-[10px] leading-4 text-cyan-100/75">
                   实际模型：{seedreamNzUiModel}（{seedreamNzModelRegion}，按参考图自动切换）
-                  {!zhenzhenSd2ApiKey && <div className="mt-1 text-amber-300">尚未配置“贞贞的平价AI小屋 API Key”</div>}
+                  {!zhenzhenSd2ApiKey && <div className="mt-1 text-amber-300">尚未配置“Atlas Cloud API Key”</div>}
                 </div>
               </div>
             )}
@@ -2544,7 +2542,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
 
         {isZhenzhenBudgetImageSelected && !isExternalSelected && (
           <div className="rounded border border-cyan-400/25 bg-cyan-500/5 px-2 py-1.5 text-[10px] leading-4 text-cyan-100/80">
-            <div>{`贞贞的平价AI小屋 · ${apiModel}`}</div>
+            <div>{`Atlas Cloud · ${apiModel}`}</div>
             <div>
               {isZhenzhenImageG2
                 ? isZhenzhenImageG2I2I
@@ -2562,7 +2560,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                     ? 'Grok Image 1.5 编辑：必须提供参考图，仅使用第 1 张。'
                     : 'Grok Image 1.5 文生图：只使用 Prompt，不发送参考图。'}
             </div>
-            {!zhenzhenSd2ApiKey && <div className="text-amber-300">尚未配置“贞贞的平价AI小屋 API Key”</div>}
+            {!zhenzhenSd2ApiKey && <div className="text-amber-300">尚未配置“Atlas Cloud API Key”</div>}
           </div>
         )}
 

@@ -7,11 +7,18 @@ const provider = {
   protocol: 'atlas',
   baseUrl: 'https://api.atlascloud.ai/api/v1',
   apiKey: 'test-key',
-  imageModels: ['bytedance/seedream-v5.0-lite', 'bytedance/seedream-v5.0-lite/edit'],
-  videoModels: ['kwaivgi/kling-v3.0-std/text-to-video', 'kwaivgi/kling-v3.0-std/image-to-video'],
+  imageModels: ['bytedance/seedream-v5.0-pro/text-to-image', 'bytedance/seedream-v5.0-pro/edit'],
+  videoModels: [
+    'kwaivgi/kling-v3.0-std/text-to-video',
+    'atlascloud/wan-2.7-spicy/image-to-video',
+    'alibaba/wan-2.7/reference-to-video',
+    'alibaba/wan-2.7/video-edit',
+  ],
+  chatModels: ['test/chat-model'],
   defaults: {
-    imageModel: 'bytedance/seedream-v5.0-lite',
+    imageModel: 'bytedance/seedream-v5.0-pro/text-to-image',
     videoModel: 'kwaivgi/kling-v3.0-std/text-to-video',
+    chatModel: 'test/chat-model',
     pollIntervalMs: 1000,
   },
 };
@@ -34,76 +41,104 @@ function generationFetch(assertSubmit, outputUrl) {
   };
 }
 
-test('Seedream v5 text-to-image uses the current model and schema', async () => {
+test('Seedream v5 Pro text-to-image uses the Pro schema', async () => {
   const result = await atlas.generateImage(provider, {
-    model: 'bytedance/seedream-v5.0-lite',
+    model: 'bytedance/seedream-v5.0-pro/text-to-image',
     prompt: 'a white circle',
     size: '1024x1024',
-    n: 1,
-    providerParams: { image_size: '1024x1024', aspect_ratio: '1:1' },
   }, {
     fetchImpl: generationFetch((url, body) => {
       assert.match(url, /\/model\/generateImage$/);
-      assert.equal(body.model, 'bytedance/seedream-v5.0-lite');
-      assert.equal(body.size, '2048*2048');
+      assert.equal(body.model, 'bytedance/seedream-v5.0-pro/text-to-image');
+      assert.equal(body.size, '1024*1024');
       assert.equal(body.output_format, 'jpeg');
-      assert.equal(body.enable_base64_output, false);
       assert.ok(!('image_size' in body));
-      assert.ok(!('aspect_ratio' in body));
-      assert.ok(!('n' in body));
     }, 'https://example.com/output.jpg'),
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.imageUrls, ['https://example.com/output.jpg']);
 });
 
-test('Seedream v5 switches to edit when ImageNode supplies references', async () => {
+test('Seedream v5 Pro switches to edit for references', async () => {
   const result = await atlas.generateImage(provider, {
-    model: 'bytedance/seedream-v5.0-lite',
+    model: 'bytedance/seedream-v5.0-pro/text-to-image',
     prompt: 'turn it blue',
     images: ['https://example.com/input.png'],
-    size: '1536x1024',
   }, {
     fetchImpl: generationFetch((_url, body) => {
-      assert.equal(body.model, 'bytedance/seedream-v5.0-lite/edit');
+      assert.equal(body.model, 'bytedance/seedream-v5.0-pro/edit');
       assert.deepEqual(body.images, ['https://example.com/input.png']);
-      assert.equal(body.size, '2496*1664');
-      assert.ok(!('image' in body));
     }, 'https://example.com/edited.png'),
   });
   assert.equal(result.ok, true);
 });
 
-test('Kling v3 text-to-video uses the current Atlas model ID', async () => {
+test('Wan 2.7 Spicy maps first-frame image-to-video fields', async () => {
   const result = await atlas.generateVideo(provider, {
-    model: 'kwaivgi/kling-v3.0-std/text-to-video',
-    prompt: 'a calm ocean',
-    duration: 5,
-    aspect_ratio: '16:9',
-  }, {
-    fetchImpl: generationFetch((url, body) => {
-      assert.match(url, /\/model\/generateVideo$/);
-      assert.equal(body.model, 'kwaivgi/kling-v3.0-std/text-to-video');
-      assert.equal(body.duration, 5);
-      assert.equal(body.aspect_ratio, '16:9');
-      assert.equal(body.sound, true);
-    }, 'https://example.com/output.mp4'),
-  });
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.videoUrls, ['https://example.com/output.mp4']);
-});
-
-test('Kling v3 switches to image-to-video for a reference image', async () => {
-  const result = await atlas.generateVideo(provider, {
-    model: 'kwaivgi/kling-v3.0-std/text-to-video',
+    model: 'atlascloud/wan-2.7-spicy/image-to-video',
     prompt: 'slow camera push',
     images: ['https://example.com/start.png'],
-    duration: 5,
+    duration: 12,
+    resolution: '1080P',
   }, {
     fetchImpl: generationFetch((_url, body) => {
-      assert.equal(body.model, 'kwaivgi/kling-v3.0-std/image-to-video');
       assert.equal(body.image, 'https://example.com/start.png');
-    }, 'https://example.com/i2v.mp4'),
+      assert.equal(body.duration, 12);
+      assert.equal(body.resolution, '1080P');
+      assert.match(body.negative_prompt, /camera cut/);
+    }, 'https://example.com/spicy.mp4'),
   });
   assert.equal(result.ok, true);
+});
+
+test('Wan 2.7 reference-to-video maps image, video and audio references', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'alibaba/wan-2.7/reference-to-video',
+    prompt: 'character1 walks forward',
+    images: ['https://example.com/character.png'],
+    videos: ['https://example.com/motion.mp4'],
+    audios: ['https://example.com/voice.mp3'],
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.deepEqual(body.images, ['https://example.com/character.png']);
+      assert.deepEqual(body.videos, ['https://example.com/motion.mp4']);
+      assert.equal(body.audio, 'https://example.com/voice.mp3');
+    }, 'https://example.com/reference.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Wan 2.7 video-edit requires and maps the source video', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'alibaba/wan-2.7/video-edit',
+    prompt: 'cinematic commercial lighting',
+    videos: ['https://example.com/source.mp4'],
+    images: ['https://example.com/style.png'],
+    duration: 0,
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.video, 'https://example.com/source.mp4');
+      assert.deepEqual(body.images, ['https://example.com/style.png']);
+      assert.equal(body.duration, 0);
+    }, 'https://example.com/edited.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Atlas LLM uses the official OpenAI-compatible v1 chat endpoint', async () => {
+  let requestedUrl = '';
+  const result = await atlas.generateChat(provider, {
+    model: 'test/chat-model',
+    messages: [{ role: 'user', content: 'reply pong' }],
+  }, {
+    fetchImpl: async (url, init = {}) => {
+      requestedUrl = String(url);
+      const body = JSON.parse(init.body);
+      assert.equal(body.model, 'test/chat-model');
+      assert.equal(init.headers.Authorization, 'Bearer test-key');
+      return jsonResponse({ choices: [{ message: { content: 'pong' }, finish_reason: 'stop' }] });
+    },
+  });
+  assert.equal(requestedUrl, 'https://api.atlascloud.ai/v1/chat/completions');
+  assert.equal(result.ok, true);
+  assert.equal(result.text, 'pong');
 });

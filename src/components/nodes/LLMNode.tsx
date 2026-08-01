@@ -445,7 +445,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
     logBus.info(
       `发送到 ${isExternalSelected && providerSelection.provider
         ? providerSelection.provider.label
-        : isSeedanceNzSelected ? '贞贞的平价AI小屋' : model} · ${
+        : isSeedanceNzSelected ? 'Atlas Cloud' : model} · ${
         !isExternalSelected && useStream && !isImgOut && userVideos.length === 0 ? 'SSE' : '非流式'
       } · imgs=${userImages.length} · videos=${userVideos.length}${userVideos.length ? ` · ${llmVideoMode}` : ''}`,
       src,
@@ -801,8 +801,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
             {isExternalSelected && providerSelection.provider
               ? `${providerSelection.provider.label || providerSelection.provider.id} · ${externalProviderModel || '未选模型'}`
               : isSeedanceNzSelected
-                ? `贞贞的平价AI小屋 · ${seedanceNzModel}`
-                : '贞贞的AI工坊 · 独立 LLM Key · 多模态 · 流式'}
+                ? `Atlas Cloud · ${externalProviderModel || '动态模型'}`
+                : 'Atlas Cloud · 动态 LLM 模型目录'}
           </div>
         </div>
         {history.length > 0 && (
@@ -828,8 +828,8 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                 {isExternalSelected && providerSelection.provider
                   ? providerSelection.provider.label
                   : isSeedanceNzSelected
-                    ? '贞贞的平价AI小屋'
-                    : '贞贞的AI工坊-独立LLM Key(默认)'}
+                    ? 'Atlas Cloud'
+                    : 'Atlas Cloud'}
               </span>
             </button>
             {d?.advancedProviderOpen && (
@@ -874,12 +874,6 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                     style={{ background: '#18181b', color: '#ffffff' }}
                     className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
                   >
-                    <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>
-                      贞贞的AI工坊-独立LLM Key(默认)
-                    </option>
-                    <option value="seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>
-                      贞贞的平价AI小屋
-                    </option>
                     {llmAdvancedProviders.map((provider) => (
                       <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
                         {provider.label || provider.id}
@@ -918,7 +912,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                       ))}
                     </select>
                     <div className="mt-1 text-[9px] leading-snug text-white/40">
-                      使用“贞贞的平价AI小屋 API Key”，接口为 api.seedance.nz。
+                      使用“Atlas Cloud API Key”，接口为 api.seedance.nz。
                     </div>
                   </div>
                 )}

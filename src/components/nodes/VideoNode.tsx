@@ -1739,7 +1739,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             {isExternalSelected && providerSelection.provider
               ? `${providerSelection.provider.label || providerSelection.provider.id} · ${externalProviderModel || '未选模型'}`
               : isSeedanceNzVideo
-                ? `贞贞的平价AI小屋 · ${apiModel}`
+                ? `Atlas Cloud · ${apiModel}`
               : `${modelDef.label} · ${modelDef.kind}`}
           </div>
         </div>
@@ -1758,7 +1758,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 {isExternalSelected && providerSelection.provider
                   ? providerSelection.provider.label
                   : videoBuiltinSource === 'seedance-nz'
-                    ? '贞贞的平价AI小屋'
+                    ? 'Atlas Cloud'
                     : '贞贞的AI工坊'}
               </span>
             </button>
@@ -1803,8 +1803,6 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                     style={{ background: '#18181b', color: '#ffffff' }}
                     className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30"
                   >
-                    <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>贞贞的AI工坊（默认）</option>
-                    <option value="builtin:seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>贞贞的平价AI小屋</option>
                     {videoAdvancedProviders.map((provider) => (
                       <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
                         {provider.label || provider.id}
@@ -2141,13 +2139,13 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
               : happyHorseMode === 'i2v'
                 ? '图生视频必须有参考图，只取排序后的第 1 张作为首图。'
                 : '参考图生视频需要 1-9 张图，可在提示词中使用“图1 / 图2”指代。'}
-            <div className="mt-1 text-white/35">贞贞的平价AI小屋 · 3-15 秒 · 720p / 1080p</div>
+            <div className="mt-1 text-white/35">Atlas Cloud · 3-15 秒 · 720p / 1080p</div>
           </div>
         )}
 
         {isApimartBudgetVideo && (
           <div className="rounded border border-cyan-300/20 bg-cyan-400/[0.06] px-2 py-1.5 text-[10px] leading-relaxed text-white/55">
-            <div>贞贞的平价AI小屋 · {apiModel}</div>
+            <div>Atlas Cloud · {apiModel}</div>
             <div className="mt-1 text-white/40">
               {isApimartOmni
                 ? 'Omni Flash：时长由模型决定，固定 720p；支持 Prompt、最多 16 张图片，或 1 个参考视频。'
@@ -2175,8 +2173,8 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 : '图生视频使用排序后的第 1 张首帧图，提示词可选；比例跟随输入图片，不发送比例参数。'}
             <div className="mt-1 text-white/35">
               {isHailuoH3
-                ? '贞贞的平价AI小屋 API · 按次计费 · 5-15 秒 · 固定 2K'
-                : '贞贞的平价AI小屋 API · 按次计费 · 6 / 10 秒 · 768p / 1080p（1080p 仅 6 秒）'}
+                ? 'Atlas Cloud API · 按次计费 · 5-15 秒 · 固定 2K'
+                : 'Atlas Cloud API · 按次计费 · 6 / 10 秒 · 768p / 1080p（1080p 仅 6 秒）'}
             </div>
             {!isHailuoH3 && hailuoMode === 'i2v' && (
               <div className="mt-1 text-white/35">首帧图短边需大于 300px，宽高比需在 2:5 到 5:2 之间。</div>
@@ -2193,14 +2191,14 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 : klingMode === 'r2v'
                   ? 'O3 参考生视频必须填写提示词，按素材顺序使用 1-4 张参考图。'
                   : 'O3 视频编辑必须填写提示词，并使用第 1 个输入视频。'}
-            <div className="mt-1 text-white/35">贞贞的平价AI小屋 API · 按次计费 · 5 / 10 秒</div>
+            <div className="mt-1 text-white/35">Atlas Cloud API · 按次计费 · 5 / 10 秒</div>
           </div>
         )}
 
         {isUpscaler && (
           <div className="rounded border border-emerald-300/20 bg-emerald-400/[0.06] px-2 py-1.5 text-[10px] leading-relaxed text-white/55">
             连接或拖入恰好 1 个 MP4 视频，选择目标分辨率后执行高清化；无需 Prompt，时长由输入视频读取。
-            <div className="mt-1 text-white/35">贞贞的平价AI小屋 API · 目标 720p / 1080p / 2k / 4k · 输入最长约 10 分钟</div>
+            <div className="mt-1 text-white/35">Atlas Cloud API · 目标 720p / 1080p / 2k / 4k · 输入最长约 10 分钟</div>
           </div>
         )}
 
@@ -2216,7 +2214,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                     ? '参考生视频使用 1-9 张图片，按画布素材顺序提交。'
                     : '短剧成片把 Prompt 作为脚本内容，并使用 1-14 张图片构造参考资产。'}
             <div className="mt-1 text-white/35">
-              贞贞的平价AI小屋 API · 按次计费 · {viduMode === 'short-play' ? '8-12 秒 · 固定 1080p' : '4-15 秒 · default / 720p / 1080p'}
+              Atlas Cloud API · 按次计费 · {viduMode === 'short-play' ? '8-12 秒 · 固定 1080p' : '4-15 秒 · default / 720p / 1080p'}
             </div>
           </div>
         )}
@@ -2225,7 +2223,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
           <div className="rounded border border-orange-300/20 bg-orange-400/[0.06] p-2 space-y-2">
             <div className="text-[10px] leading-relaxed text-white/60">
               Wan 2.7 Spicy 仅支持图生视频，必须提供 1 张首帧图；提示词可选。
-              <div className="mt-1 text-white/35">贞贞的平价AI小屋 · 海外模型 · 2-15 秒 · 720p / 1080p</div>
+              <div className="mt-1 text-white/35">Atlas Cloud · 海外模型 · 2-15 秒 · 720p / 1080p</div>
             </div>
             <div>
               <label className="text-[10px] text-white/50 block mb-1">反向提示词（可选）</label>

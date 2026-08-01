@@ -203,7 +203,7 @@ export interface StoryTaskSelection<T> {
 const STAGES: StoryStage[] = ['script', 'shots', 'assets', 'prompts', 'videos', 'compose'];
 const ASSET_KINDS = new Set<StoryAssetKind>(['character', 'scene', 'prop', 'costume', 'audio']);
 const TASK_STATUSES = new Set<StoryTaskStatus>(['idle', 'pending', 'submitting', 'running', 'polling', 'succeeded', 'failed', 'cancelled', 'stale']);
-const PROVIDER_SOURCES = new Set<CanvasProviderSource>(['zhenzhen', 'openai-compatible', 'modelscope', 'volcengine', 'agnes', 'comfyui', 'jimeng-cli']);
+const PROVIDER_SOURCES = new Set<CanvasProviderSource>(['zhenzhen', 'openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas', 'comfyui', 'jimeng-cli']);
 const STORY_LLM_MODELS = new Set(LLM_MODELS.map((model) => model.id));
 const STORY_IMAGE_MODELS = new Set([
   ...(IMAGE_MODELS.find((model) => model.id === 'gpt-image-2')?.apiModelOptions || []).map((model) => model.value),
