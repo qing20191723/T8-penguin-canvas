@@ -1,0 +1,147 @@
+name: Apply public share origin fix
+
+on:
+  push:
+    branches:
+      - fix/share-origin-and-disable-worker
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/share-origin-and-disable-worker
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Patch same-origin authorization and public worker mode
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          server_path = Path('backend/src/server.js')
+          server = server_path.read_text()
+          old = """function isTrustedLocalOrigin(origin) {
+            const value = String(origin || '').trim();
+            return LOCAL_ORIGIN_RE.test(value) || UXP_ORIGIN_RE.test(value) || PUBLIC_ALLOWED_ORIGINS.has(value);
+          }
+          function isLocalCanvasSyncPath(req) {
+          """
+          new = """function isTrustedLocalOrigin(origin) {
+            const value = String(origin || '').trim();
+            return LOCAL_ORIGIN_RE.test(value) || UXP_ORIGIN_RE.test(value) || PUBLIC_ALLOWED_ORIGINS.has(value);
+          }
+          function firstForwardedValue(value) {
+            return String(value || '').split(',')[0].trim();
+          }
+          function isSameRequestOrigin(req, origin) {
+            const value = String(origin || '').trim();
+            if (!value) return false;
+            let parsed;
+            try {
+              parsed = new URL(value);
+            } catch (_) {
+              return false;
+            }
+            const forwardedHost = firstForwardedValue(req.get('x-forwarded-host') || req.get('host')).toLowerCase();
+            const forwardedProto = firstForwardedValue(req.get('x-forwarded-proto') || req.protocol)
+              .replace(/:$/, '')
+              .toLowerCase();
+            if (!forwardedHost || !forwardedProto) return false;
+            return parsed.host.toLowerCase() === forwardedHost
+              && parsed.protocol.replace(/:$/, '').toLowerCase() === forwardedProto;
+          }
+          function isTrustedRequestOrigin(req, origin) {
+            return isTrustedLocalOrigin(origin) || isSameRequestOrigin(req, origin);
+          }
+          function isLocalCanvasSyncPath(req) {
+          """
+          if old not in server:
+              raise SystemExit('server origin helper anchor not found')
+          server = server.replace(old, new, 1)
+          old_trusted = "const trustedOrigin = Boolean(origin && isTrustedLocalOrigin(origin));"
+          new_trusted = "const trustedOrigin = Boolean(origin && isTrustedRequestOrigin(req, origin));"
+          if old_trusted not in server:
+              raise SystemExit('trusted origin middleware anchor not found')
+          server = server.replace(old_trusted, new_trusted, 1)
+          server_path.write_text(server)
+
+          canvas_path = Path('src/components/Canvas.tsx')
+          canvas = canvas_path.read_text()
+          marker = "const intents = await api.listCollaborationRunIntents('accepted', activeProjectId, activeId);"
+          marker_pos = canvas.find(marker)
+          if marker_pos < 0:
+              raise SystemExit('run intent worker marker not found')
+          effect_start = canvas.rfind('  useEffect(() => {', 0, marker_pos)
+          if effect_start < 0:
+              raise SystemExit('run intent worker effect start not found')
+          insert_at = effect_start + len('  useEffect(() => {')
+          guard = """
+              const isPublicShareMode = typeof window !== 'undefined'
+                && window.location.protocol === 'https:'
+                && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+              if (isPublicShareMode) return;
+          """
+          if 'const isPublicShareMode' not in canvas[effect_start:marker_pos]:
+              canvas = canvas[:insert_at] + guard + canvas[insert_at:]
+          canvas_path.write_text(canvas)
+          PY
+      - name: Verify source guards
+        run: |
+          grep -F "isTrustedRequestOrigin(req, origin)" backend/src/server.js
+          grep -F "const isPublicShareMode" src/components/Canvas.tsx
+          grep -F "if (isPublicShareMode) return;" src/components/Canvas.tsx
+      - name: Install and build
+        run: npm install --include=dev && npm run build
+      - name: Verify forwarded same-origin writes and cross-site rejection
+        env:
+          HOST: 127.0.0.1
+          PORT: 18779
+          NODE_ENV: production
+          T8_WEB_DEPLOY: '1'
+          T8_FIGMA_BRIDGE_AUTOSTART: '0'
+        run: |
+          node backend/src/server.js > /tmp/t8-share-origin.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid 2>/dev/null || true; cat /tmp/t8-share-origin.log' EXIT
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:18779/api/status >/dev/null && break
+            sleep 1
+          done
+          good_status=$(curl -sS -o /tmp/good.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:18779/api/canvas \
+            -H 'Origin: https://qingchen-atlascloud-canvas.onrender.com' \
+            -H 'X-Forwarded-Host: qingchen-atlascloud-canvas.onrender.com' \
+            -H 'X-Forwarded-Proto: https' \
+            -H 'Content-Type: application/json' \
+            --data '{"name":"forwarded-origin-test"}')
+          cat /tmp/good.json
+          test "$good_status" = "200"
+          evil_status=$(curl -sS -o /tmp/evil.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:18779/api/canvas \
+            -H 'Origin: https://evil.example' \
+            -H 'X-Forwarded-Host: qingchen-atlascloud-canvas.onrender.com' \
+            -H 'X-Forwarded-Proto: https' \
+            -H 'Content-Type: application/json' \
+            --data '{"name":"must-not-create"}')
+          cat /tmp/evil.json
+          test "$evil_status" = "403"
+      - name: Commit product changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/server.js src/components/Canvas.tsx
+          if git diff --cached --quiet; then
+            echo 'No product changes to commit.'
+            exit 0
+          fi
+          git commit -m "fix: authorize forwarded same-origin writes and pause public worker"
+          git push origin HEAD:fix/share-origin-and-disable-worker
