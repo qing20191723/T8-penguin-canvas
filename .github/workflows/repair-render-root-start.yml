@@ -45,10 +45,25 @@ jobs:
           match = re.search(r"          python3 <<'PY'\n(.*?)\n          PY\n", workflow, re.S)
           if not match:
               raise SystemExit('unable to extract Atlas repair script from approved workflow')
-          source = '\n'.join(
-              line[10:] if line.startswith('          ') else line
-              for line in match.group(1).splitlines()
-          )
+
+          output = []
+          triple = None
+          for raw_line in match.group(1).splitlines():
+              line = raw_line
+              if triple is None and line.startswith('          '):
+                  line = line[10:]
+              output.append(line)
+              if triple is not None:
+                  if line.count(triple) % 2 == 1:
+                      triple = None
+                  continue
+              single_count = line.count("'''")
+              double_count = line.count('"""')
+              if single_count % 2 == 1:
+                  triple = "'''"
+              elif double_count % 2 == 1:
+                  triple = '"""'
+          source = '\n'.join(output)
           exec(compile(source, 'apply-atlas-dynamic-repair.py', 'exec'), {})
           PY
 
