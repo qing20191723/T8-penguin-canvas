@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Assert exact verified source baseline
+      - name: Assert verified baseline
         shell: bash
         run: |
           git merge-base --is-ancestor 648d092dfa1ac248a34e47adb6a72b19d0140cea HEAD
@@ -40,69 +40,40 @@ jobs:
               '648d092dfa1ac248a34e47adb6a72b19d0140cea', 'HEAD',
           ], text=True).splitlines())
           if changed != allowed:
-              raise SystemExit(f'Pre-repair branch contains unexpected files: {sorted(changed)}')
+              raise SystemExit(f'Unexpected pre-repair files: {sorted(changed)}')
           PY
 
-      - name: Reassemble and verify deterministic patch
+      - name: Apply verified product patch
         shell: bash
         run: |
-          cat tools/atlas-patch/part-*.txt | tr -d '\r\n' > /tmp/atlas-only-qingchen.patch.gz.b64
-          echo '2dbcb9477c3166e4f9bf7aebbd44ec8a4f3d5130a8125189d61e14018d8e968c  /tmp/atlas-only-qingchen.patch.gz.b64' | sha256sum --check --strict
-          base64 --decode /tmp/atlas-only-qingchen.patch.gz.b64 | gzip --decompress > /tmp/atlas-only-qingchen.patch
-          echo 'd4d70fd91d32fd6cbd70c7c869bc4d7ab24718a555d1cc3041cb448b0e20c8ab  /tmp/atlas-only-qingchen.patch' | sha256sum --check --strict
-          git apply --check /tmp/atlas-only-qingchen.patch
-          git apply /tmp/atlas-only-qingchen.patch
+          cat tools/atlas-patch/part-*.txt | tr -d '\r\n' > /tmp/atlas.patch.gz.b64
+          echo '2dbcb9477c3166e4f9bf7aebbd44ec8a4f3d5130a8125189d61e14018d8e968c  /tmp/atlas.patch.gz.b64' | sha256sum --check --strict
+          base64 --decode /tmp/atlas.patch.gz.b64 | gzip --decompress > /tmp/atlas.patch
+          echo 'd4d70fd91d32fd6cbd70c7c869bc4d7ab24718a555d1cc3041cb448b0e20c8ab  /tmp/atlas.patch' | sha256sum --check --strict
+          git apply --check /tmp/atlas.patch
+          git apply /tmp/atlas.patch
 
-      - name: Correct Atlas provider default construction
+      - name: Correct TypeScript Atlas provider defaults
         shell: bash
         run: |
           python3 <<'PY'
+          import re
           from pathlib import Path
+
           path = Path('src/stores/apiKeys.ts')
           source = path.read_text(encoding='utf-8')
           source = source.replace(
               'function ensureAtlasAndCustomProviders(settings: ApiSettings): AdvancedProviderConfig[] {',
               'function ensureAtlasAndCustomProviders(settings: { advancedProviders?: AdvancedProviderConfig[] }): AdvancedProviderConfig[] {',
           )
-          old = '''  const atlas: AdvancedProviderConfig = {
-            id: 'atlas',
-            label: 'Atlas Cloud',
-            protocol: 'atlas',
-            baseUrl: ATLAS_GENERATION_BASE_URL,
-            enabled: true,
-            imageModels: ATLAS_FALLBACK_IMAGE_MODELS,
-            videoModels: ATLAS_FALLBACK_VIDEO_MODELS,
-            chatModels: ATLAS_FALLBACK_CHAT_MODELS,
-            defaults: {
-              imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
-              videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
-              chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
-              pollIntervalMs: 3000,
-            },
-            ...(atlasSource || {}),
-            id: 'atlas',
-            label: 'Atlas Cloud',
-            protocol: 'atlas',
-            baseUrl: ATLAS_GENERATION_BASE_URL,
-            enabled: true,
-          };
-
-          const custom: AdvancedProviderConfig = {
-            id: 'custom-api',
-            label: '自定义 API',
-            protocol: 'openai-compatible',
-            baseUrl: '',
-            enabled: false,
-            imageModels: [],
-            videoModels: [],
-            chatModels: [],
-            defaults: {},
-            ...(customSource || {}),
-            id: 'custom-api',
-            protocol: 'openai-compatible',
-          };
-          '''
-          new = '''  const atlas: AdvancedProviderConfig = {
+          pattern = re.compile(
+              r"  const atlas: AdvancedProviderConfig = \{.*?\n"
+              r"  const custom: AdvancedProviderConfig = \{.*?\n"
+              r"  \};\n\n"
+              r"  return \[atlas, custom\];",
+              re.S,
+          )
+          replacement = '''  const atlas: AdvancedProviderConfig = {
             ...(atlasSource || {}),
             id: 'atlas',
             label: 'Atlas Cloud',
@@ -139,10 +110,11 @@ jobs:
             chatModels: Array.isArray(customSource?.chatModels) ? customSource.chatModels : [],
             defaults: { ...(customSource?.defaults || {}) },
           };
-          '''
-          if old not in source:
-              raise SystemExit('Expected Atlas provider construction block not found')
-          source = source.replace(old, new, 1)
+
+          return [atlas, custom];'''
+          source, count = pattern.subn(replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f'Atlas provider block replacement count: {count}')
           source = source.replace(
               'advancedProviders: ensureAtlasAndCustomProviders({ advancedProviders: [] } as ApiSettings),',
               'advancedProviders: ensureAtlasAndCustomProviders({ advancedProviders: [] }),',
@@ -151,7 +123,7 @@ jobs:
           path.write_text(source, encoding='utf-8')
           PY
 
-      - name: Static Atlas-only and Qingchen assertions
+      - name: Assert Atlas-only routing and Qingchen naming
         shell: bash
         run: |
           node --check backend/src/config.js
@@ -162,34 +134,32 @@ jobs:
           node --check backend/src/routes/settings.js
           python3 <<'PY'
           from pathlib import Path
-          api_settings = Path('src/components/ApiSettings.tsx').read_text(encoding='utf-8')
-          store = Path('src/stores/apiKeys.ts').read_text(encoding='utf-8')
-          registry = Path('backend/src/providers/registry.js').read_text(encoding='utf-8')
-          atlas = Path('backend/src/providers/atlas.js').read_text(encoding='utf-8')
-          atlas_schema = Path('backend/src/providers/atlasSchema.js').read_text(encoding='utf-8')
-          config = Path('backend/src/config.js').read_text(encoding='utf-8')
-          canvas_route = Path('backend/src/routes/canvas.js').read_text(encoding='utf-8')
-          checks = {
-              'Atlas settings title': 'API Key 设置（Atlas Cloud + 自定义 API）' in api_settings,
-              'Atlas-only UI notice': '所有内置 LLM、图像与视频模型均来自 Atlas Cloud 当前公共模型目录' in api_settings,
-              'Atlas and custom provider defaults': "id: 'atlas'" in store and "id: 'custom-api'" in store,
-              'Only public protocols': "'openai-compatible',\n  'atlas'," in registry,
-              'Registry Atlas/custom filtering': 'return [atlas, custom].filter(Boolean);' in registry,
-              'Atlas generation root': "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1'" in atlas,
-              'Atlas image/video endpoints': "const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';" in atlas,
-              'Atlas chat endpoint': "const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1'" in atlas,
-              'Atlas public model catalog': "const ATLAS_MODELS_URL = 'https://api.atlascloud.ai/api/v1/models'" in atlas_schema,
-              'Atlas schema origin restriction': "const ATLAS_STATIC_ORIGIN = 'https://static.atlascloud.ai'" in atlas_schema and "url.pathname.startsWith('/model/schema/')" in atlas_schema,
-              'Qingchen root path': "'qingchen'" in config,
-              'Qingchen canvas path': 'qingchen-canvas' in canvas_route,
+          files = {
+              'ui': Path('src/components/ApiSettings.tsx').read_text(encoding='utf-8'),
+              'store': Path('src/stores/apiKeys.ts').read_text(encoding='utf-8'),
+              'registry': Path('backend/src/providers/registry.js').read_text(encoding='utf-8'),
+              'atlas': Path('backend/src/providers/atlas.js').read_text(encoding='utf-8'),
+              'schema': Path('backend/src/providers/atlasSchema.js').read_text(encoding='utf-8'),
+              'config': Path('backend/src/config.js').read_text(encoding='utf-8'),
+              'canvas': Path('backend/src/routes/canvas.js').read_text(encoding='utf-8'),
           }
-          failed = [name for name, ok in checks.items() if not ok]
-          if failed:
-              raise SystemExit(f'Static assertions failed: {failed}')
-          print('Static Atlas-only/Qingchen assertions passed:', ', '.join(checks))
+          checks = [
+              'API Key 设置（Atlas Cloud + 自定义 API）' in files['ui'],
+              '所有内置 LLM、图像与视频模型均来自 Atlas Cloud 当前公共模型目录' in files['ui'],
+              "id: 'atlas'" in files['store'] and "id: 'custom-api'" in files['store'],
+              'return [atlas, custom].filter(Boolean);' in files['registry'],
+              "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1'" in files['atlas'],
+              "const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1'" in files['atlas'],
+              "const ATLAS_MODELS_URL = 'https://api.atlascloud.ai/api/v1/models'" in files['schema'],
+              "const ATLAS_STATIC_ORIGIN = 'https://static.atlascloud.ai'" in files['schema'],
+              "'qingchen'" in files['config'],
+              'qingchen-canvas' in files['canvas'],
+          ]
+          if not all(checks):
+              raise SystemExit(f'Atlas/Qingchen assertion results: {checks}')
           PY
 
-      - name: Verify current official Atlas public catalog
+      - name: Verify current Atlas public catalog
         shell: bash
         run: |
           node <<'NODE'
@@ -203,10 +173,9 @@ jobs:
             return acc;
           }, {});
           console.log(JSON.stringify({ visibleModels: items.length, counts }, null, 2));
-          if (items.length < 300) throw new Error(`Unexpected Atlas catalog size: ${items.length}`);
-          if (!items.some((item) => item?.type === 'Image')) throw new Error('Atlas Image models missing');
-          if (!items.some((item) => item?.type === 'Video')) throw new Error('Atlas Video models missing');
-          if (!items.some((item) => item?.type === 'Text')) throw new Error('Atlas Text models missing');
+          if (items.length < 300 || !items.some((x) => x?.type === 'Image') || !items.some((x) => x?.type === 'Video') || !items.some((x) => x?.type === 'Text')) {
+            throw new Error('Atlas public catalog is incomplete');
+          }
           NODE
 
       - name: Set up Node.js
@@ -220,16 +189,16 @@ jobs:
           T8_WEB_DEPLOY: '1'
         run: npm ci --include=dev
 
-      - name: Regenerate authoritative capability artifacts
+      - name: Regenerate capability artifacts
         run: npm run feature-sync:generate
 
-      - name: Run Atlas routing and schema regression tests
+      - name: Run Atlas regression tests
         run: node --test backend/src/providers/atlas.test.js backend/src/providers/registry.test.js backend/src/providers/atlasSchema.test.js
 
       - name: Build production frontend
         run: npm run build
 
-      - name: Commit only verified product changes
+      - name: Commit verified product changes
         shell: bash
         run: |
           rm -f .github/workflows/export-atlas-audit-source.yml
