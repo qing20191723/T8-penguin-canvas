@@ -38,7 +38,6 @@ jobs:
           python3 <<'PY'
           import re
           import subprocess
-          import textwrap
 
           workflow = subprocess.check_output([
               'git', 'show', 'origin/main:.github/workflows/apply-atlas-dynamic-repair.yml'
@@ -46,7 +45,10 @@ jobs:
           match = re.search(r"          python3 <<'PY'\n(.*?)\n          PY\n", workflow, re.S)
           if not match:
               raise SystemExit('unable to extract Atlas repair script from approved workflow')
-          source = textwrap.dedent(match.group(1))
+          source = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in match.group(1).splitlines()
+          )
           exec(compile(source, 'apply-atlas-dynamic-repair.py', 'exec'), {})
           PY
 
