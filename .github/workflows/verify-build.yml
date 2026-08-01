@@ -31,7 +31,22 @@ jobs:
           cache: npm
 
       - name: Apply Atlas video and public UI patch
-        run: python3 .github/apply_atlas_video_clean_ui.py
+        run: |
+          python3 .github/apply_atlas_video_clean_ui.py
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('src/components/Canvas.tsx')
+          text = path.read_text(encoding='utf-8')
+          marker = '  const [radialSettingsOpen, setRadialSettingsOpen] = useState(false);'
+          if marker not in text:
+              raise SystemExit('Canvas compatibility setter insertion marker missing')
+          text = text.replace(marker, '  const [, setModelHelpOpen] = useState(false);\n' + marker, 1)
+          creator = '          projectId={activeProjectId}\n          canvasId={activeId}'
+          if creator not in text:
+              raise SystemExit('Creator Agent nullable props marker missing')
+          text = text.replace(creator, "          projectId={activeProjectId || ''}\n          canvasId={activeId || ''}", 1)
+          path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Install, regenerate, test and build
         run: |
