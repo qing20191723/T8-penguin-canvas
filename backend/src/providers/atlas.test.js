@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const atlas = require('./atlas');
 
+// Regression coverage mirrors the public Atlas LLM, image, and video node routes.
 const provider = {
   id: 'atlas',
   protocol: 'atlas',
@@ -11,6 +12,7 @@ const provider = {
   videoModels: [
     'kwaivgi/kling-v3.0-std/text-to-video',
     'atlascloud/wan-2.7-spicy/image-to-video',
+    'atlascloud/wan-2.7-spicy/reference-to-video',
     'alibaba/wan-2.7/reference-to-video',
     'alibaba/wan-2.7/video-edit',
   ],
@@ -143,12 +145,8 @@ test('Atlas LLM uses the official OpenAI-compatible v1 chat endpoint', async () 
   assert.equal(result.text, 'pong');
 });
 
-
 test('Spicy reference-to-video binds every image with attached_subject syntax', async () => {
-  const result = await atlas.generateVideo({
-    ...provider,
-    videoModels: [...provider.videoModels, 'atlascloud/wan-2.7-spicy/reference-to-video'],
-  }, {
+  const result = await atlas.generateVideo(provider, {
     model: 'atlascloud/wan-2.7-spicy/reference-to-video',
     prompt: 'The subjects walk forward together.',
     images: [
