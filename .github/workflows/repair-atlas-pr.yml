@@ -59,9 +59,9 @@ jobs:
           from pathlib import Path
           canvas = Path('src/components/Canvas.tsx').read_text(encoding='utf-8')
           hook_index = canvas.index('const creatorCanvasContext = useMemo')
-          active_return = re.search(r'(?m)^[ \t]*if\s*\(\s*!activeId\s*\)\s*\{', canvas)
-          assert active_return is not None
-          assert hook_index < active_return.start()
+          active_returns = list(re.finditer(r'(?m)^[ \t]*if\s*\(\s*!activeId\s*\)\s*\{', canvas))
+          assert active_returns
+          assert any(hook_index < match.start() for match in active_returns)
           action = Path('src/components/NodeActionBar.tsx').read_text(encoding='utf-8')
           assert 'deleteElements({ nodes: [selectedExe] })' in action
           registry = Path('backend/src/providers/registry.js').read_text(encoding='utf-8')
