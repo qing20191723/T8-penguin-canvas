@@ -1,0 +1,98 @@
+name: Verify live node click retry
+
+on:
+  push:
+    branches: [ci/verify-live-node-click-9871]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-live-node-click-retry
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ci/verify-live-node-click-9871
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install browser tooling
+        run: |
+          mkdir -p /tmp/qingchen-ui-retry
+          cd /tmp/qingchen-ui-retry
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0 --no-save
+          npx playwright install --with-deps chromium
+      - name: Verify click without waiting for background pollers
+        working-directory: /tmp/qingchen-ui-retry
+        run: |
+          cat > verify.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+          const base='https://qingchen-atlascloud-canvas.onrender.com';
+          const expected='9871a640e4bf8eecf942ea2c6632b40b2b94fecc';
+          const status=await (await fetch(`${base}/api/status`)).json();
+          if(!String(status.commit||'').startsWith(expected)||status.phase!=='ready') throw new Error(`unexpected deployment ${JSON.stringify(status)}`);
+          const browser=await chromium.launch({headless:true});
+          const context=await browser.newContext({viewport:{width:1600,height:1000}});
+          const page=await context.newPage();
+          const errors=[];
+          page.on('pageerror',e=>errors.push(`pageerror:${e.message}`));
+          page.on('console',m=>{if(m.type()==='error'||m.type()==='warning') errors.push(`console:${m.type()}:${m.text()}`)});
+          const name=`UI点击重试-${Date.now()}`;
+          let id='';
+          const result={success:false,deployedCommit:status.commit,errors:[]};
+          try{
+            const created=await context.request.post(`${base}/api/canvas`,{data:{name}});
+            const payload=await created.json();
+            if(!created.ok()||!payload.data?.id) throw new Error(`create failed ${created.status()} ${JSON.stringify(payload)}`);
+            id=payload.data.id;
+            await page.goto(base,{waitUntil:'domcontentloaded',timeout:120000});
+            await page.waitForSelector('.t8-sidebar-node',{timeout:60000});
+            const row=page.locator('.t8-sidebar-canvas-row').filter({hasText:name});
+            await row.waitFor({state:'visible',timeout:60000});
+            await row.click();
+            const rhCount=await page.locator('button').filter({hasText:/^RH$/}).count();
+            if(rhCount!==0) throw new Error(`RH group visible count=${rhCount}`);
+            const button=page.locator('.t8-sidebar-node').first();
+            const label=(await button.innerText()).trim();
+            const before=await page.locator('.react-flow__node').count();
+            await button.click({timeout:30000});
+            await page.waitForFunction((n)=>document.querySelectorAll('.react-flow__node').length>n,before,{timeout:20000});
+            const after=await page.locator('.react-flow__node').count();
+            await page.waitForTimeout(1000);
+            const rowText=(await row.innerText()).trim();
+            await page.screenshot({path:'retry-success.png',fullPage:true});
+            Object.assign(result,{success:true,testCanvasId:id,nodeLabel:label,beforeFlowCount:before,afterFlowCount:after,rowText,rhGroupCount:rhCount,errors:errors.slice(0,40),verifiedAt:new Date().toISOString()});
+          }catch(error){
+            await page.screenshot({path:'retry-failure.png',fullPage:true}).catch(()=>{});
+            Object.assign(result,{error:error.stack||error.message,testCanvasId:id,errors:errors.slice(0,80),verifiedAt:new Date().toISOString()});
+            throw error;
+          }finally{
+            if(id){const deleted=await context.request.delete(`${base}/api/canvas/${encodeURIComponent(id)}`);result.cleanupStatus=deleted.status();}
+            fs.writeFileSync('live-click-retry-result.json',JSON.stringify(result,null,2));
+            await browser.close();
+          }
+          console.log(JSON.stringify(result,null,2));
+          EOF
+          node verify.mjs
+      - name: Commit result
+        if: always()
+        run: |
+          cp /tmp/qingchen-ui-retry/live-click-retry-result.json .github/live-click-retry-result.json 2>/dev/null || true
+          cp /tmp/qingchen-ui-retry/retry-success.png .github/retry-success.png 2>/dev/null || true
+          cp /tmp/qingchen-ui-retry/retry-failure.png .github/retry-failure.png 2>/dev/null || true
+          rm -f .github/workflows/verify-live-node-click-retry.yml .github/live-click-9871-trigger.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "ci: record live node click retry" || true
+          git push origin HEAD:ci/verify-live-node-click-9871
