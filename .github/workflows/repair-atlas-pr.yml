@@ -55,9 +55,13 @@ jobs:
         shell: bash
         run: |
           python3 <<'PY'
+          import re
           from pathlib import Path
           canvas = Path('src/components/Canvas.tsx').read_text(encoding='utf-8')
-          assert canvas.index('const creatorCanvasContext = useMemo') < canvas.index('if (!activeId)')
+          hook_index = canvas.index('const creatorCanvasContext = useMemo')
+          active_return = re.search(r'(?m)^[ \t]*if\s*\(\s*!activeId\s*\)\s*\{', canvas)
+          assert active_return is not None
+          assert hook_index < active_return.start()
           action = Path('src/components/NodeActionBar.tsx').read_text(encoding='utf-8')
           assert 'deleteElements({ nodes: [selectedExe] })' in action
           registry = Path('backend/src/providers/registry.js').read_text(encoding='utf-8')
