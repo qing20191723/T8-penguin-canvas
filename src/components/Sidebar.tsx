@@ -417,14 +417,14 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const canvasListInitializedRef = useRef(false);
+  const [canvasListInitialized, setCanvasListInitialized] = useState(false);
   const autoCreateStartedRef = useRef(false);
   const completionNoticeSet = useMemo(() => new Set(completionNoticeCanvasIds), [completionNoticeCanvasIds]);
 
   useEffect(() => {
     let mounted = true;
     void loadCanvases().finally(() => {
-      if (mounted) canvasListInitializedRef.current = true;
+      if (mounted) setCanvasListInitialized(true);
     });
     return () => {
       mounted = false;
@@ -432,12 +432,12 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
   }, [loadCanvases]);
 
   useEffect(() => {
-    if (!canvasListInitializedRef.current || canvasLoading || canvases.length > 0 || activeId || autoCreateStartedRef.current) return;
+    if (!canvasListInitialized || canvasLoading || canvases.length > 0 || activeId || autoCreateStartedRef.current) return;
     autoCreateStartedRef.current = true;
     void createCanvas('画布 1').then((created) => {
       if (!created) autoCreateStartedRef.current = false;
     });
-  }, [activeId, canvasLoading, canvases.length, createCanvas]);
+  }, [activeId, canvasListInitialized, canvasLoading, canvases.length, createCanvas]);
 
   const handleCreateCanvas = async () => {
     const name = `画布 ${canvases.length + 1}`;
