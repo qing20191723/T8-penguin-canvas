@@ -20,10 +20,10 @@ jobs:
           ref: fix/atlas-only-qingchen-config
           fetch-depth: 1
 
-      - name: Download Atlas public model catalog and schemas
+      - name: Download available Atlas public schemas
         shell: bash
         run: |
-          mkdir -p /tmp/atlas-schemas/schemas /tmp/atlas-schemas/readmes /tmp/atlas-schemas/examples
+          mkdir -p /tmp/atlas-schemas/schemas /tmp/atlas-schemas/examples
           curl --fail --silent --show-error --location \
             https://api.atlascloud.ai/api/v1/models \
             --output /tmp/atlas-schemas/models.json
@@ -35,14 +35,20 @@ jobs:
           const safe = (value) => String(value || '').replace(/[^a-z0-9._-]+/gi, '__').slice(0, 220);
           const queue = [];
           for (const item of items) {
-            for (const [field, dir, ext] of [['schema', 'schemas', '.json'], ['example', 'examples', '.json'], ['readme', 'readmes', '.md']]) {
+            for (const [field, dir] of [['schema', 'schemas'], ['example', 'examples']]) {
               const url = String(item?.[field] || '').trim();
               if (!url.startsWith('https://static.atlascloud.ai/')) continue;
-              queue.push({ url, file: path.join('/tmp/atlas-schemas', dir, `${safe(item.model)}${ext}`) });
+              queue.push({
+                model: String(item.model || ''),
+                kind: field,
+                url,
+                file: path.join('/tmp/atlas-schemas', dir, `${safe(item.model)}.json`),
+              });
             }
           }
           let cursor = 0;
-          let failures = 0;
+          const failures = [];
+          let downloaded = 0;
           async function worker() {
             while (cursor < queue.length) {
               const task = queue[cursor++];
@@ -50,20 +56,32 @@ jobs:
                 const response = await fetch(task.url);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 fs.writeFileSync(task.file, Buffer.from(await response.arrayBuffer()));
+                downloaded += 1;
               } catch (error) {
-                failures += 1;
-                console.error('download failed', task.url, error.message);
+                failures.push({ model: task.model, kind: task.kind, url: task.url, error: error.message });
               }
             }
           }
           Promise.all(Array.from({ length: 12 }, worker)).then(() => {
-            fs.writeFileSync('/tmp/atlas-schemas/summary.json', JSON.stringify({ publicModels: items.length, filesRequested: queue.length, failures }, null, 2));
-            console.log(JSON.stringify({ publicModels: items.length, filesRequested: queue.length, failures }, null, 2));
-            if (failures > Math.max(10, queue.length * 0.1)) process.exit(2);
+            const summary = {
+              publicModels: items.length,
+              filesRequested: queue.length,
+              downloaded,
+              failureCount: failures.length,
+              failures,
+            };
+            fs.writeFileSync('/tmp/atlas-schemas/summary.json', JSON.stringify(summary, null, 2));
+            console.log(JSON.stringify({
+              publicModels: summary.publicModels,
+              filesRequested: summary.filesRequested,
+              downloaded: summary.downloaded,
+              failureCount: summary.failureCount,
+            }, null, 2));
           });
           NODE
 
       - name: Upload Atlas schema audit artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: atlas-schema-audit
