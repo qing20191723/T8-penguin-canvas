@@ -3,7 +3,7 @@
  *
  * 设计目标:
  *   选中任意「带生成/执行功能」的节点 (EXECUTABLE_NODE_TYPES) 时,
- *   在节点右上角外侧出现一条快捷操作栏: 执行 / 中止 / 取消选中
+ *   在节点右上角外侧出现一条快捷操作栏: 执行 / 中止 / 删除节点
  *
  * 设计要点:
  *   - 0 节点侵入: 在 ReactFlow 内部统一渲染, 不需要改每个节点组件
@@ -46,7 +46,7 @@ interface NodeActionBarProps {
 const NodeActionBar = ({ onRunNode, onStopRun }: NodeActionBarProps) => {
   const nodes = useNodes();
   const { x: vx, y: vy, zoom } = useViewport();
-  const { setNodes } = useReactFlow();
+  const { setNodes, deleteElements } = useReactFlow();
   const { theme, style, templateId, customTemplates } = useThemeStore();
   const isDark = theme === 'dark';
   const activeTemplate = useMemo(
@@ -230,7 +230,7 @@ const NodeActionBar = ({ onRunNode, onStopRun }: NodeActionBarProps) => {
   };
   const onClose = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setNodes((nds) => nds.map((n) => (n.id === selectedExe.id ? { ...n, selected: false } : n)));
+    void deleteElements({ nodes: [selectedExe] });
   };
 
   const runColor = rhDuckMode
@@ -382,13 +382,13 @@ const NodeActionBar = ({ onRunNode, onStopRun }: NodeActionBarProps) => {
           </button>
         )}
 
-        {/* 取消选中 (关闭操作栏) */}
+        {/* 删除当前节点 */}
         <button
           type="button"
           onClick={onClose}
           onMouseEnter={(e) => onEnter(e, 'close')}
           onMouseLeave={(e) => onLeave(e, 'close')}
-          title="取消选中 (隐藏操作栏)"
+          title="删除当前节点"
           style={mkBtn('close')}
         >
           <X size={12} strokeWidth={2.5} />
