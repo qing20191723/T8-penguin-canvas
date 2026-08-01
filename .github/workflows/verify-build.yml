@@ -35,6 +35,7 @@ jobs:
           python3 .github/apply_atlas_video_clean_ui.py
           python3 <<'PY'
           from pathlib import Path
+
           path = Path('src/components/Canvas.tsx')
           text = path.read_text(encoding='utf-8')
           marker = '  const [radialSettingsOpen, setRadialSettingsOpen] = useState(false);'
@@ -46,6 +47,32 @@ jobs:
               raise SystemExit('Creator Agent nullable props marker missing')
           text = text.replace(creator, "          projectId={activeProjectId || ''}\n          canvasId={activeId || ''}", 1)
           path.write_text(text, encoding='utf-8')
+
+          replacements = [
+              ('贞贞的无限画布', '清尘无限画布'),
+              ('贞贞画布', '清尘画布'),
+              ('贞贞的平价AI小屋图像模型', 'Atlas Cloud 图像模型'),
+              ('贞贞的平价AI小屋', 'Atlas Cloud'),
+              ('贞贞的平价 AI 小屋', 'Atlas Cloud'),
+              ('贞贞海外模型与内置生成能力。', 'Atlas Cloud 模型与生成能力。'),
+              ('贞贞的AI工坊', 'Atlas Cloud'),
+              ('贞贞工坊', 'Atlas Cloud'),
+              ('贞贞', '清尘'),
+          ]
+          suffixes = {'.ts', '.tsx', '.js', '.cjs', '.mjs', '.json', '.md', '.html', '.css'}
+          for root_name in ['tools', '.agents']:
+              root = Path(root_name)
+              if not root.exists():
+                  continue
+              for file in root.rglob('*'):
+                  if not file.is_file() or file.suffix.lower() not in suffixes:
+                      continue
+                  source = file.read_text(encoding='utf-8')
+                  updated = source
+                  for old, new in replacements:
+                      updated = updated.replace(old, new)
+                  if updated != source:
+                      file.write_text(updated, encoding='utf-8')
           PY
 
       - name: Install, regenerate, test and build
@@ -53,15 +80,39 @@ jobs:
           npm ci --include=dev
           node - <<'NODE'
           const fs = require('node:fs');
+          const {
+            sha256CanonicalText,
+          } = require('./tools/zcanvas-cli/src/canonicalTextDigest.cjs');
+          const {
+            validateCreativeCapabilityManifest,
+          } = require('./backend/src/services/agentControlCapabilities.js');
+          const {
+            buildRuntimeCatalog,
+          } = require('./tools/zcanvas-cli/scripts/generateCreativeRuntimeCatalog.cjs');
+          const {
+            buildCapabilityGraph,
+          } = require('./tools/zcanvas-cli/scripts/generateCreativeCapabilityArtifacts.cjs');
+
+          const raw = fs.readFileSync('tools/zcanvas-cli/creativeCapabilityManifest.json');
+          const manifest = validateCreativeCapabilityManifest(JSON.parse(raw.toString('utf8')));
+          const graph = buildCapabilityGraph({
+            manifest,
+            manifestDigest: sha256CanonicalText(raw),
+            runtimeCatalog: buildRuntimeCatalog(),
+          });
           const path = 'tools/zcanvas-cli/manifest.json';
-          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
-          manifest.providerCatalogDigest = 'da814427d3a0a2894c443a8bce46ef042b4e7a924f449d453065d21984adca86';
-          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+          const compatibility = JSON.parse(fs.readFileSync(path, 'utf8'));
+          compatibility.providerCatalogDigest = graph.sourceDigests.runtimeCatalogArtifact;
+          fs.writeFileSync(path, `${JSON.stringify(compatibility, null, 2)}\n`);
+          console.log(`registered provider catalog digest ${compatibility.providerCatalogDigest}`);
           NODE
           npm run feature-sync:generate
           node --test backend/src/providers/atlas.test.js
           npm run build
-          grep -RIn '贞贞' src backend public index.html package.json && exit 1 || true
+          if grep -RIn '贞贞' src backend public tools .agents index.html package.json; then
+            echo 'Legacy Chinese branding remains.' >&2
+            exit 1
+          fi
 
       - name: Commit verified product changes
         shell: bash
