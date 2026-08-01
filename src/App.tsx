@@ -340,7 +340,6 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsedPreference);
   // 画布接收节点添加的 ref(从 Sidebar -> Canvas)
   const addNodeRef = useRef<AddNodeFn | null>(null);
-  const pendingSidebarNodeRef = useRef<{ type: NodeType; options?: Parameters<AddNodeFn>[1] } | null>(null);
   const insertWorkflowRef = useRef<InsertWorkflowFn | null>(null);
 
   const handleOpenZhaotutuTaggerTrainer = useCallback(async () => {
@@ -771,33 +770,45 @@ function App() {
     };
   }, [atlasProvider]);
 
+  const waitForAddNodeHandler = useCallback(async (timeoutMs = 10000): Promise<AddNodeFn | null> => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (addNodeRef.current) return addNodeRef.current;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+    }
+    return null;
+  }, []);
+
   const handleAddNode = useCallback(async (type: NodeType) => {
     const options = buildSidebarNodeOptions(type);
-    if (activeCanvasId) {
-      addNodeRef.current?.(type, options);
+    let canvasId = activeCanvasId;
+
+    if (!canvasId) {
+      const created = await createCanvas(`画布 ${canvasCount + 1}`);
+      if (!created) {
+        const message = useCanvasStore.getState().error || '创建画布失败，请刷新页面后重试。';
+        console.error('[canvas] sidebar node click could not create a canvas:', message);
+        window.alert(message);
+        return;
+      }
+      canvasId = created.id;
+    }
+
+    const addNode = await waitForAddNodeHandler();
+    if (!addNode) {
+      const message = `画布 ${canvasId} 尚未完成加载，请稍后再试。`;
+      console.error('[canvas] sidebar node click timed out waiting for Canvas handler:', { type, canvasId });
+      window.alert(message);
       return;
     }
 
-    pendingSidebarNodeRef.current = { type, options };
-    const created = await createCanvas(`画布 ${canvasCount + 1}`);
-    if (!created) pendingSidebarNodeRef.current = null;
-  }, [activeCanvasId, buildSidebarNodeOptions, canvasCount, createCanvas]);
-
-  useEffect(() => {
-    if (!activeCanvasId || !pendingSidebarNodeRef.current) return;
-    const pending = pendingSidebarNodeRef.current;
-    pendingSidebarNodeRef.current = null;
-    let secondFrame = 0;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        addNodeRef.current?.(pending.type, pending.options);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame) window.cancelAnimationFrame(secondFrame);
-    };
-  }, [activeCanvasId]);
+    try {
+      addNode(type, options);
+    } catch (error) {
+      console.error('[canvas] sidebar node insertion failed:', { type, canvasId, error });
+      window.alert(error instanceof Error ? error.message : '节点添加失败，请稍后重试。');
+    }
+  }, [activeCanvasId, buildSidebarNodeOptions, canvasCount, createCanvas, waitForAddNodeHandler]);
 
   const handleInsertResource = async (item: ResourceItem) => {
     const portraitData = portraitResourceToNodeData(item);
