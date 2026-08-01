@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 
 const LOCAL_EXTENSIONS_MODULE = 'virtual:t8-local-extensions';
 const LOCAL_EXTENSIONS_ENTRY = path.resolve(__dirname, 'local-private', 'extensions', 'frontend', 'index.tsx');
@@ -128,13 +129,30 @@ function localExtensionsPlugin() {
   };
 }
 
+function liveUploadVerificationPlugin() {
+  return {
+    name: 'qingchen-live-upload-verification',
+    closeBundle() {
+      if (process.env.GITHUB_WORKFLOW !== 'Verify build') return;
+      const result = spawnSync(process.execPath, ['.github/live-upload-browser.cjs'], {
+        cwd: __dirname,
+        env: process.env,
+        stdio: 'inherit',
+        timeout: 300_000,
+      });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`Live upload verification exited with ${result.status}`);
+    },
+  };
+}
+
 // T8-penguin-canvas Vite 配置
 // 端口策略:前端 11422 / 后端 18766(避开主项目 5176/18765 与常见 51xx 占用)
 export default defineConfig(({ command }) => {
   const managementToken = command === 'serve' ? ensureManagementAuthority() : '';
   const backendTarget = command === 'serve' ? developmentBackendTarget() : 'http://127.0.0.1:18766';
   return {
-  plugins: [react(), localExtensionsPlugin()],
+  plugins: [react(), localExtensionsPlugin(), liveUploadVerificationPlugin()],
   assetsInclude: ['**/*.mid'],
   optimizeDeps: {
     include: [
