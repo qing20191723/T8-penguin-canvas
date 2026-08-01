@@ -12,7 +12,7 @@ jobs:
   export-source:
     if: github.event.pull_request.head.ref == 'fix/atlas-only-qingchen-config' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout audit branch
         uses: actions/checkout@v6
@@ -20,28 +20,52 @@ jobs:
           ref: fix/atlas-only-qingchen-config
           fetch-depth: 1
 
-      - name: Probe Atlas public model catalog
+      - name: Download Atlas public model catalog and schemas
         shell: bash
         run: |
+          mkdir -p /tmp/atlas-schemas/schemas /tmp/atlas-schemas/readmes /tmp/atlas-schemas/examples
           curl --fail --silent --show-error --location \
             https://api.atlascloud.ai/api/v1/models \
-            --output /tmp/atlas-models.json
+            --output /tmp/atlas-schemas/models.json
           node <<'NODE'
           const fs = require('fs');
-          const payload = JSON.parse(fs.readFileSync('/tmp/atlas-models.json', 'utf8'));
-          const items = Array.isArray(payload) ? payload : Array.isArray(payload.data) ? payload.data : Array.isArray(payload.items) ? payload.items : [];
-          console.log(JSON.stringify({
-            topLevelType: Array.isArray(payload) ? 'array' : typeof payload,
-            topLevelKeys: payload && !Array.isArray(payload) && typeof payload === 'object' ? Object.keys(payload) : [],
-            itemCount: items.length,
-            firstItems: items.slice(0, 3),
-          }, null, 2));
-          if (!items.length) process.exit(2);
+          const path = require('path');
+          const payload = JSON.parse(fs.readFileSync('/tmp/atlas-schemas/models.json', 'utf8'));
+          const items = Array.isArray(payload?.data) ? payload.data.filter((item) => item?.display_console !== false) : [];
+          const safe = (value) => String(value || '').replace(/[^a-z0-9._-]+/gi, '__').slice(0, 220);
+          const queue = [];
+          for (const item of items) {
+            for (const [field, dir, ext] of [['schema', 'schemas', '.json'], ['example', 'examples', '.json'], ['readme', 'readmes', '.md']]) {
+              const url = String(item?.[field] || '').trim();
+              if (!url.startsWith('https://static.atlascloud.ai/')) continue;
+              queue.push({ url, file: path.join('/tmp/atlas-schemas', dir, `${safe(item.model)}${ext}`) });
+            }
+          }
+          let cursor = 0;
+          let failures = 0;
+          async function worker() {
+            while (cursor < queue.length) {
+              const task = queue[cursor++];
+              try {
+                const response = await fetch(task.url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                fs.writeFileSync(task.file, Buffer.from(await response.arrayBuffer()));
+              } catch (error) {
+                failures += 1;
+                console.error('download failed', task.url, error.message);
+              }
+            }
+          }
+          Promise.all(Array.from({ length: 12 }, worker)).then(() => {
+            fs.writeFileSync('/tmp/atlas-schemas/summary.json', JSON.stringify({ publicModels: items.length, filesRequested: queue.length, failures }, null, 2));
+            console.log(JSON.stringify({ publicModels: items.length, filesRequested: queue.length, failures }, null, 2));
+            if (failures > Math.max(10, queue.length * 0.1)) process.exit(2);
+          });
           NODE
 
-      - name: Upload Atlas model catalog artifact
+      - name: Upload Atlas schema audit artifact
         uses: actions/upload-artifact@v4
         with:
-          name: atlas-model-catalog
-          path: /tmp/atlas-models.json
+          name: atlas-schema-audit
+          path: /tmp/atlas-schemas
           retention-days: 1
