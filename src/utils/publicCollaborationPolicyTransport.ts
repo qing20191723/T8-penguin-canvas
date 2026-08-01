@@ -7,9 +7,30 @@ const COLLABORATION_MANAGEMENT_HEADER = 'x-t8-collaboration-management-token';
 const EXECUTION_POLICY_PATH = '/api/collaboration/execution-policy';
 const BACKEND_READY_CACHE_MS = 10_000;
 const BACKEND_READY_ATTEMPTS = 8;
+const CANVAS_RECOVERY_ATTEMPTS = 4;
+const CANVAS_RECOVERY_DELAY_MS = 250;
+const EXACT_SNAPSHOT_ERROR_RE = /(?:精确画布快照|exact canvas snapshot|persistent owner|持久\s*owner)/i;
+const CANVAS_SNAPSHOT_FIELDS = [
+  'nodes',
+  'edges',
+  'viewport',
+  'nextNodeSerialId',
+  'creativeDesk',
+  'farmCanvas',
+] as const;
 
 let backendReadyUntil = 0;
 let backendReadyProbe: Promise<boolean> | null = null;
+
+interface JsonRecord {
+  [key: string]: unknown;
+}
+
+interface RememberedCanvasSave {
+  digest: string;
+}
+
+const latestCanvasSaveById = new Map<string, RememberedCanvasSave>();
 
 export interface PublicCollaborationPolicyRequestContext {
   requestUrl: string;
@@ -87,6 +108,90 @@ export function isAtlasExecutionRequest(
     || pathname === '/api/proxy/image';
 }
 
+export function canvasMutationId(
+  requestUrl: string,
+  method: string,
+  pageOrigin: string,
+  desktopHost = false,
+): string | null {
+  if (desktopHost || String(method || 'GET').toUpperCase() !== 'PUT') return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(requestUrl, pageOrigin);
+  } catch {
+    return null;
+  }
+  if (parsed.origin !== pageOrigin) return null;
+  const match = parsed.pathname.match(/^\/api\/canvas\/([^/]+)\/?$/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+export function isProjectRunCreateRequest(
+  requestUrl: string,
+  method: string,
+  pageOrigin: string,
+  desktopHost = false,
+) {
+  if (desktopHost || String(method || 'GET').toUpperCase() !== 'POST') return false;
+  try {
+    const parsed = new URL(requestUrl, pageOrigin);
+    return parsed.origin === pageOrigin && parsed.pathname.replace(/\/+$/, '') === '/api/project-runs';
+  } catch {
+    return false;
+  }
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function canonicalJson(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'object') return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
+  if (Array.isArray(value)) return value.map((item) => canonicalJson(item, seen));
+  const record = value as JsonRecord;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, canonicalJson(record[key], seen)]),
+  );
+}
+
+function canvasSnapshotProjection(value: unknown): JsonRecord | null {
+  const raw = isRecord(value) && isRecord(value.data) ? value.data : value;
+  if (!isRecord(raw)) return null;
+  const projection: JsonRecord = {};
+  for (const field of CANVAS_SNAPSHOT_FIELDS) {
+    projection[field] = raw[field] ?? (field === 'nodes' || field === 'edges' ? [] : null);
+  }
+  return projection;
+}
+
+export function canvasSnapshotDigest(value: unknown): string {
+  const projection = canvasSnapshotProjection(value);
+  return projection ? JSON.stringify(canonicalJson(projection)) : '';
+}
+
+export function equivalentCanvasSnapshot(authoritative: unknown, candidate: unknown) {
+  const authoritativeDigest = canvasSnapshotDigest(authoritative);
+  return Boolean(authoritativeDigest) && authoritativeDigest === canvasSnapshotDigest(candidate);
+}
+
+export function isExactCanvasSnapshotRunError(payload: unknown) {
+  if (!isRecord(payload)) return false;
+  const code = String(payload.code || '').trim();
+  const message = String(payload.error || payload.message || '').trim();
+  return EXACT_SNAPSHOT_ERROR_RE.test(`${code} ${message}`);
+}
+
 function requestHeaders(input: RequestInfo | URL, init?: RequestInit) {
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
   const overrides = new Headers(init?.headers);
@@ -126,6 +231,158 @@ function externalApplicationResponse(pathname: string) {
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function responseJson(response: Response): Promise<unknown> {
+  try {
+    const text = await response.clone().text();
+    return text.trim() ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function requestJsonBody(input: RequestInfo | URL, init?: RequestInit): Promise<JsonRecord | null> {
+  const body = init?.body;
+  if (typeof body === 'string') {
+    try {
+      const value = JSON.parse(body);
+      return isRecord(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  if (input instanceof Request) {
+    try {
+      const text = await input.clone().text();
+      if (!text.trim()) return null;
+      const value = JSON.parse(text);
+      return isRecord(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function jsonReplayInit(input: RequestInfo | URL, init: RequestInit | undefined, payload: JsonRecord): RequestInit {
+  const headers = requestHeaders(input, init);
+  headers.set('Content-Type', 'application/json');
+  const base: RequestInit = input instanceof Request
+    ? {
+        cache: input.cache,
+        credentials: input.credentials,
+        integrity: input.integrity,
+        keepalive: input.keepalive,
+        mode: input.mode,
+        redirect: input.redirect,
+        referrer: input.referrer,
+        referrerPolicy: input.referrerPolicy,
+        signal: input.signal,
+      }
+    : { ...init };
+  return {
+    ...base,
+    ...init,
+    method: requestMethod(input, init),
+    headers,
+    body: JSON.stringify(payload),
+  };
+}
+
+function rememberCanvasSave(canvasId: string, payload: JsonRecord) {
+  const digest = canvasSnapshotDigest(payload);
+  if (!digest) return;
+  latestCanvasSaveById.set(canvasId, { digest });
+}
+
+async function fetchAuthoritativeCanvas(
+  originalFetch: typeof globalThis.fetch,
+  canvasId: string,
+): Promise<{ payload: JsonRecord; document: JsonRecord; revision: number } | null> {
+  try {
+    const response = await originalFetch(`/api/canvas/${encodeURIComponent(canvasId)}`, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const payload = await responseJson(response);
+    if (!isRecord(payload) || !isRecord(payload.data)) return null;
+    const revision = Number(payload.data.revision);
+    if (!Number.isSafeInteger(revision) || revision < 1) return null;
+    return { payload, document: payload.data, revision };
+  } catch {
+    return null;
+  }
+}
+
+async function recoverEquivalentCanvasSave(
+  originalFetch: typeof globalThis.fetch,
+  canvasId: string,
+  attemptedPayload: JsonRecord,
+): Promise<Response | null> {
+  for (let attempt = 0; attempt < CANVAS_RECOVERY_ATTEMPTS; attempt += 1) {
+    const authoritative = await fetchAuthoritativeCanvas(originalFetch, canvasId);
+    if (authoritative) {
+      const latest = latestCanvasSaveById.get(canvasId);
+      const authoritativeDigest = canvasSnapshotDigest(authoritative.payload);
+      const equivalentAttempt = authoritativeDigest === canvasSnapshotDigest(attemptedPayload);
+      const equivalentLatest = Boolean(latest) && latest!.digest === authoritativeDigest;
+      if (equivalentAttempt || equivalentLatest) {
+        return jsonResponse({
+          success: true,
+          data: {
+            revision: authoritative.revision,
+            updatedAt: Number(authoritative.document.updatedAt) || Date.now(),
+            recoveredEquivalentSnapshot: true,
+          },
+        }, 200, {
+          'X-Qingchen-Canvas-Recovery': equivalentAttempt
+            ? 'authoritative-snapshot-equivalent'
+            : 'latest-browser-snapshot-equivalent',
+        });
+      }
+    }
+    if (attempt < CANVAS_RECOVERY_ATTEMPTS - 1) await sleep(CANVAS_RECOVERY_DELAY_MS * (attempt + 1));
+  }
+  return null;
+}
+
+async function recoverProjectRunCreation(
+  originalFetch: typeof globalThis.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  runPayload: JsonRecord,
+  failure: Response,
+): Promise<Response | null> {
+  const failurePayload = await responseJson(failure);
+  if (!isExactCanvasSnapshotRunError(failurePayload)) return null;
+  const canvasId = String(runPayload.canvasId || '').trim();
+  if (!canvasId) return null;
+  const latest = latestCanvasSaveById.get(canvasId);
+  if (!latest) return null;
+
+  const authoritative = await fetchAuthoritativeCanvas(originalFetch, canvasId);
+  if (!authoritative || latest.digest !== canvasSnapshotDigest(authoritative.payload)) return null;
+
+  const retryPayload: JsonRecord = {
+    ...runPayload,
+    canvasRevision: authoritative.revision,
+  };
+  const retry = await originalFetch(
+    input instanceof Request ? input.url : String(input),
+    jsonReplayInit(input, init, retryPayload),
+  );
+  if (retry.ok) {
+    const responseHeaders = new Headers(retry.headers);
+    responseHeaders.set('X-Qingchen-Run-Recovery', 'verified-authoritative-snapshot');
+    return new Response(retry.body, {
+      status: retry.status,
+      statusText: retry.statusText,
+      headers: responseHeaders,
+    });
+  }
+  return retry;
 }
 
 async function probeBackendReady(originalFetch: typeof globalThis.fetch) {
@@ -264,7 +521,24 @@ export function installPublicCollaborationPolicyTransport() {
       });
     }
 
-    const response = await originalFetch(input, init);
+    const canvasId = canvasMutationId(parsed.href, method, window.location.origin, desktopHost);
+    const projectRunCreate = isProjectRunCreateRequest(parsed.href, method, window.location.origin, desktopHost);
+    const requestPayload = canvasId || projectRunCreate ? await requestJsonBody(input, init) : null;
+
+    if (canvasId && requestPayload) rememberCanvasSave(canvasId, requestPayload);
+
+    let response = await originalFetch(input, init);
+
+    if (canvasId && requestPayload && !response.ok && response.status === 409) {
+      const recovered = await recoverEquivalentCanvasSave(originalFetch, canvasId, requestPayload);
+      if (recovered) response = recovered;
+    }
+
+    if (projectRunCreate && requestPayload && !response.ok) {
+      const recovered = await recoverProjectRunCreation(originalFetch, input, init, requestPayload, response);
+      if (recovered) response = recovered;
+    }
+
     return atlasExecution ? normalizeAtlasExecutionResponse(response) : response;
   };
 }
