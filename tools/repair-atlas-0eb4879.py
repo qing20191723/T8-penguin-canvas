@@ -39,15 +39,16 @@ creator_hook = """  const creatorCanvasContext = useMemo(() => buildCreatorCanva
 """
 if canvas.count(creator_hook) != 1:
     raise SystemExit("Canvas.tsx: creatorCanvasContext marker changed unexpectedly")
-canvas = canvas.replace(creator_hook, "", 1)
+original_hook_index = canvas.index(creator_hook)
 early_return_matches = list(
     re.finditer(r"(?m)^[ \t]*if\s*\(\s*!activeId\s*\)\s*\{", canvas)
 )
-if len(early_return_matches) != 1:
-    raise SystemExit(
-        f"Canvas.tsx: expected one activeId early return, found {len(early_return_matches)}"
-    )
-insert_at = early_return_matches[0].start()
+preceding_returns = [match for match in early_return_matches if match.start() < original_hook_index]
+if not preceding_returns:
+    raise SystemExit("Canvas.tsx: no activeId guard precedes creatorCanvasContext")
+target_return = max(preceding_returns, key=lambda match: match.start())
+canvas = canvas.replace(creator_hook, "", 1)
+insert_at = target_return.start()
 canvas = canvas[:insert_at] + creator_hook + canvas[insert_at:]
 write(canvas_path, canvas)
 
