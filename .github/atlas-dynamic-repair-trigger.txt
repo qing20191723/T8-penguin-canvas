@@ -2,3 +2,4 @@ inspect and repair dynamic Atlas models, upload autosize, revision conflicts, an
 inspection pass 2
 apply verified repair
 approved workflow trigger
+fixed extraction trigger
