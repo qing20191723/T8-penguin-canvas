@@ -755,11 +755,17 @@ function App() {
   );
 
   const buildSidebarNodeOptions = useCallback((type: NodeType): Parameters<AddNodeFn>[1] | undefined => {
-    if (!atlasProvider || (type !== 'image' && type !== 'video')) return undefined;
-    const models = type === 'image' ? atlasProvider.imageModels : atlasProvider.videoModels;
+    if (!atlasProvider || !['image', 'video', 'llm'].includes(type)) return undefined;
+    const models = type === 'image'
+      ? atlasProvider.imageModels
+      : type === 'video'
+        ? atlasProvider.videoModels
+        : atlasProvider.chatModels;
     const defaultModel = type === 'image'
       ? atlasProvider.defaults?.imageModel
-      : atlasProvider.defaults?.videoModel;
+      : type === 'video'
+        ? atlasProvider.defaults?.videoModel
+        : atlasProvider.defaults?.chatModel;
     const providerModel = String(defaultModel || models?.[0] || '').trim();
     return {
       data: {

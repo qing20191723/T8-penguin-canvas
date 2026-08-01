@@ -219,7 +219,7 @@ export interface AdvancedProviderSelection {
 
 const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas', 'comfyui', 'jimeng-cli']);
 const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'volcengine', 'agnes', 'atlas', 'jimeng-cli']);
-const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes']);
+const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas']);
 
 const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, string[]>>> = {
   image: {
@@ -233,8 +233,8 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
     volcengine: ['doubao-seedream-4-0-250828'],
     agnes: ['agnes-image-2.1-flash', 'agnes-image-2.0-flash'],
     atlas: [
-      'bytedance/seedream-v5.0-lite',
-      'bytedance/seedream-v5.0-lite/edit',
+      'bytedance/seedream-v5.0-pro/text-to-image',
+      'bytedance/seedream-v5.0-pro/edit',
     ],
     'jimeng-cli': [
       'seedream-4.7',
@@ -249,7 +249,12 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
   video: {
     'openai-compatible': [],
     agnes: ['agnes-video-v2.0'],
-    atlas: ['kwaivgi/kling-v3.0-std/text-to-video', 'kwaivgi/kling-v3.0-std/image-to-video'],
+    atlas: [
+      'kwaivgi/kling-v3.0-std/text-to-video',
+      'atlascloud/wan-2.7-spicy/image-to-video',
+      'alibaba/wan-2.7/reference-to-video',
+      'alibaba/wan-2.7/video-edit',
+    ],
     volcengine: [
       'doubao-seedance-2-0-260128',
       'doubao-seedance-2-0-fast-260128',
@@ -279,6 +284,7 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
     ],
     volcengine: ['doubao-seed-1-6-250615'],
     agnes: ['agnes-2.0-flash'],
+    atlas: [],
   },
 };
 

@@ -2,20 +2,27 @@ const fs = require('fs');
 const path = require('path');
 const { resolveMediaRef } = require('./mediaResolver');
 const { providerIdempotencyHeadersLike } = require('../services/providerSubmissionContext');
+const openaiCompatible = require('./openaiCompatible');
 
 const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1';
+const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1';
 const DEFAULT_TIMEOUT_MS = 60 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 3000;
-const SEEDREAM_V5_T2I_MODEL = 'bytedance/seedream-v5.0-lite';
-const SEEDREAM_V5_EDIT_MODEL = 'bytedance/seedream-v5.0-lite/edit';
+const SEEDREAM_V5_T2I_MODEL = 'bytedance/seedream-v5.0-pro/text-to-image';
+const SEEDREAM_V5_EDIT_MODEL = 'bytedance/seedream-v5.0-pro/edit';
 const KLING_V3_T2V_MODEL = 'kwaivgi/kling-v3.0-std/text-to-video';
 const KLING_V3_I2V_MODEL = 'kwaivgi/kling-v3.0-std/image-to-video';
+const WAN_27_SPICY_I2V_MODEL = 'atlascloud/wan-2.7-spicy/image-to-video';
+const WAN_27_REFERENCE_MODEL = 'alibaba/wan-2.7/reference-to-video';
+const WAN_27_VIDEO_EDIT_MODEL = 'alibaba/wan-2.7/video-edit';
 const SEEDREAM_V5_SIZES = [
-  '2048*2048', '2304*1728', '1728*2304', '2848*1600', '1600*2848',
-  '2496*1664', '1664*2496', '3136*1344', '3072*3072', '3456*2592',
-  '2592*3456', '4096*2304', '2304*4096', '2496*3744', '3744*2496', '4704*2016',
+  '2048*2048', '2304*1728', '1728*2304', '2720*1530', '1530*2720',
+  '2496*1664', '1664*2496', '1024*1024', '1536*1536', '1776*1328',
+  '1328*1776', '2048*1152', '1152*2048',
 ];
+const WAN_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
+const WAN_SPICY_NEGATIVE_PROMPT = 'camera cut, shot change, scene change, transition, jump cut, rapid editing, montage, multi-shot, multiple camera angles, perspective shift';
 const SUCCESS_STATUSES = new Set(['completed', 'complete', 'success', 'succeeded', 'done', 'finished', 'ready']);
 const FAILURE_STATUSES = new Set(['failed', 'failure', 'error', 'errored', 'cancelled', 'canceled', 'rejected', 'expired']);
 
@@ -198,7 +205,7 @@ function normalizeSeedreamV5Params(params, input, refs, model) {
     output_format: format === 'png' ? 'png' : 'jpeg',
     enable_base64_output: false,
   };
-  if (model === SEEDREAM_V5_EDIT_MODEL) normalized.images = refs.slice(0, 14);
+  if (model === SEEDREAM_V5_EDIT_MODEL) normalized.images = refs.slice(0, 10);
   return normalized;
 }
 
@@ -226,6 +233,70 @@ function normalizeKlingV3Params(params, input, refs, model) {
     if (['720P', '1080P'].includes(resolution)) normalized.resolution = resolution;
   }
   return normalized;
+}
+
+function integerBetween(value, fallback, min, max) {
+  const number = Number(value);
+  const normalized = Number.isFinite(number) ? Math.round(number) : fallback;
+  return Math.max(min, Math.min(max, normalized));
+}
+
+function wanResolution(value, fallback, allowed) {
+  const normalized = String(value || fallback).toUpperCase();
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function wanRatio(value, fallback = '16:9') {
+  const normalized = String(value || fallback);
+  return WAN_RATIOS.has(normalized) ? normalized : fallback;
+}
+
+function normalizeWanSpicyParams(params, input, refs) {
+  if (!refs[0]) throw new Error('Wan 2.7 Spicy 图生视频需要一张首帧图。');
+  return {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    image: refs[0],
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, WAN_SPICY_NEGATIVE_PROMPT)).trim(),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '720P', ['720P', '1080P', '1080P-SR', '1440P-SR']),
+    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 15),
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
+}
+
+function normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs) {
+  if (!refs.length && !videoRefs.length) throw new Error('Wan 2.7 参考生视频至少需要一张参考图或一个参考视频。');
+  return {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
+    ...(refs.length ? { images: refs.slice(0, 6) } : {}),
+    ...(videoRefs.length ? { videos: videoRefs.slice(0, 3) } : {}),
+    ...(audioRefs[0] ? { audio: audioRefs[0] } : {}),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P']),
+    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
+    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 10),
+    prompt_extend: params.prompt_extend !== false,
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
+}
+
+function normalizeWanVideoEditParams(params, input, refs, videoRefs, audioRefs) {
+  if (!videoRefs[0]) throw new Error('Wan 2.7 Video Edit 需要一个待编辑视频。');
+  const durationValue = Number(firstDefined(params.duration, input.duration, input.seconds, 0));
+  const duration = durationValue === 0 ? 0 : integerBetween(durationValue, 5, 2, 10);
+  return {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
+    video: videoRefs[0],
+    ...(refs[0] ? { image: refs[0] } : {}),
+    ...(refs.length ? { images: refs.slice(0, 3) } : {}),
+    ...(audioRefs[0] ? { audio: audioRefs[0] } : {}),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P', '1080P-SR', '1440P-SR']),
+    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
+    duration,
+    prompt_extend: params.prompt_extend !== false,
+    ...(typeof params.watermark === 'boolean' ? { watermark: params.watermark } : {}),
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
 }
 
 async function uploadDataUrl(provider, dataUrl, filename, options = {}) {
@@ -442,11 +513,23 @@ async function runGeneration(provider, input, options, kind) {
   if (input.n != null && params.n == null && params.num_images == null) params.n = input.n;
 
   let refs = [];
+  let videoRefs = [];
+  let audioRefs = [];
   try {
     refs = await resolveAtlasMediaList(provider, [
       ...(Array.isArray(input.images) ? input.images : []),
       ...(input.image ? [input.image] : []),
       ...(input.image_url ? [input.image_url] : []),
+    ], options);
+    videoRefs = await resolveAtlasMediaList(provider, [
+      ...(Array.isArray(input.videos) ? input.videos : []),
+      ...(input.video ? [input.video] : []),
+      ...(input.video_url ? [input.video_url] : []),
+    ], options);
+    audioRefs = await resolveAtlasMediaList(provider, [
+      ...(Array.isArray(input.audios) ? input.audios : []),
+      ...(input.audio ? [input.audio] : []),
+      ...(input.audio_url ? [input.audio_url] : []),
     ], options);
   } catch (error) {
     return {
@@ -462,12 +545,39 @@ async function runGeneration(provider, input, options, kind) {
   if (kind === 'image' && refs.length && model === SEEDREAM_V5_T2I_MODEL) model = SEEDREAM_V5_EDIT_MODEL;
   if (kind === 'video' && refs.length && model === KLING_V3_T2V_MODEL) model = KLING_V3_I2V_MODEL;
 
-  if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
-    params = normalizeSeedreamV5Params(params, input, refs, model);
-  } else if (model === KLING_V3_T2V_MODEL || model === KLING_V3_I2V_MODEL) {
-    params = normalizeKlingV3Params(params, input, refs, model);
-  } else if (refs.length && params.image == null && params.image_url == null && params.images == null) {
-    params.image = refs.length === 1 ? refs[0] : refs;
+  try {
+    if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
+      params = normalizeSeedreamV5Params(params, input, refs, model);
+    } else if (model === KLING_V3_T2V_MODEL || model === KLING_V3_I2V_MODEL) {
+      params = normalizeKlingV3Params(params, input, refs, model);
+    } else if (model === WAN_27_SPICY_I2V_MODEL) {
+      params = normalizeWanSpicyParams(params, input, refs);
+    } else if (model === WAN_27_REFERENCE_MODEL) {
+      params = normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs);
+    } else if (model === WAN_27_VIDEO_EDIT_MODEL) {
+      params = normalizeWanVideoEditParams(params, input, refs, videoRefs, audioRefs);
+    } else {
+      if (refs.length && params.image == null && params.image_url == null && params.images == null) {
+        if (refs.length === 1) params.image = refs[0];
+        else params.images = refs;
+      }
+      if (videoRefs.length && params.video == null && params.video_url == null && params.videos == null) {
+        if (videoRefs.length === 1) params.video = videoRefs[0];
+        else params.videos = videoRefs;
+      }
+      if (audioRefs.length && params.audio == null && params.audio_url == null && params.audios == null) {
+        params.audio = audioRefs[0];
+      }
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'invalid_model_parameters',
+      providerId: provider.id,
+      protocol: provider.protocol,
+      model,
+      error: error?.message || 'Atlas 模型参数无效。',
+    };
   }
 
   const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';
@@ -561,7 +671,18 @@ async function testProvider(provider, options = {}) {
   }
 }
 
+async function generateChat(provider, input, options = {}) {
+  const validation = validateProvider(provider);
+  if (!validation.ok) return validation;
+  return openaiCompatible.generateChat({
+    ...provider,
+    apiKey: validation.key,
+    baseUrl: DEFAULT_CHAT_BASE_URL,
+  }, input, options);
+}
+
 module.exports = {
+  generateChat,
   generateImage: (provider, input, options) => runGeneration(provider, input, options, 'image'),
   generateVideo: (provider, input, options) => runGeneration(provider, input, options, 'video'),
   testProvider,

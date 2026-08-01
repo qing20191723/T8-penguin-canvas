@@ -20,8 +20,6 @@ import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
-import RhImageCapabilityRail from '../RhImageCapabilityRail';
-import RhVideoCapabilityRail from '../RhVideoCapabilityRail';
 import SmartImage from '../SmartImage';
 import ImageLongEdgeButtons from '../ImageLongEdgeButtons';
 import { useMaterialDropTarget } from '../../hooks/useMaterialDropTarget';
@@ -1270,36 +1268,6 @@ const OutputNode = ({ id, data, selected }: NodeProps) => {
           </button>
         </div>
       )}
-      <RhImageCapabilityRail
-        secondaryActionNodeId={id}
-        queueSecondaryAction={queueSecondaryAction}
-        sourceUrls={publishedImageUrls}
-        accent={effectiveAccent}
-        isDark={isDark}
-        style={{ display: showRhCapabilityRail ? 'flex' : 'none' }}
-        onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
-        onRunningChange={setRhCapabilityBusy}
-      />
-      <RhVideoCapabilityRail
-        secondaryActionNodeId={id}
-        queueSecondaryAction={queueSecondaryAction}
-        sourceItems={videoSourceItems}
-        accent={effectiveAccent}
-        isDark={isDark}
-        style={{
-          display: showRhVideoCapabilityRail ? 'flex' : 'none',
-          ...(showRhCapabilityRail ? { left: -96 } : {}),
-        }}
-        onFramesComplete={(imageUrls) => handleProduce(imageUrls, { type: 'video-frame-extract', label: '首尾帧获取' })}
-        onVideosComplete={(result) => handleVideoProduce(result.videoUrls, {
-          type: 'rh-video-capability',
-          label: result.tool.title,
-          capability: result.tool.capabilities.find((item) => item.startsWith('video.')),
-          toolId: result.tool.id,
-          taskIds: result.taskIds,
-        })}
-        onRunningChange={setRhVideoCapabilityBusy}
-      />
       {/* target handle (左侧) - 上游任意类型可连入 */}
       <Handle
         type="target"

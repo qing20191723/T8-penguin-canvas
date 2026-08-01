@@ -29,8 +29,6 @@ import CollectionSplitButton from '../CollectionSplitButton';
 import ImageHoverPreview from '../ImageHoverPreview';
 import LoopingVideo from '../LoopingVideo';
 import MediaMetadataBadge from '../MediaMetadataBadge';
-import RhImageCapabilityRail from '../RhImageCapabilityRail';
-import RhVideoCapabilityRail from '../RhVideoCapabilityRail';
 import SmartImage from '../SmartImage';
 import ImageLongEdgeButtons from '../ImageLongEdgeButtons';
 import { useImageLongEdgeOutputs } from '../../hooks/useImageLongEdgeOutputs';
@@ -311,6 +309,26 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
   // 节点本地尺寸 state: 默认 (260, 高度由内容撑开 — 上传后图/视频会撑高 root)
   // 拖角后由 ResizableCorners onResize 同步具体 px (保证 measured 准确 + keepAspectRatio 生效 + handleBounds 准确)
   const [size, setSize] = useState<{ w: number; h?: number }>({ w: 260 });
+  const manualResizeRef = useRef(false);
+  const autoSizedMediaKeyRef = useRef('');
+  const fitUploadNodeToMedia = useCallback((naturalWidth: number, naturalHeight: number, mediaKey: string) => {
+    if (manualResizeRef.current || !naturalWidth || !naturalHeight || autoSizedMediaKeyRef.current === mediaKey) return;
+    const ratio = Math.max(0.08, Math.min(12, naturalWidth / naturalHeight));
+    let width = ratio >= 1.5 ? 560 : ratio <= 0.72 ? 360 : 440;
+    let previewHeight = width / ratio;
+    if (previewHeight > 560) {
+      previewHeight = 560;
+      width = Math.max(300, previewHeight * ratio);
+    }
+    if (previewHeight < 180) previewHeight = 180;
+    const next = {
+      w: Math.round(Math.max(300, Math.min(640, width))),
+      h: Math.round(Math.max(300, Math.min(720, previewHeight + 126))),
+    };
+    autoSizedMediaKeyRef.current = mediaKey;
+    setSize(next);
+
+  }, [id, rf]);
 
   // === 运行总线: 点击 RUN 后根据已上传素材生成下游 OutputNode ===
   // 设计要点:
@@ -1048,7 +1066,10 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
         minWidth={220}
         minHeight={180}
         accent={effectiveHandleColor}
-        onResize={(_e, p) => setSize({ w: p.width, h: p.height })}
+        onResize={(_e, p) => {
+          manualResizeRef.current = true;
+          setSize({ w: p.width, h: p.height });
+        }}
       />
       {/* 选中时浮动图像操作按钮 — Edit 保持本地编辑，RH 图像能力走左侧轨道 */}
       {selected && canEditImage && (
@@ -1096,37 +1117,6 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
           </button>
         </div>
       )}
-      <RhImageCapabilityRail
-        secondaryActionNodeId={id}
-        queueSecondaryAction={queueSecondaryAction}
-        sourceUrls={imageSourceUrls}
-        accent={effectiveHandleColor}
-        isDark={isDark}
-        isPixel={isPixel}
-        style={{ display: showRhCapabilityRail ? 'flex' : 'none' }}
-        onComplete={(result) => handleProduce(result.imageUrls, { type: 'rh-capability', label: result.tool.title })}
-        onError={setError}
-        onRunningChange={setRhCapabilityBusy}
-      />
-      <RhVideoCapabilityRail
-        secondaryActionNodeId={id}
-        queueSecondaryAction={queueSecondaryAction}
-        sourceItems={videoSourceItems}
-        accent={effectiveHandleColor}
-        isDark={isDark}
-        isPixel={isPixel}
-        style={{ display: showRhVideoCapabilityRail ? 'flex' : 'none' }}
-        onFramesComplete={(imageUrls) => handleProduce(imageUrls, { type: 'video-frame-extract', label: '首尾帧获取' })}
-        onVideosComplete={(result) => handleVideoProduce(result.videoUrls, {
-          type: 'rh-video-capability',
-          label: result.tool.title,
-          capability: result.tool.capabilities.find((item) => item.startsWith('video.')),
-          toolId: result.tool.id,
-          taskIds: result.taskIds,
-        })}
-        onError={setError}
-        onRunningChange={setRhVideoCapabilityBusy}
-      />
       {/* 仅有 source handle(上传节点不接收输入) */}
       <Handle
         type="source"
@@ -1289,6 +1279,11 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                         data-drag-preview={item.url}
                         data-drag-node-id={id}
                         data-resource-title={item.name}
+                        onLoad={(event) => fitUploadNodeToMedia(
+                          event.currentTarget.naturalWidth,
+                          event.currentTarget.naturalHeight,
+                          `image:${item.url}`,
+                        )}
                         onMouseDown={(e) => {
                           if (imageLongEdge.limit === 0 || imageLongEdge.ready) {
                             beginMaterialDrag(e, { kind: 'image', url: item.url, sourceNodeId: id, previewUrl: item.url });
@@ -1353,7 +1348,14 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
                       data-drag-preview={item.url}
                       data-drag-node-id={id}
                       data-resource-title={item.name}
-                      onLoadedMetadata={(event) => rememberVideoFrameTime(`${i}:${item.url}`, event.currentTarget.currentTime)}
+                      onLoadedMetadata={(event) => {
+                        rememberVideoFrameTime(`${i}:${item.url}`, event.currentTarget.currentTime);
+                        fitUploadNodeToMedia(
+                          event.currentTarget.videoWidth,
+                          event.currentTarget.videoHeight,
+                          `video:${item.url}`,
+                        );
+                      }}
                       onTimeUpdate={(event) => rememberVideoFrameTime(`${i}:${item.url}`, event.currentTarget.currentTime)}
                       onSeeked={(event) => rememberVideoFrameTime(`${i}:${item.url}`, event.currentTarget.currentTime)}
                       onMouseDown={(e) =>

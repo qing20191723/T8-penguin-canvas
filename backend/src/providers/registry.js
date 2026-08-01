@@ -77,19 +77,26 @@ const DEFAULT_AGNES_CHAT_MODELS = [
 ];
 
 const DEFAULT_ATLAS_IMAGE_MODELS = [
-  'bytedance/seedream-v5.0-lite',
-  'bytedance/seedream-v5.0-lite/edit',
+  'bytedance/seedream-v5.0-pro/text-to-image',
+  'bytedance/seedream-v5.0-pro/edit',
 ];
 
 const DEFAULT_ATLAS_VIDEO_MODELS = [
   'kwaivgi/kling-v3.0-std/text-to-video',
-  'kwaivgi/kling-v3.0-std/image-to-video',
+  'atlascloud/wan-2.7-spicy/image-to-video',
+  'alibaba/wan-2.7/reference-to-video',
+  'alibaba/wan-2.7/video-edit',
 ];
 
+const DEFAULT_ATLAS_CHAT_MODELS = [];
+
 const LEGACY_ATLAS_MODEL_IDS = new Map([
-  ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-lite'],
-  ['qwen-image/qwen-image-text-to-image-plus', 'bytedance/seedream-v5.0-lite'],
+  ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-pro/text-to-image'],
+  ['qwen-image/qwen-image-text-to-image-plus', 'bytedance/seedream-v5.0-pro/text-to-image'],
+  ['bytedance/seedream-v5.0-lite', 'bytedance/seedream-v5.0-pro/text-to-image'],
+  ['bytedance/seedream-v5.0-lite/edit', 'bytedance/seedream-v5.0-pro/edit'],
   ['kling-video/kling-v3.0-standard-text-to-video', 'kwaivgi/kling-v3.0-std/text-to-video'],
+  ['kwaivgi/kling-v3.0-std/image-to-video', 'atlascloud/wan-2.7-spicy/image-to-video'],
 ]);
 
 const DEFAULT_JIMENG_IMAGE_MODELS = [
@@ -200,7 +207,7 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     enabled: Boolean(process.env.ATLASCLOUD_API_KEY),
     imageModels: DEFAULT_ATLAS_IMAGE_MODELS,
     videoModels: DEFAULT_ATLAS_VIDEO_MODELS,
-    chatModels: [],
+    chatModels: DEFAULT_ATLAS_CHAT_MODELS,
     defaults: {
       imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],
       videoModel: DEFAULT_ATLAS_VIDEO_MODELS[0],
@@ -572,6 +579,7 @@ function normalizeProvider(raw, previous = null) {
   if (id === 'atlas' && protocol === 'atlas') {
     provider.imageModels = migrateAtlasModelList(provider.imageModels, DEFAULT_ATLAS_IMAGE_MODELS);
     provider.videoModels = migrateAtlasModelList(provider.videoModels, DEFAULT_ATLAS_VIDEO_MODELS);
+    provider.chatModels = migrateAtlasModelList(provider.chatModels, DEFAULT_ATLAS_CHAT_MODELS);
     const atlasDefaults = provider.defaults || {};
     const imageModel = migrateAtlasModelId(atlasDefaults.imageModel);
     const videoModel = migrateAtlasModelId(atlasDefaults.videoModel);
