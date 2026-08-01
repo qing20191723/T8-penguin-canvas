@@ -15,7 +15,7 @@ jobs:
   smoke:
     if: github.head_ref == 'ci/verify-build'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Wait for the PR base commit on Render
         shell: bash
@@ -26,7 +26,7 @@ jobs:
           base='https://qingchen-atlascloud-canvas.onrender.com'
           expected="$EXPECTED_COMMIT"
           ready=0
-          for attempt in $(seq 1 80); do
+          for attempt in $(seq 1 100); do
             code=$(curl -L -sS -o /tmp/status.json -w '%{http_code}' --max-time 90 "$base/api/status" || true)
             if [ "$code" = '200' ]; then
               observed=$(node -e "const d=require('/tmp/status.json'); process.stdout.write(String(d.commit||''))" 2>/dev/null || true)
@@ -42,121 +42,156 @@ jobs:
             fi
             sleep 15
           done
-          if [ "$ready" != '1' ]; then
-            echo 'Expected Render deployment did not become ready.'
-            cat /tmp/status.json 2>/dev/null || true
-            exit 1
-          fi
+          test "$ready" = '1'
           cat /tmp/status.json
 
-      - name: Verify Qingchen web application
+      - name: Verify Qingchen web application and public canvas writes
         shell: bash
         run: |
           set -euo pipefail
           base='https://qingchen-atlascloud-canvas.onrender.com'
-          code=$(curl -L -sS -D /tmp/root.headers -o /tmp/root.html -w '%{http_code}' --max-time 90 "$base/")
-          test "$code" = '200'
+          origin="$base"
+          curl -L -fsS --max-time 90 "$base/" > /tmp/root.html
           grep -q '<title>清尘无限画布 · Atlas Cloud</title>' /tmp/root.html
-          if grep -q '<title>贞贞的无限画布' /tmp/root.html; then
-            echo 'Old product title is still deployed.'
-            exit 1
-          fi
-          echo "Qingchen root page verified; bytes=$(wc -c < /tmp/root.html)"
+          ! grep -q '<title>贞贞的无限画布' /tmp/root.html
 
-      - name: Verify public canvas write authorization
-        shell: bash
-        run: |
-          set -euo pipefail
-          base='https://qingchen-atlascloud-canvas.onrender.com'
-          origin='https://qingchen-atlascloud-canvas.onrender.com'
           test_name="live-origin-smoke-$(date +%s)"
           good_code=$(curl -L -sS -o /tmp/canvas-create.json -w '%{http_code}' --max-time 120 \
             -X POST "$base/api/canvas" \
             -H "Origin: $origin" \
             -H 'Content-Type: application/json' \
             --data "{\"name\":\"$test_name\"}")
-          cat /tmp/canvas-create.json
           test "$good_code" = '200'
           canvas_id=$(node -e "const d=require('/tmp/canvas-create.json'); if(!d.success||!d.data?.id) process.exit(1); process.stdout.write(String(d.data.id))")
           cleanup_code=$(curl -L -sS -o /tmp/canvas-delete.json -w '%{http_code}' --max-time 120 \
-            -X DELETE "$base/api/canvas/$canvas_id" \
-            -H "Origin: $origin")
-          cat /tmp/canvas-delete.json
+            -X DELETE "$base/api/canvas/$canvas_id" -H "Origin: $origin")
           test "$cleanup_code" = '200'
           evil_code=$(curl -L -sS -o /tmp/canvas-evil.json -w '%{http_code}' --max-time 120 \
             -X POST "$base/api/canvas" \
             -H 'Origin: https://evil.example' \
             -H 'Content-Type: application/json' \
             --data '{"name":"must-not-create"}')
-          cat /tmp/canvas-evil.json
           test "$evil_code" = '403'
           echo "Public canvas write verified and cleaned up: $canvas_id"
 
-      - name: Verify migrated Atlas settings and model catalog
+      - name: Verify dynamic Atlas settings and full model catalog
         shell: bash
         run: |
           set -euo pipefail
           base='https://qingchen-atlascloud-canvas.onrender.com'
-          curl -L -fsS --max-time 90 "$base/api/settings" > /tmp/settings.json
+          curl -L -fsS --max-time 120 "$base/api/settings" > /tmp/settings.json
+          curl -L -fsS --max-time 180 "$base/api/proxy/atlas/models" > /tmp/models.json
           node - <<'NODE'
-          const data=require('/tmp/settings.json').data;
-          const atlas=(data.advancedProviders||[]).find((provider)=>provider.id==='atlas');
+          const settings=require('/tmp/settings.json').data;
+          const providers=settings.advancedProviders||[];
+          const atlas=providers.find((provider)=>provider.id==='atlas');
           if(!atlas || !atlas.enabled) throw new Error('Atlas provider is not enabled');
-          if(atlas.defaults?.imageModel!=='bytedance/seedream-v5.0-lite') throw new Error(`unexpected image model: ${atlas.defaults?.imageModel}`);
-          if(atlas.defaults?.videoModel!=='kwaivgi/kling-v3.0-std/text-to-video') throw new Error(`unexpected video model: ${atlas.defaults?.videoModel}`);
-          if(!atlas.imageModels?.includes('bytedance/seedream-v5.0-lite/edit')) throw new Error('Seedream edit model missing');
-          if(!atlas.videoModels?.includes('kwaivgi/kling-v3.0-std/image-to-video')) throw new Error('Kling image-to-video model missing');
-          console.log('Atlas settings verified:', atlas.defaults);
+          if(atlas.defaults?.imageModel!=='bytedance/seedream-v5.0-pro/text-to-image') {
+            throw new Error(`unexpected image default: ${atlas.defaults?.imageModel}`);
+          }
+          for(const id of [
+            'bytedance/seedream-v5.0-pro/edit',
+          ]) if(!atlas.imageModels?.includes(id)) throw new Error(`missing image model ${id}`);
+          for(const id of [
+            'atlascloud/wan-2.7-spicy/image-to-video',
+            'alibaba/wan-2.7/reference-to-video',
+            'alibaba/wan-2.7/video-edit',
+          ]) if(!atlas.videoModels?.includes(id)) throw new Error(`missing video model ${id}`);
+
+          const catalog=require('/tmp/models.json');
+          if(!catalog.success) throw new Error(catalog.error||'Atlas model catalog failed');
+          const groups=catalog.models||{};
+          const counts={
+            image:(groups.Image||[]).length,
+            video:(groups.Video||[]).length,
+            text:(groups.Text||[]).length,
+            audio:(groups.Audio||[]).length,
+            other:(groups.Other||[]).length,
+            total:Number(catalog.total||0),
+          };
+          if(counts.image<1) throw new Error('Atlas returned no image models');
+          if(counts.video<1) throw new Error('Atlas returned no video models');
+          if(counts.text<1) throw new Error(`Atlas public catalog returned no Text/LLM models: ${JSON.stringify(counts)}`);
+          require('fs').writeFileSync('/tmp/catalog-counts.json',JSON.stringify(counts));
+          const textModels=groups.Text||[];
+          const preferred=[
+            'deepseek-v3',
+            'deepseek/deepseek-v3',
+          ];
+          const picked=preferred.map(id=>textModels.find(m=>m.id===id)).find(Boolean)
+            || textModels.find(m=>/deepseek|qwen|kimi|glm/i.test(`${m.id} ${m.name}`))
+            || textModels[0];
+          if(!picked?.id) throw new Error('No usable Atlas LLM model found');
+          require('fs').writeFileSync('/tmp/llm-model.txt',picked.id);
+          console.log('Atlas catalog counts:',counts,'LLM smoke model:',picked.id);
           NODE
-          curl -L -fsS --max-time 120 "$base/api/proxy/atlas/models" > /tmp/models.json
+          cat /tmp/catalog-counts.json
+
+      - name: Generate text through the generic Atlas LLM node route
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          model=$(cat /tmp/llm-model.txt)
+          MODEL="$model" node - <<'NODE' > /tmp/llm-request.json
+          const model=process.env.MODEL;
+          process.stdout.write(JSON.stringify({
+            providerId:'atlas',
+            providerModel:model,
+            model,
+            messages:[{role:'user',content:'Reply with exactly PONG and nothing else.'}],
+            temperature:0,
+            max_tokens:16,
+          }));
+          NODE
+          code=$(curl -L -sS -o /tmp/llm-result.json -w '%{http_code}' --max-time 300 \
+            -H 'Content-Type: application/json' --data-binary @/tmp/llm-request.json \
+            "$base/api/proxy/external/llm")
+          cat /tmp/llm-result.json
+          test "$code" = '200'
           node - <<'NODE'
-          const data=require('/tmp/models.json');
-          if(!data.success) throw new Error(data.error||'Atlas model catalog failed');
-          const total=Number(data.total||0);
-          if(total<1) throw new Error('Atlas returned no models');
-          console.log('Atlas model catalog verified:', total);
+          const d=require('/tmp/llm-result.json');
+          if(!d.success) throw new Error(d.error||'Atlas LLM request failed');
+          const text=String(d.data?.text||'').trim();
+          if(!text) throw new Error('Atlas LLM returned empty text');
+          console.log('Atlas LLM verified:',d.data?.model,text.slice(0,120));
           NODE
 
-      - name: Generate through the generic ImageNode provider route
+      - name: Generate through the generic Seedream Pro ImageNode route
         shell: bash
         run: |
           set -euo pipefail
           base='https://qingchen-atlascloud-canvas.onrender.com'
-          cat > /tmp/request.json <<'JSON'
+          cat > /tmp/image-request.json <<'JSON'
           {
             "providerId": "atlas",
-            "providerModel": "bytedance/seedream-v5.0-lite",
-            "model": "bytedance/seedream-v5.0-lite",
+            "providerModel": "bytedance/seedream-v5.0-pro/text-to-image",
+            "model": "bytedance/seedream-v5.0-pro/text-to-image",
             "prompt": "A minimal white circle centered on a plain black background, clean test image, no text",
-            "size": "2048*2048",
+            "size": "1024*1024",
             "n": 1
           }
           JSON
-          code=$(curl -L -sS -o /tmp/result.json -w '%{http_code}' --max-time 1200 \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/request.json \
+          code=$(curl -L -sS -o /tmp/image-result.json -w '%{http_code}' --max-time 1200 \
+            -H 'Content-Type: application/json' --data-binary @/tmp/image-request.json \
             "$base/api/proxy/external/image")
-          cat /tmp/result.json
+          cat /tmp/image-result.json
           test "$code" = '200'
           node - <<'NODE'
-          const d=require('/tmp/result.json');
+          const d=require('/tmp/image-result.json');
           if(!d.success) throw new Error(d.error||'generic Atlas image generation failed');
           const data=d.data||{};
-          if(!Array.isArray(data.imageUrls)||!data.imageUrls.length) {
-            throw new Error(`no image URL; save errors=${JSON.stringify(data.outputSaveErrors||[])}`);
-          }
-          console.log('taskId=',data.taskId||'');
-          console.log('imageUrl=',data.imageUrls[0]);
+          if(!Array.isArray(data.imageUrls)||!data.imageUrls.length) throw new Error('no image URL');
+          console.log('Seedream Pro task=',data.taskId||'', 'url=',data.imageUrls[0]);
           NODE
-          image_url=$(node -e "const d=require('/tmp/result.json').data; process.stdout.write(String(d.imageUrls[0]))")
+          image_url=$(node -e "const d=require('/tmp/image-result.json').data; process.stdout.write(String(d.imageUrls[0]))")
           case "$image_url" in
             http://*|https://*) final_url="$image_url" ;;
             /*) final_url="$base$image_url" ;;
-            *) echo 'Unexpected image URL'; exit 1 ;;
+            *) exit 1 ;;
           esac
           code=$(curl -L -sS -D /tmp/image.headers -o /tmp/image.bin -w '%{http_code}' --max-time 240 "$final_url")
           test "$code" = '200'
-          bytes=$(wc -c < /tmp/image.bin)
-          test "$bytes" -gt 1000
+          test "$(wc -c < /tmp/image.bin)" -gt 1000
           grep -qi '^content-type: image/' /tmp/image.headers
-          echo "Generic Atlas ImageNode path verified; bytes=$bytes url=$final_url"
+          echo "Seedream Pro ImageNode path verified: $final_url"
