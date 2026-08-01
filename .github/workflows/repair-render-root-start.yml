@@ -64,6 +64,19 @@ jobs:
               elif double_count % 2 == 1:
                   triple = '"""'
           source = '\n'.join(output)
+          old_upload = 'upload = re.sub(r"\\n\\s*<RhImageCapabilityRail\\b.*?\\n\\s*/>\\n\\s*<RhVideoCapabilityRail\\b.*?\\n\\s*/>", "", upload, count=1, flags=re.S)'
+          new_upload = '\n'.join([
+              'upload = re.sub(r"\\n\\s*<RhImageCapabilityRail\\b.*?\\n\\s*/>", "", upload, count=1, flags=re.S)',
+              'upload = re.sub(r"\\n\\s*<RhVideoCapabilityRail\\b.*?\\n\\s*/>", "", upload, count=1, flags=re.S)',
+          ])
+          old_output = 'output = re.sub(r"\\n\\s*<RhImageCapabilityRail\\b.*?\\n\\s*/>\\n\\s*<RhVideoCapabilityRail\\b.*?\\n\\s*/>", "", output, count=1, flags=re.S)'
+          new_output = '\n'.join([
+              'output = re.sub(r"\\n\\s*<RhImageCapabilityRail\\b.*?\\n\\s*/>", "", output, count=1, flags=re.S)',
+              'output = re.sub(r"\\n\\s*<RhVideoCapabilityRail\\b.*?\\n\\s*/>", "", output, count=1, flags=re.S)',
+          ])
+          if old_upload not in source or old_output not in source:
+              raise SystemExit('unable to patch RH rail removal expressions')
+          source = source.replace(old_upload, new_upload, 1).replace(old_output, new_output, 1)
           exec(compile(source, 'apply-atlas-dynamic-repair.py', 'exec'), {})
           PY
 
