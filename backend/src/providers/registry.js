@@ -83,6 +83,7 @@ const DEFAULT_ATLAS_IMAGE_MODELS = [
 
 const DEFAULT_ATLAS_VIDEO_MODELS = [
   'kwaivgi/kling-v3.0-std/text-to-video',
+  'kwaivgi/kling-v3.0-std/image-to-video',
   'atlascloud/wan-2.7-spicy/image-to-video',
   'atlascloud/wan-2.7-spicy/reference-to-video',
   'alibaba/wan-2.7/reference-to-video',
@@ -97,7 +98,6 @@ const LEGACY_ATLAS_MODEL_IDS = new Map([
   ['bytedance/seedream-v5.0-lite', 'bytedance/seedream-v5.0-pro/text-to-image'],
   ['bytedance/seedream-v5.0-lite/edit', 'bytedance/seedream-v5.0-pro/edit'],
   ['kling-video/kling-v3.0-standard-text-to-video', 'kwaivgi/kling-v3.0-std/text-to-video'],
-  ['kwaivgi/kling-v3.0-std/image-to-video', 'atlascloud/wan-2.7-spicy/image-to-video'],
 ]);
 
 const DEFAULT_JIMENG_IMAGE_MODELS = [

@@ -211,7 +211,7 @@ function buildGenerationBody(rawBody) {
 
 function atlasCodeSucceeded(payload) {
   const code = payload?.code;
-  return code === undefined || code === null || String(code) === '200';
+  return code === undefined || code === null || ['0', '200'].includes(String(code));
 }
 
 function normalizeOutputs(data) {

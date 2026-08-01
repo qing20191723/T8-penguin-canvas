@@ -106,7 +106,7 @@ function requestId(response, payload) {
 }
 
 function codeSucceeded(payload) {
-  return payload?.code == null || String(payload.code) === '200';
+  return payload?.code == null || ['0', '200'].includes(String(payload.code));
 }
 
 function taskData(payload) {
@@ -206,7 +206,10 @@ function normalizeSeedreamV5Params(params, input, refs, model) {
     output_format: format === 'png' ? 'png' : 'jpeg',
     enable_base64_output: false,
   };
-  if (model === SEEDREAM_V5_EDIT_MODEL) normalized.images = refs.slice(0, 10);
+  if (model === SEEDREAM_V5_EDIT_MODEL) {
+    if (!refs.length) throw new Error('Seedream v5 Pro 图片编辑至少需要一张参考图。');
+    normalized.images = refs.slice(0, 10);
+  }
   return normalized;
 }
 
@@ -228,6 +231,7 @@ function normalizeKlingV3Params(params, input, refs, model) {
     if (params.shot_type === 'customize' && Array.isArray(params.multi_prompt)) normalized.multi_prompt = params.multi_prompt;
   }
   if (model === KLING_V3_I2V_MODEL) {
+    if (!refs[0]) throw new Error('Kling v3 图生视频需要一张首帧图。');
     normalized.image = refs[0];
     if (refs[1]) normalized.end_image = refs[1];
     const resolution = String(firstDefined(params.resolution, input.resolution, '')).toUpperCase();
@@ -371,7 +375,7 @@ async function uploadDataUrl(provider, dataUrl, filename, options = {}) {
   if (!response.ok || !codeSucceeded(payload)) {
     throw new Error(`Atlas 媒体上传失败：${responseError(payload, `HTTP ${response.status}`)}`);
   }
-  const url = String(payload?.data?.download_url || payload?.data?.url || '').trim();
+  const url = String(payload?.data?.download_url || payload?.data?.url || payload?.download_url || payload?.url || '').trim();
   if (!url) throw new Error('Atlas 媒体上传成功但没有返回 download_url。');
   return url;
 }

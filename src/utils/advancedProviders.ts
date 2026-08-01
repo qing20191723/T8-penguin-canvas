@@ -251,7 +251,9 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
     agnes: ['agnes-video-v2.0'],
     atlas: [
       'kwaivgi/kling-v3.0-std/text-to-video',
+      'kwaivgi/kling-v3.0-std/image-to-video',
       'atlascloud/wan-2.7-spicy/image-to-video',
+      'atlascloud/wan-2.7-spicy/reference-to-video',
       'alibaba/wan-2.7/reference-to-video',
       'alibaba/wan-2.7/video-edit',
     ],

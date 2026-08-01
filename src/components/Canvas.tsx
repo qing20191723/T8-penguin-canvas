@@ -12998,6 +12998,16 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     };
   }, [edgeMotionMode, heavyEdgeMotion, isDecorativeEdgeVisual]);
 
+  const creatorCanvasContext = useMemo(() => buildCreatorCanvasContext(
+    nodes,
+    edges,
+    getViewport(),
+    {
+      width: typeof window === 'undefined' ? 1440 : window.innerWidth,
+      height: typeof window === 'undefined' ? 900 : window.innerHeight,
+    },
+  ), [edges, getViewport, nodes, viewportMoving]);
+
   if (!activeId) {
     return (
       <div
@@ -13015,16 +13025,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }
 
   const floatingControlRail = null;
-
-  const creatorCanvasContext = useMemo(() => buildCreatorCanvasContext(
-    nodes,
-    edges,
-    getViewport(),
-    {
-      width: typeof window === 'undefined' ? 1440 : window.innerWidth,
-      height: typeof window === 'undefined' ? 900 : window.innerHeight,
-    },
-  ), [edges, getViewport, nodes, viewportMoving]);
 
   return (
     <div

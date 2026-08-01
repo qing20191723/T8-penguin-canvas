@@ -11,6 +11,7 @@ const provider = {
   imageModels: ['bytedance/seedream-v5.0-pro/text-to-image', 'bytedance/seedream-v5.0-pro/edit'],
   videoModels: [
     'kwaivgi/kling-v3.0-std/text-to-video',
+    'kwaivgi/kling-v3.0-std/image-to-video',
     'atlascloud/wan-2.7-spicy/image-to-video',
     'atlascloud/wan-2.7-spicy/reference-to-video',
     'alibaba/wan-2.7/reference-to-video',
@@ -72,6 +73,72 @@ test('Seedream v5 Pro switches to edit for references', async () => {
     }, 'https://example.com/edited.png'),
   });
   assert.equal(result.ok, true);
+});
+
+test('Kling v3 image-to-video preserves the official model and maps start/end frames', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'kwaivgi/kling-v3.0-std/image-to-video',
+    prompt: 'one continuous camera move',
+    images: ['https://example.com/start.png', 'https://example.com/end.png'],
+    duration: 8,
+    resolution: '1080P',
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.model, 'kwaivgi/kling-v3.0-std/image-to-video');
+      assert.equal(body.image, 'https://example.com/start.png');
+      assert.equal(body.end_image, 'https://example.com/end.png');
+      assert.equal(body.duration, 8);
+      assert.equal(body.resolution, '1080P');
+    }, 'https://example.com/kling-i2v.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('required image schemas fail before submitting without a reference', async () => {
+  const seedream = await atlas.generateImage(provider, {
+    model: 'bytedance/seedream-v5.0-pro/edit',
+    prompt: 'edit this image',
+  }, { fetchImpl: async () => { throw new Error('must not submit'); } });
+  assert.equal(seedream.ok, false);
+  assert.equal(seedream.code, 'invalid_model_parameters');
+  assert.match(seedream.error, /至少需要一张参考图/);
+
+  const kling = await atlas.generateVideo(provider, {
+    model: 'kwaivgi/kling-v3.0-std/image-to-video',
+    prompt: 'animate this image',
+  }, { fetchImpl: async () => { throw new Error('must not submit'); } });
+  assert.equal(kling.ok, false);
+  assert.equal(kling.code, 'invalid_model_parameters');
+  assert.match(kling.error, /需要一张首帧图/);
+});
+
+test('Atlas accepts code zero and a top-level upload url', async () => {
+  const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  let uploadSeen = false;
+  const result = await atlas.generateImage(provider, {
+    model: 'bytedance/seedream-v5.0-pro/text-to-image',
+    prompt: 'edit the uploaded pixel',
+    images: [tinyPng],
+  }, {
+    fetchImpl: async (url, init = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith('/model/uploadMedia')) {
+        uploadSeen = true;
+        assert.ok(init.body instanceof FormData);
+        return jsonResponse({ code: 0, url: 'https://example.com/uploaded.png' });
+      }
+      if (requestUrl.includes('/model/prediction/')) {
+        return jsonResponse({ code: 0, data: { status: 'completed', outputs: ['https://example.com/edited.png'] } });
+      }
+      const body = JSON.parse(init.body);
+      assert.equal(body.model, 'bytedance/seedream-v5.0-pro/edit');
+      assert.deepEqual(body.images, ['https://example.com/uploaded.png']);
+      return jsonResponse({ code: 0, data: { id: 'prediction-zero', status: 'processing' } });
+    },
+  });
+  assert.equal(uploadSeen, true);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.imageUrls, ['https://example.com/edited.png']);
 });
 
 test('Wan 2.7 Spicy maps first-frame image-to-video fields', async () => {

@@ -16,6 +16,7 @@ const ATLAS_PREFERRED_IMAGE_MODELS = [
 ];
 const ATLAS_PREFERRED_VIDEO_MODELS = [
   'kwaivgi/kling-v3.0-std/text-to-video',
+  'kwaivgi/kling-v3.0-std/image-to-video',
   'atlascloud/wan-2.7-spicy/image-to-video',
   'atlascloud/wan-2.7-spicy/reference-to-video',
   'alibaba/wan-2.7/reference-to-video',
