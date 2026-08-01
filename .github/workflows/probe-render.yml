@@ -11,7 +11,7 @@ jobs:
   probe:
     if: github.head_ref == 'ci/verify-build'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Probe current Render responses
         shell: bash
@@ -31,3 +31,32 @@ jobs:
           echo '=== Models ==='
           curl -L -sS -D - --max-time 90 "$base/api/proxy/atlas/models" | head -c 4000 || true
           echo
+
+      - name: Probe public canvas create and cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          origin='https://qingchen-atlascloud-canvas.onrender.com'
+          name="probe-origin-$(date +%s)"
+          code=$(curl -L -sS -o /tmp/create.json -w '%{http_code}' --max-time 120 \
+            -X POST "$base/api/canvas" \
+            -H "Origin: $origin" \
+            -H 'Content-Type: application/json' \
+            --data "{\"name\":\"$name\"}")
+          cat /tmp/create.json
+          test "$code" = '200'
+          canvas_id=$(node -e "const d=require('/tmp/create.json'); if(!d.success||!d.data?.id) process.exit(1); process.stdout.write(String(d.data.id))")
+          delete_code=$(curl -L -sS -o /tmp/delete.json -w '%{http_code}' --max-time 120 \
+            -X DELETE "$base/api/canvas/$canvas_id" \
+            -H "Origin: $origin")
+          cat /tmp/delete.json
+          test "$delete_code" = '200'
+          evil_code=$(curl -L -sS -o /tmp/evil.json -w '%{http_code}' --max-time 120 \
+            -X POST "$base/api/canvas" \
+            -H 'Origin: https://evil.example' \
+            -H 'Content-Type: application/json' \
+            --data '{"name":"must-not-create"}')
+          cat /tmp/evil.json
+          test "$evil_code" = '403'
+          echo "Live public write passed and test canvas was removed: $canvas_id"
