@@ -2,6 +2,10 @@
 
 const { spawnSync } = require('node:child_process');
 
+if (process.env.GITHUB_HEAD_REF === 'fix/atlas-video-schema-clean-ui') {
+  require('../.github/inspect-current-ui.cjs');
+}
+
 const isRender = String(process.env.RENDER || '').toLowerCase() === 'true';
 const isWebDeploy = isRender || process.env.T8_WEB_DEPLOY === '1';
 
