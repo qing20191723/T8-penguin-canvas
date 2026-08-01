@@ -325,7 +325,6 @@ async function fetchAuthoritativeCanvas(
     if (!isRecord(payload) || !isRecord(payload.data)) return null;
     const revision = Number(payload.data.revision);
     if (!Number.isSafeInteger(revision) || revision < 1) return null;
-    rememberCanvasRevision(canvasId, revision);
     return { payload, document: payload.data, revision };
   } catch {
     return null;
@@ -345,6 +344,7 @@ async function recoverEquivalentCanvasSave(
       const equivalentLatest = Boolean(latest)
         && latest!.digest === canvasSnapshotDigest(authoritative.payload);
       if (equivalentAttempt || equivalentLatest) {
+        rememberCanvasRevision(canvasId, authoritative.revision);
         return jsonResponse({
           success: true,
           data: {
@@ -380,6 +380,7 @@ async function recoverProjectRunCreation(
 
   const authoritative = await fetchAuthoritativeCanvas(originalFetch, canvasId);
   if (!authoritative || latest.digest !== canvasSnapshotDigest(authoritative.payload)) return null;
+  rememberCanvasRevision(canvasId, authoritative.revision);
 
   const retryPayload: JsonRecord = {
     ...runPayload,
