@@ -9830,6 +9830,11 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   }, [activeId, runNodesByOrder]);
 
   useEffect(() => {
+    const isPublicShareMode = typeof window !== 'undefined'
+      && window.location.protocol === 'https:'
+      && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+    if (isPublicShareMode) return;
+
     if (!activeId
       || !activeProjectId
       || !loaded

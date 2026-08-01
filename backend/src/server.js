@@ -287,6 +287,29 @@ function isTrustedLocalOrigin(origin) {
   const value = String(origin || '').trim();
   return LOCAL_ORIGIN_RE.test(value) || UXP_ORIGIN_RE.test(value) || PUBLIC_ALLOWED_ORIGINS.has(value);
 }
+function firstForwardedValue(value) {
+  return String(value || '').split(',')[0].trim();
+}
+function isSameRequestOrigin(req, origin) {
+  const value = String(origin || '').trim();
+  if (!value) return false;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (_) {
+    return false;
+  }
+  const forwardedHost = firstForwardedValue(req.get('x-forwarded-host') || req.get('host')).toLowerCase();
+  const forwardedProto = firstForwardedValue(req.get('x-forwarded-proto') || req.protocol)
+    .replace(/:$/, '')
+    .toLowerCase();
+  if (!forwardedHost || !forwardedProto) return false;
+  return parsed.host.toLowerCase() === forwardedHost
+    && parsed.protocol.replace(/:$/, '').toLowerCase() === forwardedProto;
+}
+function isTrustedRequestOrigin(req, origin) {
+  return isTrustedLocalOrigin(origin) || isSameRequestOrigin(req, origin);
+}
 function isLocalCanvasSyncPath(req) {
   const pathname = String(req?.originalUrl || req?.url || req?.path || '')
     .split('?')[0]
@@ -305,7 +328,7 @@ app.use(cors({
 }));
 app.use((req, res, next) => {
   const origin = String(req.get('origin') || '').trim();
-  const trustedOrigin = Boolean(origin && isTrustedLocalOrigin(origin));
+  const trustedOrigin = Boolean(origin && isTrustedRequestOrigin(req, origin));
   const fetchSite = String(req.get('sec-fetch-site') || '').trim().toLowerCase();
   if ((origin && !trustedOrigin) || (fetchSite === 'cross-site' && !trustedOrigin)) {
     return res.status(403).json({
