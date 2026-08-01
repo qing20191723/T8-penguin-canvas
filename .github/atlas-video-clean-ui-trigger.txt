@@ -1,1 +1,2 @@
 run verified Atlas reference-video and clean public UI repair
+regenerate provider capability digest
