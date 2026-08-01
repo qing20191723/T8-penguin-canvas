@@ -1,2 +1,3 @@
 verify render commit 4eac968 with public origin canvas create/delete
 probe current live commit after product repair
+run immediate public origin probe after 2abe7dd
