@@ -36,6 +36,13 @@ jobs:
       - name: Install, regenerate, test and build
         run: |
           npm ci --include=dev
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = 'tools/zcanvas-cli/manifest.json';
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          manifest.providerCatalogDigest = 'da814427d3a0a2894c443a8bce46ef042b4e7a924f449d453065d21984adca86';
+          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
           npm run feature-sync:generate
           node --test backend/src/providers/atlas.test.js
           npm run build
@@ -48,6 +55,6 @@ jobs:
           rm -f .github/apply_atlas_video_clean_ui.py .github/atlas-video-clean-ui-trigger.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src backend package.json scripts tools .github/apply_atlas_video_clean_ui.py .github/inspect-current-ui.cjs .github/atlas-video-clean-ui-trigger.txt
+          git add src backend package.json scripts tools .github/apply_atlas_video_clean_ui.py .github/inspect-current-ui.cjs .github/atlas-video-clean-ui-trigger.txt .agents
           git commit -m 'fix: correct Atlas reference video payloads and remove legacy UI'
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
