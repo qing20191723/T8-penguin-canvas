@@ -7,3 +7,4 @@ preserve strings trigger
 split rails trigger
 anchored rails trigger
 render-only rail assertion trigger
+remove unsupported internals trigger
