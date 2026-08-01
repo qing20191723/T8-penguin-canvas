@@ -71,17 +71,24 @@ jobs:
           atlas_schema = Path('backend/src/providers/atlasSchema.js').read_text(encoding='utf-8')
           config = Path('backend/src/config.js').read_text(encoding='utf-8')
           canvas_route = Path('backend/src/routes/canvas.js').read_text(encoding='utf-8')
-          assert 'API Key 设置（Atlas Cloud + 自定义 API）' in api_settings
-          assert '所有内置 LLM、图像与视频模型均来自 Atlas Cloud 当前公共模型目录' in api_settings
-          assert "id: 'atlas'" in store and "id: 'custom-api'" in store
-          assert "'openai-compatible',\n  'atlas'," in registry
-          assert 'return [atlas, custom].filter(Boolean);' in registry
-          assert "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1'" in atlas
-          assert "const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';" in atlas
-          assert "const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1'" in atlas
-          assert 'https://static.atlascloud.ai/model/schema/' in atlas_schema
-          assert "'qingchen'" in config
-          assert 'qingchen-canvas' in canvas_route
+          checks = {
+              'Atlas settings title': 'API Key 设置（Atlas Cloud + 自定义 API）' in api_settings,
+              'Atlas-only UI notice': '所有内置 LLM、图像与视频模型均来自 Atlas Cloud 当前公共模型目录' in api_settings,
+              'Atlas and custom provider defaults': "id: 'atlas'" in store and "id: 'custom-api'" in store,
+              'Only public protocols': "'openai-compatible',\n  'atlas'," in registry,
+              'Registry Atlas/custom filtering': 'return [atlas, custom].filter(Boolean);' in registry,
+              'Atlas generation root': "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1'" in atlas,
+              'Atlas image/video endpoints': "const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';" in atlas,
+              'Atlas chat endpoint': "const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1'" in atlas,
+              'Atlas public model catalog': "const ATLAS_MODELS_URL = 'https://api.atlascloud.ai/api/v1/models'" in atlas_schema,
+              'Atlas schema origin restriction': "const ATLAS_STATIC_ORIGIN = 'https://static.atlascloud.ai'" in atlas_schema and "url.pathname.startsWith('/model/schema/')" in atlas_schema,
+              'Qingchen root path': "'qingchen'" in config,
+              'Qingchen canvas path': 'qingchen-canvas' in canvas_route,
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              raise SystemExit(f'Static assertions failed: {failed}')
+          print('Static Atlas-only/Qingchen assertions passed:', ', '.join(checks))
           PY
 
       - name: Verify current official Atlas public catalog
