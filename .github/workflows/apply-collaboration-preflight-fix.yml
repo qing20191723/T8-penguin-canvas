@@ -1,0 +1,150 @@
+name: Apply collaboration preflight repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-collaboration-preflight-fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-collaboration-preflight-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Apply scoped source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > src/utils/collaborationExecutionPolicyScope.ts <<'TS'
+          import type { RunActionKind } from './runPreflight';
+
+          const COLLABORATION_POLICY_ACTIONS: ReadonlySet<RunActionKind> = new Set([
+            'run-intent',
+            'run-intent-auto-approved',
+          ]);
+
+          /**
+           * Collaboration execution policy is host-management state. Public/local
+           * canvas runs must not call the management-only endpoint because the
+           * browser intentionally has no collaboration management token.
+           */
+          export function shouldLoadCollaborationExecutionPolicy(actionKind: RunActionKind) {
+            return COLLABORATION_POLICY_ACTIONS.has(actionKind);
+          }
+          TS
+
+          cat > src/utils/collaborationExecutionPolicyScope.test.ts <<'TS'
+          import assert from 'node:assert/strict';
+          import test from 'node:test';
+          import type { RunActionKind } from './runPreflight';
+          import { shouldLoadCollaborationExecutionPolicy } from './collaborationExecutionPolicyScope';
+
+          test('ordinary local canvas actions do not require collaboration management policy', () => {
+            const ordinaryActions: RunActionKind[] = [
+              'run-all',
+              'run-group',
+              'run-single',
+              'replay-run',
+              'replay-node-run',
+              'replay-attempt',
+              'replay-subflow',
+              'retry-run',
+              'retry-node-run',
+              'retry-attempt',
+              'retry-subflow',
+            ];
+            for (const action of ordinaryActions) {
+              assert.equal(shouldLoadCollaborationExecutionPolicy(action), false, action);
+            }
+          });
+
+          test('remote run intents still require collaboration policy', () => {
+            assert.equal(shouldLoadCollaborationExecutionPolicy('run-intent'), true);
+            assert.equal(shouldLoadCollaborationExecutionPolicy('run-intent-auto-approved'), true);
+          });
+          TS
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/Canvas.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          import_marker = "import { createRunPreflightHostContextDigest } from '../utils/runPreflightHostContext';\n"
+          import_replacement = import_marker + "import { shouldLoadCollaborationExecutionPolicy } from '../utils/collaborationExecutionPolicyScope';\n"
+          if text.count(import_marker) != 1:
+              raise SystemExit(f'Canvas import marker count={text.count(import_marker)}')
+          text = text.replace(import_marker, import_replacement, 1)
+
+          old = """        const policyPromise = api.getCollaborationExecutionPolicy(snapshot.projectId, {
+          signal: controller.signal,
+          excludeIntentId: options.runIntentSnapshot?.id,
+        })
+          .catch((error) => {
+            if (controller.signal.aborted) throw abortError();
+            policyCoverage = false;
+            return null;
+          });
+"""
+          new = """        const policyPromise = shouldLoadCollaborationExecutionPolicy(actionKind)
+          ? api.getCollaborationExecutionPolicy(snapshot.projectId, {
+            signal: controller.signal,
+            excludeIntentId: options.runIntentSnapshot?.id,
+          })
+            .catch((error) => {
+              if (controller.signal.aborted) throw abortError();
+              policyCoverage = false;
+              return null;
+            })
+          : Promise.resolve(null);
+"""
+          if text.count(old) != 1:
+              raise SystemExit(f'Canvas policy marker count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          git diff --check
+
+      - name: Install dependencies
+        env:
+          T8_WEB_DEPLOY: '1'
+        run: npm ci --include=dev
+
+      - name: Run focused policy tests
+        run: npm run test:electron:ts -- src/utils/collaborationExecutionPolicyScope.test.ts
+
+      - name: Build production frontend
+        run: npm run build
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-collaboration-preflight-fix.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: decouple public runs from collaboration management auth'
+          git push origin HEAD:main
