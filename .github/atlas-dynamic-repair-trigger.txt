@@ -6,3 +6,4 @@ fixed extraction trigger
 preserve strings trigger
 split rails trigger
 anchored rails trigger
+render-only rail assertion trigger
