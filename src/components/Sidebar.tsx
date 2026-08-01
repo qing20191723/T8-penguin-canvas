@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Icons from 'lucide-react';
 import {
   Check,
@@ -417,11 +417,27 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const canvasListInitializedRef = useRef(false);
+  const autoCreateStartedRef = useRef(false);
   const completionNoticeSet = useMemo(() => new Set(completionNoticeCanvasIds), [completionNoticeCanvasIds]);
 
   useEffect(() => {
-    loadCanvases();
+    let mounted = true;
+    void loadCanvases().finally(() => {
+      if (mounted) canvasListInitializedRef.current = true;
+    });
+    return () => {
+      mounted = false;
+    };
   }, [loadCanvases]);
+
+  useEffect(() => {
+    if (!canvasListInitializedRef.current || canvasLoading || canvases.length > 0 || activeId || autoCreateStartedRef.current) return;
+    autoCreateStartedRef.current = true;
+    void createCanvas('画布 1').then((created) => {
+      if (!created) autoCreateStartedRef.current = false;
+    });
+  }, [activeId, canvasLoading, canvases.length, createCanvas]);
 
   const handleCreateCanvas = async () => {
     const name = `画布 ${canvases.length + 1}`;
@@ -471,8 +487,9 @@ export default function Sidebar({ onAddNode }: SidebarProps) {
     const colorHex = COLOR_HEX[n.color] || COLOR_HEX.slate;
     return (
       <button
+        type="button"
         key={n.type}
-        onClick={() => onAddNode(n.type)}
+        onClick={() => void onAddNode(n.type)}
         title={`${n.description}（单击添加到当前画布）`}
         className={`t8-sidebar-node w-full text-left flex items-center gap-2 px-2 py-1.5 transition-colors text-xs ${
           isPixel
