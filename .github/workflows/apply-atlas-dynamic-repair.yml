@@ -1,0 +1,789 @@
+name: Apply Atlas dynamic repair
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/upload-autosize-atlas-pro-models'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/upload-autosize-atlas-pro-models
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply exact product patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          def replace_once(path, old, new):
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}: {old[:100]!r}')
+              write(path, text.replace(old, new, 1))
+
+          # ---- Front-end provider capabilities and dynamic catalog ----
+          replace_once(
+              'src/utils/advancedProviders.ts',
+              "const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes']);",
+              "const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas']);",
+          )
+          replace_once(
+              'src/utils/advancedProviders.ts',
+              "    atlas: [\n      'bytedance/seedream-v5.0-lite',\n      'bytedance/seedream-v5.0-lite/edit',\n    ],",
+              "    atlas: [\n      'bytedance/seedream-v5.0-pro/text-to-image',\n      'bytedance/seedream-v5.0-pro/edit',\n    ],",
+          )
+          replace_once(
+              'src/utils/advancedProviders.ts',
+              "    atlas: ['kwaivgi/kling-v3.0-std/text-to-video', 'kwaivgi/kling-v3.0-std/image-to-video'],",
+              "    atlas: [\n      'kwaivgi/kling-v3.0-std/text-to-video',\n      'atlascloud/wan-2.7-spicy/image-to-video',\n      'alibaba/wan-2.7/reference-to-video',\n      'alibaba/wan-2.7/video-edit',\n    ],",
+          )
+          replace_once(
+              'src/utils/advancedProviders.ts',
+              "    agnes: ['agnes-2.0-flash'],\n  },",
+              "    agnes: ['agnes-2.0-flash'],\n    atlas: [],\n  },",
+          )
+          replace_once(
+              'src/utils/storyProduction.ts',
+              "const PROVIDER_SOURCES = new Set<CanvasProviderSource>(['zhenzhen', 'openai-compatible', 'modelscope', 'volcengine', 'agnes', 'comfyui', 'jimeng-cli']);",
+              "const PROVIDER_SOURCES = new Set<CanvasProviderSource>(['zhenzhen', 'openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas', 'comfyui', 'jimeng-cli']);",
+          )
+
+          api_keys = read('src/stores/apiKeys.ts')
+          marker = "export const RH_INTL_BASE = 'https://www.runninghub.ai';\n"
+          if marker not in api_keys:
+              raise SystemExit('apiKeys.ts catalog insertion marker missing')
+          helper = r'''
+
+const ATLAS_PREFERRED_IMAGE_MODELS = [
+  'bytedance/seedream-v5.0-pro/text-to-image',
+  'bytedance/seedream-v5.0-pro/edit',
+];
+const ATLAS_PREFERRED_VIDEO_MODELS = [
+  'kwaivgi/kling-v3.0-std/text-to-video',
+  'atlascloud/wan-2.7-spicy/image-to-video',
+  'alibaba/wan-2.7/reference-to-video',
+  'alibaba/wan-2.7/video-edit',
+];
+
+type AtlasCatalogKind = 'image' | 'video' | 'chat' | 'other';
+
+function uniqueAtlasModelIds(values: unknown[]): string[] {
+  const out: string[] = [];
+  for (const value of values) {
+    const id = String(
+      typeof value === 'string'
+        ? value
+        : value && typeof value === 'object'
+          ? (value as any).id || (value as any).model
+          : '',
+    ).trim();
+    if (!id || id.length > 300 || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
+function atlasCatalogKind(model: any): AtlasCatalogKind {
+  const type = String(model?.type || '').toLowerCase();
+  const tags = (Array.isArray(model?.tags) ? model.tags : [])
+    .map((item: unknown) => String(item || '').toLowerCase())
+    .join(' ');
+  const text = `${type} ${tags}`;
+  if (/image|text-to-image|image-to-image|inpaint|outpaint/.test(text)) return 'image';
+  if (/video|text-to-video|image-to-video|video-to-video/.test(text)) return 'video';
+  if (/\b(text|llm|chat|language|embedding)\b|text-to-text|vision-language/.test(text)) return 'chat';
+  return 'other';
+}
+
+async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> {
+  const providers = (Array.isArray(settings.advancedProviders) ? settings.advancedProviders : [])
+    .filter((provider) => provider?.protocol !== 'jimeng-cli');
+  const atlasIndex = providers.findIndex((provider) => provider?.protocol === 'atlas');
+  if (atlasIndex < 0) return { ...settings, advancedProviders: providers };
+
+  try {
+    const response = await fetch('/api/proxy/atlas/models', { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok || payload?.success === false) throw new Error(payload?.error || `HTTP ${response.status}`);
+    const items = Array.isArray(payload?.items)
+      ? payload.items
+      : Object.values(payload?.models || {}).flatMap((value) => Array.isArray(value) ? value : []);
+    const byKind = { image: [] as any[], video: [] as any[], chat: [] as any[] };
+    for (const model of items) {
+      const kind = atlasCatalogKind(model);
+      if (kind !== 'other') byKind[kind].push(model);
+    }
+
+    const current = providers[atlasIndex];
+    const imageModels = uniqueAtlasModelIds([
+      ...ATLAS_PREFERRED_IMAGE_MODELS,
+      ...byKind.image,
+      ...(current.imageModels || []),
+    ]);
+    const videoModels = uniqueAtlasModelIds([
+      ...ATLAS_PREFERRED_VIDEO_MODELS,
+      ...byKind.video,
+      ...(current.videoModels || []),
+    ]);
+    const chatModels = uniqueAtlasModelIds([
+      ...byKind.chat,
+      ...(current.chatModels || []),
+    ]);
+    const defaults = { ...(current.defaults || {}) };
+    defaults.imageModel = imageModels.includes(String(defaults.imageModel || ''))
+      ? defaults.imageModel
+      : ATLAS_PREFERRED_IMAGE_MODELS[0];
+    defaults.videoModel = videoModels.includes(String(defaults.videoModel || ''))
+      ? defaults.videoModel
+      : ATLAS_PREFERRED_VIDEO_MODELS[0];
+    if (chatModels.length) {
+      defaults.chatModel = chatModels.includes(String(defaults.chatModel || ''))
+        ? defaults.chatModel
+        : chatModels[0];
+    }
+    providers[atlasIndex] = {
+      ...current,
+      imageModels,
+      videoModels,
+      chatModels,
+      defaults,
+    };
+    return { ...settings, advancedProviders: providers };
+  } catch (error) {
+    console.warn('[atlas] 动态模型目录加载失败，保留内置回退模型', error);
+    return { ...settings, advancedProviders: providers };
+  }
+}
+
+async function normalizedLoadedSettings(data: Partial<ApiSettings>): Promise<ApiSettings> {
+  const settings: ApiSettings = {
+    ...DEFAULT,
+    ...data,
+    zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
+    zhenzhenSd2BaseUrl: FIXED_ZHENZHEN_SD2_BASE,
+    rhBaseUrl: RH_BASE,
+    rhIntlBaseUrl: RH_INTL_BASE,
+    llmBaseUrl: FIXED_ZHENZHEN_BASE,
+  };
+  return hydrateAtlasCatalog(settings);
+}
+'''
+          api_keys = api_keys.replace(marker, marker + helper, 1)
+          old_load = """      const data = await api.getSettings();
+      set({
+        settings: {
+          ...DEFAULT,
+          ...data,
+          zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
+          zhenzhenSd2BaseUrl: FIXED_ZHENZHEN_SD2_BASE,
+          rhBaseUrl: RH_BASE,
+          rhIntlBaseUrl: RH_INTL_BASE,
+          llmBaseUrl: FIXED_ZHENZHEN_BASE,
+        },
+        loading: false,
+        loaded: true,
+      });"""
+          new_load = """      const data = await api.getSettings();
+      const settings = await normalizedLoadedSettings(data);
+      set({ settings, loading: false, loaded: true });"""
+          if api_keys.count(old_load) != 1:
+              raise SystemExit('apiKeys.ts load block mismatch')
+          api_keys = api_keys.replace(old_load, new_load, 1)
+          old_save = """      const data = await api.getSettings();
+      set({
+        settings: {
+          ...DEFAULT,
+          ...data,
+          zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
+          zhenzhenSd2BaseUrl: FIXED_ZHENZHEN_SD2_BASE,
+          rhBaseUrl: RH_BASE,
+          rhIntlBaseUrl: RH_INTL_BASE,
+          llmBaseUrl: FIXED_ZHENZHEN_BASE,
+        },
+        loading: false,
+      });"""
+          new_save = """      const data = await api.getSettings();
+      const settings = await normalizedLoadedSettings(data);
+      set({ settings, loading: false });"""
+          if api_keys.count(old_save) != 1:
+              raise SystemExit('apiKeys.ts save block mismatch')
+          api_keys = api_keys.replace(old_save, new_save, 1)
+          write('src/stores/apiKeys.ts', api_keys)
+
+          replace_once(
+              'src/App.tsx',
+              "    if (!atlasProvider || (type !== 'image' && type !== 'video')) return undefined;\n    const models = type === 'image' ? atlasProvider.imageModels : atlasProvider.videoModels;\n    const defaultModel = type === 'image'\n      ? atlasProvider.defaults?.imageModel\n      : atlasProvider.defaults?.videoModel;",
+              "    if (!atlasProvider || !['image', 'video', 'llm'].includes(type)) return undefined;\n    const models = type === 'image'\n      ? atlasProvider.imageModels\n      : type === 'video'\n        ? atlasProvider.videoModels\n        : atlasProvider.chatModels;\n    const defaultModel = type === 'image'\n      ? atlasProvider.defaults?.imageModel\n      : type === 'video'\n        ? atlasProvider.defaults?.videoModel\n        : atlasProvider.defaults?.chatModel;",
+          )
+
+          # ---- Backend Atlas defaults ----
+          registry = read('backend/src/providers/registry.js')
+          registry = registry.replace(
+              "const DEFAULT_ATLAS_IMAGE_MODELS = [\n  'bytedance/seedream-v5.0-lite',\n  'bytedance/seedream-v5.0-lite/edit',\n];",
+              "const DEFAULT_ATLAS_IMAGE_MODELS = [\n  'bytedance/seedream-v5.0-pro/text-to-image',\n  'bytedance/seedream-v5.0-pro/edit',\n];",
+              1,
+          )
+          registry = registry.replace(
+              "const DEFAULT_ATLAS_VIDEO_MODELS = [\n  'kwaivgi/kling-v3.0-std/text-to-video',\n  'kwaivgi/kling-v3.0-std/image-to-video',\n];",
+              "const DEFAULT_ATLAS_VIDEO_MODELS = [\n  'kwaivgi/kling-v3.0-std/text-to-video',\n  'atlascloud/wan-2.7-spicy/image-to-video',\n  'alibaba/wan-2.7/reference-to-video',\n  'alibaba/wan-2.7/video-edit',\n];\n\nconst DEFAULT_ATLAS_CHAT_MODELS = [];",
+              1,
+          )
+          registry = registry.replace(
+              "  ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-lite'],\n  ['qwen-image/qwen-image-text-to-image-plus', 'bytedance/seedream-v5.0-lite'],\n  ['kling-video/kling-v3.0-standard-text-to-video', 'kwaivgi/kling-v3.0-std/text-to-video'],",
+              "  ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-pro/text-to-image'],\n  ['qwen-image/qwen-image-text-to-image-plus', 'bytedance/seedream-v5.0-pro/text-to-image'],\n  ['bytedance/seedream-v5.0-lite', 'bytedance/seedream-v5.0-pro/text-to-image'],\n  ['bytedance/seedream-v5.0-lite/edit', 'bytedance/seedream-v5.0-pro/edit'],\n  ['kling-video/kling-v3.0-standard-text-to-video', 'kwaivgi/kling-v3.0-std/text-to-video'],\n  ['kwaivgi/kling-v3.0-std/image-to-video', 'atlascloud/wan-2.7-spicy/image-to-video'],",
+              1,
+          )
+          registry = registry.replace(
+              "    chatModels: [],\n    defaults: {\n      imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],",
+              "    chatModels: DEFAULT_ATLAS_CHAT_MODELS,\n    defaults: {\n      imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],",
+              1,
+          )
+          registry = registry.replace(
+              "    provider.videoModels = migrateAtlasModelList(provider.videoModels, DEFAULT_ATLAS_VIDEO_MODELS);\n    const atlasDefaults = provider.defaults || {};",
+              "    provider.videoModels = migrateAtlasModelList(provider.videoModels, DEFAULT_ATLAS_VIDEO_MODELS);\n    provider.chatModels = migrateAtlasModelList(provider.chatModels, DEFAULT_ATLAS_CHAT_MODELS);\n    const atlasDefaults = provider.defaults || {};",
+              1,
+          )
+          write('backend/src/providers/registry.js', registry)
+
+          # ---- Atlas adapter: Pro image, Wan 2.7 and OpenAI-compatible chat ----
+          atlas = read('backend/src/providers/atlas.js')
+          atlas = atlas.replace(
+              "const { providerIdempotencyHeadersLike } = require('../services/providerSubmissionContext');",
+              "const { providerIdempotencyHeadersLike } = require('../services/providerSubmissionContext');\nconst openaiCompatible = require('./openaiCompatible');",
+              1,
+          )
+          atlas = atlas.replace(
+              "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1';",
+              "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1';\nconst DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1';",
+              1,
+          )
+          old_constants = """const SEEDREAM_V5_T2I_MODEL = 'bytedance/seedream-v5.0-lite';
+const SEEDREAM_V5_EDIT_MODEL = 'bytedance/seedream-v5.0-lite/edit';
+const KLING_V3_T2V_MODEL = 'kwaivgi/kling-v3.0-std/text-to-video';
+const KLING_V3_I2V_MODEL = 'kwaivgi/kling-v3.0-std/image-to-video';
+const SEEDREAM_V5_SIZES = [
+  '2048*2048', '2304*1728', '1728*2304', '2848*1600', '1600*2848',
+  '2496*1664', '1664*2496', '3136*1344', '3072*3072', '3456*2592',
+  '2592*3456', '4096*2304', '2304*4096', '2496*3744', '3744*2496', '4704*2016',
+];"""
+          new_constants = """const SEEDREAM_V5_T2I_MODEL = 'bytedance/seedream-v5.0-pro/text-to-image';
+const SEEDREAM_V5_EDIT_MODEL = 'bytedance/seedream-v5.0-pro/edit';
+const KLING_V3_T2V_MODEL = 'kwaivgi/kling-v3.0-std/text-to-video';
+const KLING_V3_I2V_MODEL = 'kwaivgi/kling-v3.0-std/image-to-video';
+const WAN_27_SPICY_I2V_MODEL = 'atlascloud/wan-2.7-spicy/image-to-video';
+const WAN_27_REFERENCE_MODEL = 'alibaba/wan-2.7/reference-to-video';
+const WAN_27_VIDEO_EDIT_MODEL = 'alibaba/wan-2.7/video-edit';
+const SEEDREAM_V5_SIZES = [
+  '2048*2048', '2304*1728', '1728*2304', '2720*1530', '1530*2720',
+  '2496*1664', '1664*2496', '1024*1024', '1536*1536', '1776*1328',
+  '1328*1776', '2048*1152', '1152*2048',
+];
+const WAN_RATIOS = new Set(['16:9', '9:16', '1:1', '4:3', '3:4']);
+const WAN_SPICY_NEGATIVE_PROMPT = 'camera cut, shot change, scene change, transition, jump cut, rapid editing, montage, multi-shot, multiple camera angles, perspective shift';"""
+          if old_constants not in atlas:
+              raise SystemExit('atlas.js constants block mismatch')
+          atlas = atlas.replace(old_constants, new_constants, 1)
+          atlas = atlas.replace("if (model === SEEDREAM_V5_EDIT_MODEL) normalized.images = refs.slice(0, 14);", "if (model === SEEDREAM_V5_EDIT_MODEL) normalized.images = refs.slice(0, 10);", 1)
+
+          normalize_marker = """function normalizeKlingV3Params(params, input, refs, model) {
+"""
+          if normalize_marker not in atlas:
+              raise SystemExit('atlas.js Kling normalizer missing')
+          insert_after = """  return normalized;
+}
+
+async function uploadDataUrl"""
+          wan_helpers = r'''  return normalized;
+}
+
+function integerBetween(value, fallback, min, max) {
+  const number = Number(value);
+  const normalized = Number.isFinite(number) ? Math.round(number) : fallback;
+  return Math.max(min, Math.min(max, normalized));
+}
+
+function wanResolution(value, fallback, allowed) {
+  const normalized = String(value || fallback).toUpperCase();
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
+function wanRatio(value, fallback = '16:9') {
+  const normalized = String(value || fallback);
+  return WAN_RATIOS.has(normalized) ? normalized : fallback;
+}
+
+function normalizeWanSpicyParams(params, input, refs) {
+  if (!refs[0]) throw new Error('Wan 2.7 Spicy 图生视频需要一张首帧图。');
+  return {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    image: refs[0],
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, WAN_SPICY_NEGATIVE_PROMPT)).trim(),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '720P', ['720P', '1080P', '1080P-SR', '1440P-SR']),
+    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 15),
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
+}
+
+function normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs) {
+  if (!refs.length && !videoRefs.length) throw new Error('Wan 2.7 参考生视频至少需要一张参考图或一个参考视频。');
+  return {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
+    ...(refs.length ? { images: refs.slice(0, 6) } : {}),
+    ...(videoRefs.length ? { videos: videoRefs.slice(0, 3) } : {}),
+    ...(audioRefs[0] ? { audio: audioRefs[0] } : {}),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P']),
+    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
+    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 10),
+    prompt_extend: params.prompt_extend !== false,
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
+}
+
+function normalizeWanVideoEditParams(params, input, refs, videoRefs, audioRefs) {
+  if (!videoRefs[0]) throw new Error('Wan 2.7 Video Edit 需要一个待编辑视频。');
+  const durationValue = Number(firstDefined(params.duration, input.duration, input.seconds, 0));
+  const duration = durationValue === 0 ? 0 : integerBetween(durationValue, 5, 2, 10);
+  return {
+    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
+    video: videoRefs[0],
+    ...(refs[0] ? { image: refs[0] } : {}),
+    ...(refs.length ? { images: refs.slice(0, 3) } : {}),
+    ...(audioRefs[0] ? { audio: audioRefs[0] } : {}),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P', '1080P-SR', '1440P-SR']),
+    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
+    duration,
+    prompt_extend: params.prompt_extend !== false,
+    ...(typeof params.watermark === 'boolean' ? { watermark: params.watermark } : {}),
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
+}
+
+async function uploadDataUrl'''
+          if insert_after not in atlas:
+              raise SystemExit('atlas.js helper insertion point mismatch')
+          atlas = atlas.replace(insert_after, wan_helpers, 1)
+
+          old_resolve = """  let refs = [];
+  try {
+    refs = await resolveAtlasMediaList(provider, [
+      ...(Array.isArray(input.images) ? input.images : []),
+      ...(input.image ? [input.image] : []),
+      ...(input.image_url ? [input.image_url] : []),
+    ], options);
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'invalid_reference',
+      providerId: provider.id,
+      protocol: provider.protocol,
+      model,
+      error: error?.message || 'Atlas 参考媒体解析失败。',
+    };
+  }
+
+  if (kind === 'image' && refs.length && model === SEEDREAM_V5_T2I_MODEL) model = SEEDREAM_V5_EDIT_MODEL;
+  if (kind === 'video' && refs.length && model === KLING_V3_T2V_MODEL) model = KLING_V3_I2V_MODEL;
+
+  if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
+    params = normalizeSeedreamV5Params(params, input, refs, model);
+  } else if (model === KLING_V3_T2V_MODEL || model === KLING_V3_I2V_MODEL) {
+    params = normalizeKlingV3Params(params, input, refs, model);
+  } else if (refs.length && params.image == null && params.image_url == null && params.images == null) {
+    params.image = refs.length === 1 ? refs[0] : refs;
+  }
+"""
+          new_resolve = """  let refs = [];
+  let videoRefs = [];
+  let audioRefs = [];
+  try {
+    refs = await resolveAtlasMediaList(provider, [
+      ...(Array.isArray(input.images) ? input.images : []),
+      ...(input.image ? [input.image] : []),
+      ...(input.image_url ? [input.image_url] : []),
+    ], options);
+    videoRefs = await resolveAtlasMediaList(provider, [
+      ...(Array.isArray(input.videos) ? input.videos : []),
+      ...(input.video ? [input.video] : []),
+      ...(input.video_url ? [input.video_url] : []),
+    ], options);
+    audioRefs = await resolveAtlasMediaList(provider, [
+      ...(Array.isArray(input.audios) ? input.audios : []),
+      ...(input.audio ? [input.audio] : []),
+      ...(input.audio_url ? [input.audio_url] : []),
+    ], options);
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'invalid_reference',
+      providerId: provider.id,
+      protocol: provider.protocol,
+      model,
+      error: error?.message || 'Atlas 参考媒体解析失败。',
+    };
+  }
+
+  if (kind === 'image' && refs.length && model === SEEDREAM_V5_T2I_MODEL) model = SEEDREAM_V5_EDIT_MODEL;
+  if (kind === 'video' && refs.length && model === KLING_V3_T2V_MODEL) model = KLING_V3_I2V_MODEL;
+
+  try {
+    if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
+      params = normalizeSeedreamV5Params(params, input, refs, model);
+    } else if (model === KLING_V3_T2V_MODEL || model === KLING_V3_I2V_MODEL) {
+      params = normalizeKlingV3Params(params, input, refs, model);
+    } else if (model === WAN_27_SPICY_I2V_MODEL) {
+      params = normalizeWanSpicyParams(params, input, refs);
+    } else if (model === WAN_27_REFERENCE_MODEL) {
+      params = normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs);
+    } else if (model === WAN_27_VIDEO_EDIT_MODEL) {
+      params = normalizeWanVideoEditParams(params, input, refs, videoRefs, audioRefs);
+    } else {
+      if (refs.length && params.image == null && params.image_url == null && params.images == null) {
+        if (refs.length === 1) params.image = refs[0];
+        else params.images = refs;
+      }
+      if (videoRefs.length && params.video == null && params.video_url == null && params.videos == null) {
+        if (videoRefs.length === 1) params.video = videoRefs[0];
+        else params.videos = videoRefs;
+      }
+      if (audioRefs.length && params.audio == null && params.audio_url == null && params.audios == null) {
+        params.audio = audioRefs[0];
+      }
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'invalid_model_parameters',
+      providerId: provider.id,
+      protocol: provider.protocol,
+      model,
+      error: error?.message || 'Atlas 模型参数无效。',
+    };
+  }
+"""
+          if old_resolve not in atlas:
+              raise SystemExit('atlas.js generation routing block mismatch')
+          atlas = atlas.replace(old_resolve, new_resolve, 1)
+
+          export_marker = """module.exports = {
+  generateImage: (provider, input, options) => runGeneration(provider, input, options, 'image'),
+  generateVideo: (provider, input, options) => runGeneration(provider, input, options, 'video'),
+  testProvider,
+};"""
+          export_new = """async function generateChat(provider, input, options = {}) {
+  const validation = validateProvider(provider);
+  if (!validation.ok) return validation;
+  return openaiCompatible.generateChat({
+    ...provider,
+    apiKey: validation.key,
+    baseUrl: DEFAULT_CHAT_BASE_URL,
+  }, input, options);
+}
+
+module.exports = {
+  generateChat,
+  generateImage: (provider, input, options) => runGeneration(provider, input, options, 'image'),
+  generateVideo: (provider, input, options) => runGeneration(provider, input, options, 'video'),
+  testProvider,
+};"""
+          if export_marker not in atlas:
+              raise SystemExit('atlas.js export block mismatch')
+          atlas = atlas.replace(export_marker, export_new, 1)
+          write('backend/src/providers/atlas.js', atlas)
+
+          # ---- Upload auto-size and remove old RH/Jimeng-branded rails ----
+          upload = read('src/components/nodes/UploadNode.tsx')
+          upload = upload.replace("import RhImageCapabilityRail from '../RhImageCapabilityRail';\n", '', 1)
+          upload = upload.replace("import RhVideoCapabilityRail from '../RhVideoCapabilityRail';\n", '', 1)
+          size_marker = """  const [size, setSize] = useState<{ w: number; h?: number }>({ w: 260 });
+"""
+          size_helper = r'''  const [size, setSize] = useState<{ w: number; h?: number }>({ w: 260 });
+  const manualResizeRef = useRef(false);
+  const autoSizedMediaKeyRef = useRef('');
+  const fitUploadNodeToMedia = useCallback((naturalWidth: number, naturalHeight: number, mediaKey: string) => {
+    if (manualResizeRef.current || !naturalWidth || !naturalHeight || autoSizedMediaKeyRef.current === mediaKey) return;
+    const ratio = Math.max(0.08, Math.min(12, naturalWidth / naturalHeight));
+    let width = ratio >= 1.5 ? 560 : ratio <= 0.72 ? 360 : 440;
+    let previewHeight = width / ratio;
+    if (previewHeight > 560) {
+      previewHeight = 560;
+      width = Math.max(300, previewHeight * ratio);
+    }
+    if (previewHeight < 180) previewHeight = 180;
+    const next = {
+      w: Math.round(Math.max(300, Math.min(640, width))),
+      h: Math.round(Math.max(300, Math.min(720, previewHeight + 126))),
+    };
+    autoSizedMediaKeyRef.current = mediaKey;
+    setSize(next);
+    window.requestAnimationFrame(() => rf.updateNodeInternals(id));
+  }, [id, rf]);
+'''
+          if upload.count(size_marker) != 1:
+              raise SystemExit('UploadNode size marker mismatch')
+          upload = upload.replace(size_marker, size_helper, 1)
+          upload = upload.replace(
+              "        onResize={(_e, p) => setSize({ w: p.width, h: p.height })}",
+              "        onResize={(_e, p) => {\n          manualResizeRef.current = true;\n          setSize({ w: p.width, h: p.height });\n        }}",
+              1,
+          )
+          upload = upload.replace(
+              "                        onMouseDown={(e) => {",
+              "                        onLoad={(event) => fitUploadNodeToMedia(\n                          event.currentTarget.naturalWidth,\n                          event.currentTarget.naturalHeight,\n                          `image:${item.url}`,\n                        )}\n                        onMouseDown={(e) => {",
+              1,
+          )
+          upload = upload.replace(
+              "                      onLoadedMetadata={(event) => rememberVideoFrameTime(`${i}:${item.url}`, event.currentTarget.currentTime)}",
+              "                      onLoadedMetadata={(event) => {\n                        rememberVideoFrameTime(`${i}:${item.url}`, event.currentTarget.currentTime);\n                        fitUploadNodeToMedia(\n                          event.currentTarget.videoWidth,\n                          event.currentTarget.videoHeight,\n                          `video:${item.url}`,\n                        );\n                      }}",
+              1,
+          )
+          upload = re.sub(r"\n\s*<RhImageCapabilityRail\b.*?\n\s*/>\n\s*<RhVideoCapabilityRail\b.*?\n\s*/>", "", upload, count=1, flags=re.S)
+          if 'RhImageCapabilityRail' in upload or 'RhVideoCapabilityRail' in upload:
+              raise SystemExit('UploadNode still contains RH capability rail')
+          write('src/components/nodes/UploadNode.tsx', upload)
+
+          output = read('src/components/nodes/OutputNode.tsx')
+          output = output.replace("import RhImageCapabilityRail from '../RhImageCapabilityRail';\n", '', 1)
+          output = output.replace("import RhVideoCapabilityRail from '../RhVideoCapabilityRail';\n", '', 1)
+          output = re.sub(r"\n\s*<RhImageCapabilityRail\b.*?\n\s*/>\n\s*<RhVideoCapabilityRail\b.*?\n\s*/>", "", output, count=1, flags=re.S)
+          if 'RhImageCapabilityRail' in output or 'RhVideoCapabilityRail' in output:
+              raise SystemExit('OutputNode still contains RH capability rail')
+          write('src/components/nodes/OutputNode.tsx', output)
+
+          # ---- Public share autosave: rebase on latest revision instead of permanent conflict ----
+          canvas = read('src/components/Canvas.tsx')
+          conflict_marker = """        if (e instanceof api.ApiRequestError && e.status === 409) {
+          const latest = latestStateForResponse();
+"""
+          conflict_replacement = r'''        if (e instanceof api.ApiRequestError && e.status === 409) {
+          const isPublicShareMode = typeof window !== 'undefined'
+            && window.location.protocol === 'https:'
+            && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+          if (isPublicShareMode) {
+            try {
+              const authoritative = await api.getCanvasData(canvasIdForSave);
+              const authoritativeRevision = Number(authoritative.revision);
+              if (!Number.isSafeInteger(authoritativeRevision) || authoritativeRevision < 1) {
+                throw new Error('服务端没有返回有效 revision');
+              }
+              const authoritativeState = persistableCanvasPatchStateFromParts(
+                authoritative.nodes || [],
+                authoritative.edges || [],
+                migrateCreativeDeskToViewportCoordinates(authoritative.creativeDesk, authoritative.viewport),
+                sanitizeFarmCanvasState(authoritative.farmCanvas),
+                Math.max(1, Number(authoritative.nextNodeSerialId) || 1),
+              );
+              const latest = latestStateForResponse();
+              invalidateOutstandingAutosaves();
+              setCanvasRevision(canvasIdForSave, authoritativeRevision);
+              lastSavedByCanvasRef.current.set(canvasIdForSave, authoritativeState.snapshot);
+              lastSavedNodeCountByCanvasRef.current.set(canvasIdForSave, authoritativeState.nodes.length);
+              pendingSaveByCanvasRef.current.set(canvasIdForSave, pendingCanvasSaveFromState(latest.state, {
+                baseSnapshot: authoritativeState.snapshot,
+                baseRevision: authoritativeRevision,
+                conflicts: [],
+                conflicted: false,
+              }));
+              setCanvasPatchConflictMessage('');
+              logBus.info(`画布 revision 已自动同步到 r${authoritativeRevision}，正在重试保存。`, '画布同步');
+              setDragSaveTick((tick) => tick + 1);
+              return;
+            } catch (syncError) {
+              console.warn('公开分享版自动同步 revision 失败，回退到冲突保护', syncError);
+            }
+          }
+          const latest = latestStateForResponse();
+'''
+          if canvas.count(conflict_marker) != 1:
+              raise SystemExit('Canvas autosave conflict marker mismatch')
+          canvas = canvas.replace(conflict_marker, conflict_replacement, 1)
+          write('src/components/Canvas.tsx', canvas)
+
+          # ---- Updated Atlas adapter regression tests ----
+          tests = r'''const test = require('node:test');
+const assert = require('node:assert/strict');
+const atlas = require('./atlas');
+
+const provider = {
+  id: 'atlas',
+  protocol: 'atlas',
+  baseUrl: 'https://api.atlascloud.ai/api/v1',
+  apiKey: 'test-key',
+  imageModels: ['bytedance/seedream-v5.0-pro/text-to-image', 'bytedance/seedream-v5.0-pro/edit'],
+  videoModels: [
+    'kwaivgi/kling-v3.0-std/text-to-video',
+    'atlascloud/wan-2.7-spicy/image-to-video',
+    'alibaba/wan-2.7/reference-to-video',
+    'alibaba/wan-2.7/video-edit',
+  ],
+  chatModels: ['test/chat-model'],
+  defaults: {
+    imageModel: 'bytedance/seedream-v5.0-pro/text-to-image',
+    videoModel: 'kwaivgi/kling-v3.0-std/text-to-video',
+    chatModel: 'test/chat-model',
+    pollIntervalMs: 1000,
+  },
+};
+
+function jsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'content-type': 'application/json', 'x-request-id': 'test-request' },
+  });
+}
+
+function generationFetch(assertSubmit, outputUrl) {
+  return async (url, init = {}) => {
+    if (String(url).includes('/model/prediction/')) {
+      return jsonResponse({ code: 200, data: { status: 'completed', outputs: [outputUrl] } });
+    }
+    const body = JSON.parse(init.body);
+    assertSubmit(String(url), body);
+    return jsonResponse({ code: 200, data: { id: 'prediction-test', status: 'processing' } });
+  };
+}
+
+test('Seedream v5 Pro text-to-image uses the Pro schema', async () => {
+  const result = await atlas.generateImage(provider, {
+    model: 'bytedance/seedream-v5.0-pro/text-to-image',
+    prompt: 'a white circle',
+    size: '1024x1024',
+  }, {
+    fetchImpl: generationFetch((url, body) => {
+      assert.match(url, /\/model\/generateImage$/);
+      assert.equal(body.model, 'bytedance/seedream-v5.0-pro/text-to-image');
+      assert.equal(body.size, '1024*1024');
+      assert.equal(body.output_format, 'jpeg');
+      assert.ok(!('image_size' in body));
+    }, 'https://example.com/output.jpg'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Seedream v5 Pro switches to edit for references', async () => {
+  const result = await atlas.generateImage(provider, {
+    model: 'bytedance/seedream-v5.0-pro/text-to-image',
+    prompt: 'turn it blue',
+    images: ['https://example.com/input.png'],
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.model, 'bytedance/seedream-v5.0-pro/edit');
+      assert.deepEqual(body.images, ['https://example.com/input.png']);
+    }, 'https://example.com/edited.png'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Wan 2.7 Spicy maps first-frame image-to-video fields', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'atlascloud/wan-2.7-spicy/image-to-video',
+    prompt: 'slow camera push',
+    images: ['https://example.com/start.png'],
+    duration: 12,
+    resolution: '1080P',
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.image, 'https://example.com/start.png');
+      assert.equal(body.duration, 12);
+      assert.equal(body.resolution, '1080P');
+      assert.match(body.negative_prompt, /camera cut/);
+    }, 'https://example.com/spicy.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Wan 2.7 reference-to-video maps image, video and audio references', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'alibaba/wan-2.7/reference-to-video',
+    prompt: 'character1 walks forward',
+    images: ['https://example.com/character.png'],
+    videos: ['https://example.com/motion.mp4'],
+    audios: ['https://example.com/voice.mp3'],
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.deepEqual(body.images, ['https://example.com/character.png']);
+      assert.deepEqual(body.videos, ['https://example.com/motion.mp4']);
+      assert.equal(body.audio, 'https://example.com/voice.mp3');
+    }, 'https://example.com/reference.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Wan 2.7 video-edit requires and maps the source video', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'alibaba/wan-2.7/video-edit',
+    prompt: 'cinematic commercial lighting',
+    videos: ['https://example.com/source.mp4'],
+    images: ['https://example.com/style.png'],
+    duration: 0,
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.equal(body.video, 'https://example.com/source.mp4');
+      assert.deepEqual(body.images, ['https://example.com/style.png']);
+      assert.equal(body.duration, 0);
+    }, 'https://example.com/edited.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Atlas LLM uses the official OpenAI-compatible v1 chat endpoint', async () => {
+  let requestedUrl = '';
+  const result = await atlas.generateChat(provider, {
+    model: 'test/chat-model',
+    messages: [{ role: 'user', content: 'reply pong' }],
+  }, {
+    fetchImpl: async (url, init = {}) => {
+      requestedUrl = String(url);
+      const body = JSON.parse(init.body);
+      assert.equal(body.model, 'test/chat-model');
+      assert.equal(init.headers.Authorization, 'Bearer test-key');
+      return jsonResponse({ choices: [{ message: { content: 'pong' }, finish_reason: 'stop' }] });
+    },
+  });
+  assert.equal(requestedUrl, 'https://api.atlascloud.ai/v1/chat/completions');
+  assert.equal(result.ok, true);
+  assert.equal(result.text, 'pong');
+});
+'''
+          write('backend/src/providers/atlas.test.js', tests)
+
+          trigger = Path('.github/atlas-dynamic-repair-trigger.txt')
+          if trigger.exists(): trigger.unlink()
+          PY
+      - name: Install and verify
+        run: |
+          npm ci --include=dev
+          node --test backend/src/providers/atlas.test.js
+          npm run build
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src backend .github/atlas-dynamic-repair-trigger.txt
+          git commit -m 'fix: integrate dynamic Atlas catalog and stabilize uploads'
+          git push origin HEAD:fix/upload-autosize-atlas-pro-models
