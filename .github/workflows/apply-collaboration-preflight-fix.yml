@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - .github/workflows/apply-collaboration-preflight-fix.yml
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
 
 permissions:
   contents: write
@@ -15,7 +18,7 @@ concurrency:
 
 jobs:
   repair:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
