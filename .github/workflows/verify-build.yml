@@ -33,9 +33,10 @@ jobs:
       - name: Apply Atlas video and public UI patch
         run: python3 .github/apply_atlas_video_clean_ui.py
 
-      - name: Install, test and build
+      - name: Install, regenerate, test and build
         run: |
           npm ci --include=dev
+          npm run feature-sync:generate
           node --test backend/src/providers/atlas.test.js
           npm run build
           grep -RIn '贞贞' src backend public index.html package.json && exit 1 || true
@@ -44,9 +45,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/apply_atlas_video_clean_ui.py
+          rm -f .github/apply_atlas_video_clean_ui.py .github/atlas-video-clean-ui-trigger.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add src backend package.json scripts .github/apply_atlas_video_clean_ui.py .github/inspect-current-ui.cjs
+          git add src backend package.json scripts tools .github/apply_atlas_video_clean_ui.py .github/inspect-current-ui.cjs .github/atlas-video-clean-ui-trigger.txt
           git commit -m 'fix: correct Atlas reference video payloads and remove legacy UI'
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
