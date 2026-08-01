@@ -1,0 +1,10 @@
+/* Atlas-only fork: legacy host-application/plugin entry points are not part of the product. */
+button[title^='插件安装'],
+button[title*='VibeX'],
+button[title*='Photoshop'],
+button[title*='RunningHub'],
+button[title*='ComfyUI'],
+button[title*='Grok'],
+button[title*='Codex'] {
+  display: none !important;
+}

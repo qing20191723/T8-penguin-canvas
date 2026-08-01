@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { shouldBypassPublicCollaborationExecutionPolicy } from './publicCollaborationPolicyTransport';
+import {
+  atlasOnlyBlockedApiPath,
+  shouldBypassPublicCollaborationExecutionPolicy,
+} from './publicCollaborationPolicyTransport';
 
+const origin = 'https://qingchen-atlascloud-canvas.onrender.com';
 const base = {
-  requestUrl: 'https://qingchen-atlascloud-canvas.onrender.com/api/collaboration/execution-policy?projectId=project-local',
+  requestUrl: `${origin}/api/collaboration/execution-policy?projectId=project-local`,
   method: 'GET',
   pagePathname: '/',
-  pageOrigin: 'https://qingchen-atlascloud-canvas.onrender.com',
+  pageOrigin: origin,
   projectId: 'project-local',
   excludeIntentId: null,
   hasManagementAuthority: false,
@@ -24,10 +28,10 @@ test('remote collaboration and privileged management requests remain protected',
   assert.equal(shouldBypassPublicCollaborationExecutionPolicy({ ...base, desktopHost: true }), false);
 });
 
-test('unrelated, cross-origin and non-GET requests are never intercepted', () => {
+test('unrelated, cross-origin and non-GET collaboration requests are never intercepted', () => {
   assert.equal(shouldBypassPublicCollaborationExecutionPolicy({
     ...base,
-    requestUrl: 'https://qingchen-atlascloud-canvas.onrender.com/api/proxy/atlas/image',
+    requestUrl: `${origin}/api/proxy/atlas/image`,
   }), false);
   assert.equal(shouldBypassPublicCollaborationExecutionPolicy({
     ...base,
@@ -35,4 +39,40 @@ test('unrelated, cross-origin and non-GET requests are never intercepted', () =>
   }), false);
   assert.equal(shouldBypassPublicCollaborationExecutionPolicy({ ...base, method: 'PUT' }), false);
   assert.equal(shouldBypassPublicCollaborationExecutionPolicy({ ...base, projectId: 'another-project' }), false);
+});
+
+test('legacy external application bridge traffic is blocked in public web runtime', () => {
+  for (const pathname of [
+    '/api/vibex-bridge/pending?limit=12',
+    '/api/photoshop-bridge/pending?limit=12',
+    '/api/grok-oauth/status',
+    '/api/codex-cli/status',
+    '/api/settings/rh-tools/export',
+  ]) {
+    assert.ok(atlasOnlyBlockedApiPath({
+      requestUrl: `${origin}${pathname}`,
+      pageOrigin: origin,
+      desktopHost: false,
+    }));
+  }
+});
+
+test('Atlas provider gateway, custom provider gateway and Electron remain available', () => {
+  for (const pathname of [
+    '/api/proxy/atlas/models',
+    '/api/proxy/atlas/image',
+    '/api/proxy/external/image',
+    '/api/proxy/external/video',
+  ]) {
+    assert.equal(atlasOnlyBlockedApiPath({
+      requestUrl: `${origin}${pathname}`,
+      pageOrigin: origin,
+      desktopHost: false,
+    }), null);
+  }
+  assert.equal(atlasOnlyBlockedApiPath({
+    requestUrl: `${origin}/api/vibex-bridge/pending`,
+    pageOrigin: origin,
+    desktopHost: true,
+  }), null);
 });
