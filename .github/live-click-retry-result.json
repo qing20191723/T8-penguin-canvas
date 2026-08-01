@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "deployedCommit": "9871a640e4bf8eecf942ea2c6632b40b2b94fecc",
+  "errors": [
+    "console:warning:[placement:single] {desired: Object, existingCount: 0, existingMeasured: 0, source: placement:add}",
+    "console:warning:[placement:single] NO MOVE (desired pos is clear)",
+    "console:error:Failed to load resource: the server responded with a status of 403 ()",
+    "console:error:Failed to load resource: the server responded with a status of 401 ()",
+    "console:warning:[run-intent] automatic worker poll failed: ApiRequestError: 协作管理身份认证失败\n    at oe (https://qingchen-atlascloud-canvas.onrender.com/assets/index-QsYyuZDc.js:7776:241265)\n    at async rY (https://qingchen-atlascloud-canvas.onrender.com/assets/index-QsYyuZDc.js:7776:287709)\n    at async b (https://qingchen-atlascloud-canvas.onrender.com/assets/Canvas-BxHG7N7V.js:47:42250)"
+  ],
+  "testCanvasId": "canvas-1785551783863-isl6gv",
+  "nodeLabel": "上传素材",
+  "beforeFlowCount": 0,
+  "afterFlowCount": 1,
+  "rowText": "UI点击重试-1785551783690\n0 个节点",
+  "rhGroupCount": 0,
+  "verifiedAt": "2026-08-01T02:36:28.254Z",
+  "cleanupStatus": 200
+}
