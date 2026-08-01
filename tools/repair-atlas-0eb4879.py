@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 BASELINE = "0eb487960e0e9cb9b9a1dc127d26ef4de7992fe5"
@@ -39,10 +40,15 @@ creator_hook = """  const creatorCanvasContext = useMemo(() => buildCreatorCanva
 if canvas.count(creator_hook) != 1:
     raise SystemExit("Canvas.tsx: creatorCanvasContext marker changed unexpectedly")
 canvas = canvas.replace(creator_hook, "", 1)
-early_return = "  if (!activeId) {\n"
-if canvas.count(early_return) != 1:
-    raise SystemExit("Canvas.tsx: activeId early-return marker changed unexpectedly")
-canvas = canvas.replace(early_return, creator_hook + early_return, 1)
+early_return_matches = list(
+    re.finditer(r"(?m)^[ \t]*if\s*\(\s*!activeId\s*\)\s*\{", canvas)
+)
+if len(early_return_matches) != 1:
+    raise SystemExit(
+        f"Canvas.tsx: expected one activeId early return, found {len(early_return_matches)}"
+    )
+insert_at = early_return_matches[0].start()
+canvas = canvas[:insert_at] + creator_hook + canvas[insert_at:]
 write(canvas_path, canvas)
 
 
