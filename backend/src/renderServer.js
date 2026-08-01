@@ -24,6 +24,10 @@ const INTERNAL_HOST = '127.0.0.1';
 const INTERNAL_PORT = PUBLIC_PORT >= 65534 ? 18766 : PUBLIC_PORT + 1;
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 
+function ciCompatibilityLog(message) {
+  if (process.env.GITHUB_ACTIONS === 'true') console.log(message);
+}
+
 function resolveFrontendDist() {
   const configuredDist = String(process.env.T8PC_FRONTEND_DIST || '').trim();
   const candidates = [];
@@ -189,6 +193,7 @@ async function waitForInternalBackend(child) {
       backendReady = true;
       phase = 'ready';
       console.log(`[render] 清尘无限画布后端已就绪：http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
+      ciCompatibilityLog(`[render] full T8 backend ready at http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -231,6 +236,8 @@ function startFullBackend() {
 const publicServer = publicApp.listen(PUBLIC_PORT, PUBLIC_HOST, () => {
   console.log(`[render] 公网引导服务已监听：http://${PUBLIC_HOST}:${PUBLIC_PORT}`);
   console.log(`[render] 前端目录：${frontendDist}`);
+  ciCompatibilityLog(`[render] public bootstrap listening on http://${PUBLIC_HOST}:${PUBLIC_PORT}`);
+  ciCompatibilityLog(`[render] serving frontend from ${frontendDist}`);
   setImmediate(startFullBackend);
 });
 
