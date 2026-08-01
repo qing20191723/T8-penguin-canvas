@@ -1,5 +1,6 @@
 import schemaManifest from '../../backend/src/shared/canvasNodeSchema.json' with { type: 'json' };
 import type { NodeMeta } from '../types/canvas';
+import { ATLAS_ONLY_HIDDEN_NODE_TYPES, ATLAS_ONLY_RUNTIME } from './atlasOnlyRuntime';
 
 interface CanvasNodeSchemaManifest {
   schema: 't8-canvas-node-schema-v1';
@@ -27,7 +28,7 @@ interface CanvasNodeSchemaManifest {
 
 export const CANVAS_NODE_SCHEMA_MANIFEST = schemaManifest as unknown as CanvasNodeSchemaManifest;
 
-const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV ? [
+const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_ONLY_RUNTIME ? [
   { type: 'rh-toolbox-maker', label: 'RH工具箱制作器', category: 'rh', description: '维护者专用：在画布内制作 RH工具箱 manifest 模板，开发环境可见，用户包不打入', icon: 'FileJson', color: 'emerald' },
   { type: 'fal-toolbox-maker', label: 'FAL应用制作工具', category: 'fal', description: '维护者专用：从 fal.ai API 文档生成 Fal超市 manifest 草稿，开发环境可见，用户包不打入', icon: 'FileJson', color: 'violet' },
 ] : [];
@@ -39,13 +40,16 @@ const manifestRegistry: NodeMeta[] = CANVAS_NODE_SCHEMA_MANIFEST.types.map((item
   description: item.description,
   icon: item.icon,
   color: item.color,
-  ...(item.hidden === true ? { hidden: true } : {}),
+  ...(item.hidden === true || (ATLAS_ONLY_RUNTIME && ATLAS_ONLY_HIDDEN_NODE_TYPES.has(item.type))
+    ? { hidden: true }
+    : {}),
 }));
 const devInsertionIndex = manifestRegistry.findIndex((item) => item.type === 'vibex') + 1;
 
 /**
- * 节点元数据注册表。生产类型与端口、可执行性和 Agent 生成白名单
- * 共用 t8-canvas-node-schema-v1；开发专用节点只在 DEV 中追加。
+ * Production metadata still registers hidden legacy node types so old canvas
+ * documents can render. Atlas-only mode removes them from every user-addable
+ * palette and port candidate list.
  */
 export const NODE_REGISTRY: NodeMeta[] = [
   ...manifestRegistry.slice(0, devInsertionIndex),
@@ -53,22 +57,25 @@ export const NODE_REGISTRY: NodeMeta[] = [
   ...manifestRegistry.slice(devInsertionIndex),
 ];
 
-// 按分类分组,便于 Sidebar 渲染 (在这里过滤 hidden 节点 —— 它们仍在 NODE_REGISTRY 中保证节点类型注册)
+const visibleByCategory = (category: NodeMeta['category']) => (
+  NODE_REGISTRY.filter((node) => node.category === category && !node.hidden)
+);
+
 export const NODE_GROUPS: Record<string, { label: string; nodes: NodeMeta[] }> = {
-  input: { label: '素材资源', nodes: NODE_REGISTRY.filter((n) => n.category === 'input' && !n.hidden) },
-  core: { label: '核心节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'core' && !n.hidden) },
-  fal: { label: 'FAL工具箱', nodes: NODE_REGISTRY.filter((n) => n.category === 'fal' && !n.hidden) },
-  grok: { label: 'GROK OAuth', nodes: NODE_REGISTRY.filter((n) => n.category === 'grok' && !n.hidden) },
-  codex: { label: 'CODEX CLI', nodes: NODE_REGISTRY.filter((n) => n.category === 'codex' && !n.hidden) },
-  inspiration: { label: '灵感之源', nodes: NODE_REGISTRY.filter((n) => n.category === 'inspiration' && !n.hidden) },
-  comfyui: { label: 'ComfyUI', nodes: NODE_REGISTRY.filter((n) => n.category === 'comfyui' && !n.hidden) },
-  special: { label: '特殊节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'special' && !n.hidden) },
-  utility: { label: '工具节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'utility' && !n.hidden) },
-  auxiliary: { label: '辅助节点', nodes: NODE_REGISTRY.filter((n) => n.category === 'auxiliary' && !n.hidden) },
-  toolbox: { label: '工具箱', nodes: NODE_REGISTRY.filter((n) => n.category === 'toolbox' && !n.hidden) },
-  '3d': { label: '3D', nodes: NODE_REGISTRY.filter((n) => n.category === '3d' && !n.hidden) },
+  input: { label: '素材资源', nodes: visibleByCategory('input') },
+  core: { label: '核心节点', nodes: visibleByCategory('core') },
+  fal: { label: 'FAL工具箱', nodes: visibleByCategory('fal') },
+  grok: { label: 'GROK OAuth', nodes: visibleByCategory('grok') },
+  codex: { label: 'CODEX CLI', nodes: visibleByCategory('codex') },
+  inspiration: { label: '灵感之源', nodes: visibleByCategory('inspiration') },
+  comfyui: { label: 'ComfyUI', nodes: visibleByCategory('comfyui') },
+  special: { label: '特殊节点', nodes: visibleByCategory('special') },
+  utility: { label: '工具节点', nodes: visibleByCategory('utility') },
+  auxiliary: { label: '辅助节点', nodes: visibleByCategory('auxiliary') },
+  toolbox: { label: '工具箱', nodes: visibleByCategory('toolbox') },
+  '3d': { label: '3D', nodes: visibleByCategory('3d') },
 };
 
 export function getNodeMeta(type: string): NodeMeta | undefined {
-  return NODE_REGISTRY.find((n) => n.type === type);
+  return NODE_REGISTRY.find((node) => node.type === type);
 }
