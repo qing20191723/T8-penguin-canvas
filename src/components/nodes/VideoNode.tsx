@@ -165,6 +165,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     [advancedProviders, d?.providerSource, d?.providerId, d?.providerModel],
   );
   const isExternalSelected = providerSelection.available && providerSelection.providerSource !== 'zhenzhen';
+  const isAtlasExternalSelected = isExternalSelected && providerSelection.provider?.protocol === 'atlas';
   const savedExternalMissing = !!d?.providerId
     && !!d?.providerSource
     && d.providerSource !== 'zhenzhen'
@@ -183,6 +184,29 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   const agnesFrameRate = Number(providerParams.frameRate ?? providerParams.frame_rate ?? 24) || 24;
   const agnesNumFrames = providerParams.numFrames ?? providerParams.num_frames ?? '';
   const updateProviderParams = (patch: Record<string, any>) => update({ providerParams: { ...providerParams, ...patch } });
+  const atlasParamsText = typeof d?.atlasParamsText === 'string'
+    ? d.atlasParamsText
+    : JSON.stringify(providerParams, null, 2);
+  const updateAtlasParamsText = (raw: string) => {
+    const patch: Record<string, any> = { atlasParamsText: raw };
+    if (!raw.trim()) {
+      patch.providerParams = {};
+      patch.atlasParamsError = null;
+      update(patch);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('参数必须是 JSON 对象');
+      }
+      patch.providerParams = parsed;
+      patch.atlasParamsError = null;
+    } catch (error: any) {
+      patch.atlasParamsError = error?.message || 'JSON 格式不正确';
+    }
+    update(patch);
+  };
   // 主模型 id (对应 VIDEO_MODELS 项)
   const rawModel = typeof d?.model === 'string' ? d.model : '';
   const isLegacySora2Model = /^sora-2(?:-\d{4}-\d{2}-\d{2})?$/.test(rawModel);
@@ -470,7 +494,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     [localRefImages, localRefVideos, localRefAudios, id],
   );
   const maxMentionRefs =
-    isUpscaler
+    isAtlasExternalSelected
+      ? 16
+      : isUpscaler
       ? 0
       : isWan
       ? 1
@@ -505,7 +531,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         ? 1
         : falReg.maxRefImages
       : modelDef.maxRefImages;
-  const maxMentionVideos = isUpscaler
+  const maxMentionVideos = isAtlasExternalSelected
+    ? 3
+    : isUpscaler
     ? 1
     : isKling && klingMode === 'edit'
     ? 1
@@ -514,7 +542,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     : isApimartOmni
     ? 1
     : isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.videos : 0;
-  const maxMentionAudios = isHailuoH3 && hailuoMode === 'multi'
+  const maxMentionAudios = isAtlasExternalSelected
+    ? 3
+    : isHailuoH3 && hailuoMode === 'multi'
     ? 3
     : isJimengSeedanceSelected ? JIMENG_SEEDANCE_LIMITS.audios : 0;
   const mentionMaterials = useMemo(
@@ -528,7 +558,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
 
   // 分组动态跟随子模型: Seedance / 即梦 CLI 支持 image/video/audio, 其他 (grok/veo/sora) 仅 image
   const previewGroups = useMemo<ReadonlyArray<'text' | 'image' | 'video' | 'audio'>>(
-    () => (modelDef.kind === 'seedance' || isJimengSeedanceSelected
+    () => (isAtlasExternalSelected
+      ? ['text', 'image', 'video', 'audio']
+      : modelDef.kind === 'seedance' || isJimengSeedanceSelected
       ? ['text', 'image', 'video', 'audio']
       : isApimartOmni
         ? ['text', 'image', 'video']
@@ -539,7 +571,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
       : isHailuoH3 && hailuoMode === 'multi'
         ? ['text', 'image', 'video', 'audio']
         : ['text', 'image']),
-    [modelDef.kind, isJimengSeedanceSelected, isApimartOmni, isUpscaler, isKling, klingMode, isHailuoH3, hailuoMode],
+    [isAtlasExternalSelected, modelDef.kind, isJimengSeedanceSelected, isApimartOmni, isUpscaler, isKling, klingMode, isHailuoH3, hailuoMode],
   );
 
   // 收集上游 prompt + 参考图/视频/音频 (按用户拖拽顺序), 合并本地拖入素材
@@ -1640,7 +1672,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     if (payload.kind === 'image' && payload.url) {
       const cur = Array.isArray(d?.localRefImages) ? d.localRefImages : [];
       if (cur.indexOf(payload.url) !== -1) return;
-      const cap = isWan
+      const cap = isAtlasExternalSelected
+        ? 16
+        : isWan
         ? 1
         : isKling
         ? maxMentionRefs
@@ -1657,14 +1691,15 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             : (modelDef.maxRefImages || 7) + 4;
       if (cur.length >= cap) return;
       update({ localRefImages: [...cur, payload.url] });
-    } else if (payload.kind === 'video' && payload.url && (isJimengSeedanceSelected || isApimartOmni || isUpscaler || (isKling && klingMode === 'edit'))) {
+    } else if (payload.kind === 'video' && payload.url && (isAtlasExternalSelected || isJimengSeedanceSelected || isApimartOmni || isUpscaler || (isKling && klingMode === 'edit'))) {
       const cur = Array.isArray(d?.localRefVideos) ? d.localRefVideos : [];
-      const cap = isUpscaler || isApimartOmni || (isKling && klingMode === 'edit') ? 1 : JIMENG_SEEDANCE_LIMITS.videos;
+      const cap = isAtlasExternalSelected ? 3 : isUpscaler || isApimartOmni || (isKling && klingMode === 'edit') ? 1 : JIMENG_SEEDANCE_LIMITS.videos;
       if (cur.indexOf(payload.url) !== -1 || cur.length >= cap) return;
       update({ localRefVideos: [...cur, payload.url] });
-    } else if (payload.kind === 'audio' && payload.url && isJimengSeedanceSelected) {
+    } else if (payload.kind === 'audio' && payload.url && (isAtlasExternalSelected || isJimengSeedanceSelected)) {
       const cur = Array.isArray(d?.localRefAudios) ? d.localRefAudios : [];
-      if (cur.indexOf(payload.url) !== -1 || cur.length >= JIMENG_SEEDANCE_LIMITS.audios) return;
+      const cap = isAtlasExternalSelected ? 3 : JIMENG_SEEDANCE_LIMITS.audios;
+      if (cur.indexOf(payload.url) !== -1 || cur.length >= cap) return;
       update({ localRefAudios: [...cur, payload.url] });
     } else if (payload.kind === 'text' && typeof payload.text === 'string') {
       update({ prompt: payload.text });
@@ -1672,7 +1707,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
   };
   const { dropProps, isAccepting } = useMaterialDropTarget({
     id,
-    accepts: isJimengSeedanceSelected
+    accepts: isAtlasExternalSelected
+      ? ['image', 'video', 'audio', 'text']
+      : isJimengSeedanceSelected
       ? ['image', 'video', 'audio', 'text']
       : isApimartOmni ? ['image', 'video', 'text']
       : isApimartV31Lite ? ['text']
@@ -1753,7 +1790,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
               onClick={() => update({ advancedProviderOpen: !d?.advancedProviderOpen })}
               className="w-full flex items-center justify-between text-[10px] font-semibold text-white/70 hover:text-white"
             >
-              <span>高级来源</span>
+              <span>模型来源</span>
               <span>
                 {isExternalSelected && providerSelection.provider
                   ? providerSelection.provider.label
@@ -1765,23 +1802,11 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
             {d?.advancedProviderOpen && (
               <div className="space-y-2">
                 <div>
-                  <label className="text-[10px] text-white/50 block mb-1">平台</label>
+                  <label className="text-[10px] text-white/50 block mb-1">API 提供商</label>
                   <select
-                    value={isExternalSelected
-                      ? providerSelection.providerId
-                      : videoBuiltinSource === 'seedance-nz'
-                        ? 'builtin:seedance-nz'
-                        : 'zhenzhen'}
+                    value={providerSelection.available ? providerSelection.providerId : ''}
                     onChange={(e) => {
                       const nextId = e.target.value;
-                      if (nextId === 'zhenzhen') {
-                        switchBuiltinVideoSource('zhenzhen');
-                        return;
-                      }
-                      if (nextId === 'builtin:seedance-nz') {
-                        switchBuiltinVideoSource('seedance-nz');
-                        return;
-                      }
                       const provider = videoAdvancedProviders.find((item) => item.id === nextId);
                       if (!provider) return;
                       const nextModels = advancedProviderModelOptions(provider, 'video');
@@ -1812,7 +1837,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 </div>
                 {isExternalSelected && providerSelection.provider && (
                   <div>
-                    <label className="text-[10px] text-white/50 block mb-1">外部模型</label>
+                    <label className="text-[10px] text-white/50 block mb-1">{providerSelection.provider?.protocol === 'atlas' ? 'Atlas 模型' : '自定义模型'}</label>
                     <select
                       value={externalProviderModel}
                       onChange={(e) => {
@@ -1834,9 +1859,37 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                     </select>
                   </div>
                 )}
+                {isExternalSelected && providerSelection.provider?.protocol === 'atlas' && (
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => update({ atlasParamsOpen: !d?.atlasParamsOpen })}
+                      className="w-full flex items-center justify-between text-[10px] text-white/55 hover:text-white/80"
+                    >
+                      <span>模型专用参数 JSON（可选）</span>
+                      <span>{d?.atlasParamsOpen ? '收起' : '展开'}</span>
+                    </button>
+                    {d?.atlasParamsOpen && (
+                      <>
+                        <textarea
+                          value={atlasParamsText}
+                          onChange={(e) => updateAtlasParamsText(e.target.value)}
+                          rows={5}
+                          spellCheck={false}
+                          placeholder={'{\n  "effect_scene": "firework_2026"\n}'}
+                          style={{ background: '#18181b', color: '#ffffff' }}
+                          className="w-full resize-y rounded border border-white/10 px-2 py-1 font-mono text-[10px] leading-relaxed outline-none focus:border-white/30"
+                        />
+                        <div className={d?.atlasParamsError ? 'text-[10px] text-red-300' : 'text-[10px] text-white/35'}>
+                          {d?.atlasParamsError || '公共参数会自动映射；特殊字段请按 Atlas 官方模型 Schema 填写。'}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
                 {savedExternalMissing && (
                   <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
-                    当前画布记录的扩展平台未启用或不存在，已临时回到默认来源。
+                    当前画布记录的模型来源未启用或不存在，已临时切换到 Atlas Cloud。
                   </div>
                 )}
               </div>

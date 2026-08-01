@@ -155,11 +155,12 @@ const DATA_ROOT = IS_PACKAGED
   : (DEVELOPMENT_DATA_ROOT || PROJECT_DIR);
 const USER_HOME_DIR = os.homedir() || process.env.USERPROFILE || process.env.HOME || PROJECT_DIR;
 const LEGACY_WINDOWS_DEFAULT_ROOT = 'D:\\zhenzhen';
-const DEFAULT_ZHENZHEN_ROOT = process.platform === 'win32'
-  ? LEGACY_WINDOWS_DEFAULT_ROOT
-  : path.join(USER_HOME_DIR, 'zhenzhen');
-const DEFAULT_RESOURCE_LIBRARY_DIR = path.join(DEFAULT_ZHENZHEN_ROOT, 'resources');
-const DEFAULT_THEME_TEMPLATE_DIR = path.join(DEFAULT_ZHENZHEN_ROOT, 'theme-templates');
+const LEGACY_HOME_DEFAULT_ROOT = path.join(USER_HOME_DIR, 'zhenzhen');
+const DEFAULT_QINGCHEN_ROOT = process.platform === 'win32'
+  ? 'D:\\qingchen'
+  : path.join(USER_HOME_DIR, 'qingchen');
+const DEFAULT_RESOURCE_LIBRARY_DIR = path.join(DEFAULT_QINGCHEN_ROOT, 'resources');
+const DEFAULT_THEME_TEMPLATE_DIR = path.join(DEFAULT_QINGCHEN_ROOT, 'theme-templates');
 
 const config = {
   // 服务器
@@ -261,21 +262,21 @@ const config = {
   // 上传素材节点不设置应用层大小上限；0 表示交给磁盘和系统自身约束。
   MAX_FILE_SIZE: 0,
 
-  // 三套 API Key 默认值(均可在 settings 中覆盖)
-  // Atlas Cloud / LLM 独立 Key 强制走 https://ai.t8star.org
-  ZHENZHEN_BASE_URL: 'https://ai.t8star.org',
-  // 清尘平价 AI 小屋链路：api.seedance.nz 的 LLM、Seedance 2.0、图片、音频等 API。
-  ZHENZHEN_SD2_BASE_URL: 'https://api.seedance.nz',
+  // Atlas Cloud 官方 API。旧字段仍保留为只读兼容别名，公开设置不再展示旧平台入口。
+  ATLAS_GENERATION_BASE_URL: 'https://api.atlascloud.ai/api/v1',
+  ATLAS_CHAT_BASE_URL: 'https://api.atlascloud.ai/v1',
+  ZHENZHEN_BASE_URL: 'https://api.atlascloud.ai/api/v1',
+  ZHENZHEN_SD2_BASE_URL: 'https://api.atlascloud.ai/api/v1',
   RH_BASE_URL: 'https://www.runninghub.cn',
   RH_INTL_BASE_URL: 'https://www.runninghub.ai',
 
   // v1.2.10.2: 全局生成素材自动保存到本地的默认路径
   //   用户可在「API 设置 → 文件自动保存路径」覆盖。
   //   不存在时启动会自动创建; 写入失败仅 console.warn, 不阻断业务。
-  DEFAULT_LOCAL_SAVE_DIR: DEFAULT_ZHENZHEN_ROOT,
+  DEFAULT_LOCAL_SAVE_DIR: DEFAULT_QINGCHEN_ROOT,
   // v1.3.1: 画布自动保存导出路径默认同本地素材保存路径。
-  //   实际文件会写入 <path>/T8-penguin-canvas/canvases/*.json。
-  DEFAULT_CANVAS_AUTO_SAVE_DIR: DEFAULT_ZHENZHEN_ROOT,
+  //   实际文件会写入 <path>/qingchen-canvas/canvases/*.json。
+  DEFAULT_CANVAS_AUTO_SAVE_DIR: DEFAULT_QINGCHEN_ROOT,
   // v1.3.4: 资源库默认路径。资源文件与 resource_library.json 元数据均保存在此路径,
   //   用户更换版本后只要设置同一路径即可继续读取资源库。
   DEFAULT_RESOURCE_LIBRARY_DIR,
@@ -283,8 +284,9 @@ const config = {
   DEFAULT_THEME_TEMPLATE_DIR,
   // 本地 Eagle API 默认地址。仅允许本机地址，避免桌面端变成远端请求代理。
   DEFAULT_EAGLE_API_BASE: 'http://127.0.0.1:41595',
-  // 用于旧版本配置迁移：Windows 继续沿用 D:\zhenzhen，非 Windows 遇到旧硬编码默认值时迁移到用户目录。
+  // 旧版本路径仅用于一次性迁移，不再作为默认配置展示。
   LEGACY_WINDOWS_DEFAULT_ROOT,
+  LEGACY_HOME_DEFAULT_ROOT,
 };
 
 // 提前创建打包后的数据目录(避免首次启动报错)

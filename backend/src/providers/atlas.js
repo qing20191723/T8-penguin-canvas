@@ -3,6 +3,7 @@ const path = require('path');
 const { resolveMediaRef } = require('./mediaResolver');
 const { providerIdempotencyHeadersLike } = require('../services/providerSubmissionContext');
 const openaiCompatible = require('./openaiCompatible');
+const { getAtlasModelSchema } = require('./atlasSchema');
 
 const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1';
 const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1';
@@ -47,7 +48,7 @@ function validateProvider(provider) {
       code: 'missing_api_key',
       providerId: provider?.id || 'atlas',
       protocol: 'atlas',
-      error: 'Atlas Cloud API Key 未配置。Render 请设置 ATLASCLOUD_API_KEY，本地可在扩展平台中填写。',
+      error: 'Atlas Cloud API Key 未配置。Render 可设置 ATLASCLOUD_API_KEY，也可在“API Key 设置”中填写 Atlas Cloud API Key。',
     };
   }
   return { ok: true, key, baseUrl: cleanBaseUrl(provider?.baseUrl) };
@@ -163,6 +164,280 @@ function firstDefined(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '');
 }
 
+function schemaProperties(inputSchema) {
+  return inputSchema?.properties && typeof inputSchema.properties === 'object' && !Array.isArray(inputSchema.properties)
+    ? inputSchema.properties
+    : {};
+}
+
+function schemaRequired(inputSchema, params) {
+  const required = new Set(Array.isArray(inputSchema?.required) ? inputSchema.required : []);
+  const conditions = Array.isArray(inputSchema?.allOf) ? inputSchema.allOf : [];
+  for (const condition of conditions) {
+    const expected = condition?.if?.properties;
+    if (!expected || typeof expected !== 'object') continue;
+    const matches = Object.entries(expected).every(([key, rule]) => {
+      if (!rule || typeof rule !== 'object') return true;
+      if (Object.prototype.hasOwnProperty.call(rule, 'const')) return params[key] === rule.const;
+      if (Array.isArray(rule.enum)) return rule.enum.includes(params[key]);
+      return true;
+    });
+    const branch = matches ? condition?.then : condition?.else;
+    for (const key of Array.isArray(branch?.required) ? branch.required : []) required.add(key);
+  }
+  return [...required];
+}
+
+function hasSchemaProperty(properties, key) {
+  return Object.prototype.hasOwnProperty.call(properties, key);
+}
+
+function clampNumber(value, rule, integer = false) {
+  let number = Number(value);
+  if (!Number.isFinite(number)) return undefined;
+  if (integer) number = Math.round(number);
+  if (Number.isFinite(Number(rule?.minimum))) number = Math.max(Number(rule.minimum), number);
+  if (Number.isFinite(Number(rule?.maximum))) number = Math.min(Number(rule.maximum), number);
+  return number;
+}
+
+function coerceSchemaValue(value, rule, key) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const type = String(rule?.type || '').trim();
+  let next = value;
+  if (type === 'integer') next = clampNumber(value, rule, true);
+  else if (type === 'number') next = clampNumber(value, rule, false);
+  else if (type === 'boolean') {
+    if (typeof value === 'boolean') next = value;
+    else if (['true', '1', 'yes', 'on'].includes(String(value).trim().toLowerCase())) next = true;
+    else if (['false', '0', 'no', 'off'].includes(String(value).trim().toLowerCase())) next = false;
+    else return undefined;
+  } else if (type === 'string') next = String(value);
+  else if (type === 'array') {
+    next = Array.isArray(value) ? value : [value];
+    const maxItems = Number(rule?.maxItems);
+    if (Number.isFinite(maxItems) && maxItems >= 0) next = next.slice(0, maxItems);
+  } else if (type === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  }
+  if (Array.isArray(rule?.enum) && !rule.enum.includes(next)) {
+    const exact = rule.enum.find((item) => String(item).toLowerCase() === String(next).toLowerCase());
+    if (exact !== undefined) next = exact;
+    else if (rule.default !== undefined) next = rule.default;
+    else throw new Error(`Atlas 参数 ${key} 不支持值 ${String(value)}；允许值：${rule.enum.join(', ')}`);
+  }
+  return next;
+}
+
+function assignSchemaValue(target, properties, key, value, { overwrite = false } = {}) {
+  if (!hasSchemaProperty(properties, key)) return false;
+  if (!overwrite && target[key] !== undefined && target[key] !== null && target[key] !== '') return true;
+  const next = coerceSchemaValue(value, properties[key], key);
+  if (next === undefined) return false;
+  target[key] = next;
+  return true;
+}
+
+function appendViduSubjectBindings(prompt, count) {
+  const base = String(prompt || '').trim();
+  const missing = [];
+  for (let index = 1; index <= count; index += 1) {
+    const token = `@subject${index}`;
+    if (!base.includes(token)) missing.push(token);
+  }
+  if (!missing.length) return base;
+  return [base, `Keep ${missing.join(', ')} visually consistent throughout the video.`]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function schemaValuePresent(value) {
+  if (value === undefined || value === null || value === '') return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function schemaRuleMatches(rule, values) {
+  if (!rule || typeof rule !== 'object') return true;
+  if (Array.isArray(rule.required) && !rule.required.every((key) => schemaValuePresent(values[key]))) return false;
+  if (rule.properties && typeof rule.properties === 'object') {
+    for (const [key, condition] of Object.entries(rule.properties)) {
+      if (!condition || typeof condition !== 'object') continue;
+      const value = values[key];
+      if (Object.prototype.hasOwnProperty.call(condition, 'const') && value !== condition.const) return false;
+      if (Array.isArray(condition.enum) && !condition.enum.includes(value)) return false;
+    }
+  }
+  if (Array.isArray(rule.allOf) && !rule.allOf.every((item) => schemaRuleMatches(item, values))) return false;
+  if (Array.isArray(rule.anyOf) && !rule.anyOf.some((item) => schemaRuleMatches(item, values))) return false;
+  if (Array.isArray(rule.oneOf) && rule.oneOf.filter((item) => schemaRuleMatches(item, values)).length !== 1) return false;
+  if (rule.not && schemaRuleMatches(rule.not, values)) return false;
+  return true;
+}
+
+function forbiddenKeysFromSchemaRule(rule, out = new Set()) {
+  if (!rule || typeof rule !== 'object') return out;
+  for (const key of Array.isArray(rule.required) ? rule.required : []) out.add(key);
+  for (const key of ['allOf', 'anyOf', 'oneOf']) {
+    for (const item of Array.isArray(rule[key]) ? rule[key] : []) forbiddenKeysFromSchemaRule(item, out);
+  }
+  return out;
+}
+
+function applySchemaOneOf(inputSchema, mapped, initialParams, refs, videoRefs, audioRefs) {
+  const branches = Array.isArray(inputSchema?.oneOf) ? inputSchema.oneOf : [];
+  if (!branches.length) return [];
+  const explicitlyProvided = (key) => schemaValuePresent(initialParams?.[key]);
+  const explicitVideo = ['video', 'video_url', 'videos', 'video_clips', 'reference_videos'].some(explicitlyProvided);
+  const explicitImage = ['image', 'image_url', 'images', 'image_urls', 'reference_images', 'reference_image_urls'].some(explicitlyProvided);
+  const preferredPrimary = explicitVideo
+    ? 'video'
+    : explicitImage
+      ? 'image'
+      : videoRefs.length
+        ? 'video'
+        : refs.length
+          ? 'image'
+          : '';
+
+  const candidates = branches
+    .map((branch, index) => {
+      const required = Array.isArray(branch?.required) ? branch.required : [];
+      const missing = required.filter((key) => !schemaValuePresent(mapped[key]));
+      if (missing.length) return null;
+      let score = required.length * 100 - index;
+      for (const key of required) if (explicitlyProvided(key)) score += 10_000;
+      if (preferredPrimary && required.includes(preferredPrimary)) score += 5_000;
+      if (required.includes('last_image') && refs[1]) score += 700;
+      if (required.includes('end_image') && refs[1]) score += 700;
+      if (required.includes('audio') && audioRefs[0]) score += 500;
+      return { branch, index, required, score };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score);
+
+  if (!candidates.length) {
+    const modes = branches.map((branch) => {
+      const title = String(branch?.title || '').trim();
+      const required = Array.isArray(branch?.required) ? branch.required.join(' + ') : '';
+      return title ? `${title}（${required || '无额外必填项'}）` : required;
+    }).filter(Boolean);
+    throw new Error(`Atlas 模型没有满足官方 Schema oneOf 输入模式。可用模式：${modes.join('；')}`);
+  }
+
+  const selected = candidates[0];
+  for (const key of forbiddenKeysFromSchemaRule(selected.branch?.not)) delete mapped[key];
+  for (const key of selected.required) {
+    if (!schemaValuePresent(mapped[key])) {
+      throw new Error(`Atlas 模型当前输入模式缺少必填参数：${key}。请连接对应素材，或在“模型专用参数 JSON”中填写该字段。`);
+    }
+  }
+
+  const matched = branches.filter((branch) => schemaRuleMatches(branch, mapped));
+  if (matched.length !== 1) {
+    throw new Error('Atlas 模型输入无法唯一匹配官方 Schema oneOf 模式，请检查图像、视频、音频素材是否互相冲突。');
+  }
+  return selected.required;
+}
+
+function buildSchemaMappedParams(inputSchema, initialParams, input, refs, videoRefs, audioRefs) {
+  const properties = schemaProperties(inputSchema);
+  const mapped = {};
+  for (const [key, value] of Object.entries(initialParams || {})) {
+    if (!hasSchemaProperty(properties, key) || key === 'model') continue;
+    const next = coerceSchemaValue(value, properties[key], key);
+    if (next !== undefined) mapped[key] = next;
+  }
+
+  const prompt = firstDefined(initialParams?.prompt, input.prompt, '');
+  const negativePrompt = firstDefined(initialParams?.negative_prompt, input.negativePrompt, input.negative, '');
+  assignSchemaValue(mapped, properties, 'prompt', prompt);
+  assignSchemaValue(mapped, properties, 'negative_prompt', negativePrompt);
+  assignSchemaValue(mapped, properties, 'text', firstDefined(initialParams?.text, input.text, input.prompt, ''));
+
+  const size = firstDefined(initialParams?.size, initialParams?.image_size, input.size, input.image_size, input.imageSize);
+  assignSchemaValue(mapped, properties, 'size', size);
+  assignSchemaValue(mapped, properties, 'image_size', size);
+  const ratio = firstDefined(initialParams?.aspect_ratio, initialParams?.ratio, input.aspect_ratio, input.aspectRatio, input.ratio);
+  assignSchemaValue(mapped, properties, 'aspect_ratio', ratio);
+  assignSchemaValue(mapped, properties, 'ratio', ratio);
+  assignSchemaValue(mapped, properties, 'resolution', firstDefined(initialParams?.resolution, input.resolution));
+  assignSchemaValue(mapped, properties, 'duration', firstDefined(initialParams?.duration, input.duration, input.seconds));
+  assignSchemaValue(mapped, properties, 'seed', firstDefined(initialParams?.seed, input.seed));
+  assignSchemaValue(mapped, properties, 'n', firstDefined(initialParams?.n, input.n));
+  assignSchemaValue(mapped, properties, 'num_images', firstDefined(initialParams?.num_images, input.n));
+
+  const imageRule = properties.images || properties.image_urls || properties.reference_images || properties.reference_image_urls;
+  const imageMax = Number(imageRule?.maxItems);
+  const mappedImages = Number.isFinite(imageMax) ? refs.slice(0, imageMax) : refs;
+  assignSchemaValue(mapped, properties, 'images', mappedImages);
+  assignSchemaValue(mapped, properties, 'image_urls', mappedImages);
+  assignSchemaValue(mapped, properties, 'reference_images', mappedImages);
+  assignSchemaValue(mapped, properties, 'reference_image_urls', mappedImages);
+  assignSchemaValue(mapped, properties, 'references', mappedImages);
+  assignSchemaValue(mapped, properties, 'image', refs[0]);
+  assignSchemaValue(mapped, properties, 'image_url', refs[0]);
+  assignSchemaValue(mapped, properties, 'end_image', refs[1]);
+  assignSchemaValue(mapped, properties, 'last_image', refs[1]);
+  if (hasSchemaProperty(properties, 'Image')) assignSchemaValue(mapped, properties, 'Image', refs[1]);
+
+  const videoRule = properties.videos || properties.video_clips || properties.reference_videos;
+  const videoMax = Number(videoRule?.maxItems);
+  const mappedVideos = Number.isFinite(videoMax) ? videoRefs.slice(0, videoMax) : videoRefs;
+  assignSchemaValue(mapped, properties, 'videos', mappedVideos);
+  assignSchemaValue(mapped, properties, 'video_clips', mappedVideos);
+  assignSchemaValue(mapped, properties, 'reference_videos', mappedVideos);
+  assignSchemaValue(mapped, properties, 'video', videoRefs[0]);
+  assignSchemaValue(mapped, properties, 'video_url', videoRefs[0]);
+
+  const audioRule = properties.audios || properties.reference_audios;
+  const audioMax = Number(audioRule?.maxItems);
+  const mappedAudios = Number.isFinite(audioMax) ? audioRefs.slice(0, audioMax) : audioRefs;
+  assignSchemaValue(mapped, properties, 'audios', mappedAudios);
+  assignSchemaValue(mapped, properties, 'reference_audios', mappedAudios);
+  assignSchemaValue(mapped, properties, 'audio', audioRefs[0]);
+  assignSchemaValue(mapped, properties, 'audio_url', audioRefs[0]);
+
+  if (hasSchemaProperty(properties, 'refers') && mapped.refers == null) {
+    const refers = [
+      ...refs.map((url) => ({ url, type: 'image' })),
+      ...videoRefs.map((url) => ({ url, type: 'video' })),
+      ...audioRefs.map((url) => ({ url, type: 'audio' })),
+    ];
+    assignSchemaValue(mapped, properties, 'refers', refers);
+  }
+
+  if (hasSchemaProperty(properties, 'subjects') && mapped.subjects == null && refs.length) {
+    const maxItems = Number(properties.subjects?.maxItems);
+    const subjectImages = Number.isFinite(maxItems) ? refs.slice(0, maxItems) : refs;
+    const subjects = subjectImages.map((url, index) => ({ id: `subject${index + 1}`, images: [url] }));
+    assignSchemaValue(mapped, properties, 'subjects', subjects);
+    if (hasSchemaProperty(properties, 'prompt')) mapped.prompt = appendViduSubjectBindings(mapped.prompt || prompt, subjects.length);
+  }
+
+  const oneOfRequired = applySchemaOneOf(inputSchema, mapped, initialParams, refs, videoRefs, audioRefs);
+  for (const key of [...new Set([...schemaRequired(inputSchema, mapped), ...oneOfRequired])]) {
+    if (key === 'model') continue;
+    if (mapped[key] !== undefined && mapped[key] !== null && mapped[key] !== '') continue;
+    const rule = properties[key];
+    if (rule?.default !== undefined) {
+      mapped[key] = rule.default;
+      continue;
+    }
+    throw new Error(`Atlas 模型缺少官方 Schema 必填参数：${key}。请在“模型专用参数 JSON”中填写该字段。`);
+  }
+  return mapped;
+}
+
+async function normalizeDynamicAtlasParams(model, kind, params, input, refs, videoRefs, audioRefs, options = {}) {
+  const schema = await getAtlasModelSchema(model, options);
+  const expectedType = String(schema.type || '').toLowerCase();
+  if (expectedType && expectedType !== kind) {
+    throw new Error(`Atlas 模型 ${model} 的类型为 ${schema.type}，不能在${kind === 'image' ? '图像' : '视频'}节点中调用。`);
+  }
+  return buildSchemaMappedParams(schema.input, params, input, refs, videoRefs, audioRefs);
+}
+
 function dimensions(value) {
   const match = String(value || '').trim().match(/^(\d{2,5})\s*[xX×*]\s*(\d{2,5})$/);
   if (!match) return null;
@@ -234,8 +509,13 @@ function normalizeKlingV3Params(params, input, refs, model) {
     if (!refs[0]) throw new Error('Kling v3 图生视频需要一张首帧图。');
     normalized.image = refs[0];
     if (refs[1]) normalized.end_image = refs[1];
-    const resolution = String(firstDefined(params.resolution, input.resolution, '')).toUpperCase();
-    if (['720P', '1080P'].includes(resolution)) normalized.resolution = resolution;
+    const requestedResolution = String(firstDefined(params.resolution, input.resolution, '')).toUpperCase();
+    const resolution = requestedResolution === '1080P'
+      ? '1080P-SR'
+      : requestedResolution === '1440P'
+        ? '1440P-SR'
+        : requestedResolution;
+    if (['720P', '1080P-SR', '1440P-SR'].includes(resolution)) normalized.resolution = resolution;
   }
   return normalized;
 }
@@ -278,11 +558,17 @@ function appendPromptBindings(prompt, bindings) {
     .join('\n\n');
 }
 
-function attachedSubjectPrompt(prompt, imageCount) {
-  return appendPromptBindings(prompt, Array.from({ length: imageCount }, (_, index) => ({
-    token: `attached_subject@image${index + 1}`,
-    label: `reference subject ${index + 1}`,
-  })));
+function atlasImageMentionPrompt(prompt, imageCount) {
+  const base = String(prompt || '').trim();
+  const missing = [];
+  for (let index = 1; index <= imageCount; index += 1) {
+    const token = `@image${index}`;
+    if (!base.includes(token)) missing.push(token);
+  }
+  if (!missing.length) return base;
+  return [base, `Use ${missing.join(', ')} as ordered reference subjects and keep them visually consistent.`]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 function characterReferencePrompt(prompt, referenceCount) {
@@ -302,16 +588,27 @@ function characterReferencePrompt(prompt, referenceCount) {
 
 function normalizeWanSpicyReferenceParams(params, input, refs) {
   if (!refs.length) throw new Error('Wan 2.7 Spicy 参考生视频至少需要一张参考图。');
-  const images = refs.slice(0, 4);
+  const referenceImages = refs.slice(0, 4);
+  const requestedRatio = String(firstDefined(
+    params.aspect_ratio,
+    params.ratio,
+    input.aspect_ratio,
+    input.aspectRatio,
+    input.ratio,
+    'auto',
+  ));
   return {
-    prompt: attachedSubjectPrompt(firstDefined(params.prompt, input.prompt, ''), images.length),
-    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
-    images,
-    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '720P', ['720P', '1080P']),
-    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
-    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 10),
-    prompt_extend: false,
-    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+    reference_images: referenceImages,
+    prompt: atlasImageMentionPrompt(firstDefined(params.prompt, input.prompt, ''), referenceImages.length),
+    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 15),
+    resolution: wanResolution(
+      firstDefined(params.resolution, input.resolution),
+      '720P',
+      ['720P', '1080P', '1080P-SR', '1440P-SR'],
+    ),
+    aspect_ratio: ['auto', '16:9', '9:16', '4:3', '3:4', '1:1'].includes(requestedRatio)
+      ? requestedRatio
+      : 'auto',
   };
 }
 
@@ -336,22 +633,20 @@ function normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs) 
   };
 }
 
-function normalizeWanVideoEditParams(params, input, refs, videoRefs, audioRefs) {
+function normalizeWanVideoEditParams(params, input, refs, videoRefs) {
   if (!videoRefs[0]) throw new Error('Wan 2.7 Video Edit 需要一个待编辑视频。');
   const durationValue = Number(firstDefined(params.duration, input.duration, input.seconds, 0));
   const duration = durationValue === 0 ? 0 : integerBetween(durationValue, 5, 2, 10);
+  const ratioValue = firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio);
   return {
     prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
     negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
     video: videoRefs[0],
-    ...(refs[0] ? { image: refs[0] } : {}),
     ...(refs.length ? { images: refs.slice(0, 3) } : {}),
-    ...(audioRefs[0] ? { audio: audioRefs[0] } : {}),
-    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P', '1080P-SR', '1440P-SR']),
-    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P']),
+    ...(ratioValue ? { ratio: wanRatio(ratioValue) } : {}),
     duration,
     prompt_extend: params.prompt_extend !== false,
-    ...(typeof params.watermark === 'boolean' ? { watermark: params.watermark } : {}),
     seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
   };
 }
@@ -617,17 +912,16 @@ async function runGeneration(provider, input, options, kind) {
     } else if (model === WAN_27_VIDEO_EDIT_MODEL) {
       params = normalizeWanVideoEditParams(params, input, refs, videoRefs, audioRefs);
     } else {
-      if (refs.length && params.image == null && params.image_url == null && params.images == null) {
-        if (refs.length === 1) params.image = refs[0];
-        else params.images = refs;
-      }
-      if (videoRefs.length && params.video == null && params.video_url == null && params.videos == null) {
-        if (videoRefs.length === 1) params.video = videoRefs[0];
-        else params.videos = videoRefs;
-      }
-      if (audioRefs.length && params.audio == null && params.audio_url == null && params.audios == null) {
-        params.audio = audioRefs[0];
-      }
+      params = await normalizeDynamicAtlasParams(
+        model,
+        kind,
+        params,
+        input,
+        refs,
+        videoRefs,
+        audioRefs,
+        options,
+      );
     }
   } catch (error) {
     return {

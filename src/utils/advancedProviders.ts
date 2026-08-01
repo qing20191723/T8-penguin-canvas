@@ -217,38 +217,21 @@ export interface AdvancedProviderSelection {
   available: boolean;
 }
 
-const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas', 'comfyui', 'jimeng-cli']);
-const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'volcengine', 'agnes', 'atlas', 'jimeng-cli']);
-const LLM_PROTOCOLS = new Set(['openai-compatible', 'modelscope', 'volcengine', 'agnes', 'atlas']);
+const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'atlas']);
+const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'atlas']);
+const LLM_PROTOCOLS = new Set(['openai-compatible', 'atlas']);
 
+// Atlas 的完整模型列表由 /api/proxy/atlas/models 动态加载。
+// 这里仅在模型目录暂时不可达时提供官方已核对模型的最小回退。
 const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, string[]>>> = {
   image: {
-    'openai-compatible': ['gpt-image-1'],
-    modelscope: [
-      'Tongyi-MAI/Z-Image-Turbo',
-      'Qwen/Qwen-Image-2512',
-      'Qwen/Qwen-Image-Edit-2511',
-      'black-forest-labs/FLUX.2-klein-9B',
-    ],
-    volcengine: ['doubao-seedream-4-0-250828'],
-    agnes: ['agnes-image-2.1-flash', 'agnes-image-2.0-flash'],
     atlas: [
       'bytedance/seedream-v5.0-pro/text-to-image',
       'bytedance/seedream-v5.0-pro/edit',
     ],
-    'jimeng-cli': [
-      'seedream-4.7',
-      'seedream-4.6',
-      'seedream-4.5',
-      'seedream-5.0',
-      'seedream-5.0-pro',
-      'jimeng-image-2k',
-      'jimeng-image-4k',
-    ],
+    'openai-compatible': [],
   },
   video: {
-    'openai-compatible': [],
-    agnes: ['agnes-video-v2.0'],
     atlas: [
       'kwaivgi/kling-v3.0-std/text-to-video',
       'kwaivgi/kling-v3.0-std/image-to-video',
@@ -257,36 +240,11 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
       'alibaba/wan-2.7/reference-to-video',
       'alibaba/wan-2.7/video-edit',
     ],
-    volcengine: [
-      'doubao-seedance-2-0-260128',
-      'doubao-seedance-2-0-fast-260128',
-      'doubao-seedance-1-5-pro-251215',
-      'doubao-seedance-1-0-pro-250528',
-      'doubao-seedance-1-0-lite-t2v-250428',
-      'doubao-seedance-1-0-lite-i2v-250428',
-    ],
-    'jimeng-cli': [
-      'seedance2.0fast_vip',
-      'seedance2.0_vip',
-      'seedance2.0mini',
-      'seedance2.0fast',
-      'seedance2.0',
-      'seedance1.5pro',
-      'seedance1.0fast',
-      'jimeng-video-720p',
-      'jimeng-video-1080p',
-    ],
+    'openai-compatible': [],
   },
   llm: {
-    'openai-compatible': ['gpt-4o-mini'],
-    modelscope: [
-      'Qwen/Qwen3-235B-A22B',
-      'Qwen/Qwen3-VL-235B-A22B-Instruct',
-      'MiniMax/MiniMax-M2.7:MiniMax',
-    ],
-    volcengine: ['doubao-seed-1-6-250615'],
-    agnes: ['agnes-2.0-flash'],
-    atlas: [],
+    atlas: ['moonshotai/kimi-k3'],
+    'openai-compatible': [],
   },
 };
 

@@ -90,7 +90,7 @@ const DEFAULT_ATLAS_VIDEO_MODELS = [
   'alibaba/wan-2.7/video-edit',
 ];
 
-const DEFAULT_ATLAS_CHAT_MODELS = [];
+const DEFAULT_ATLAS_CHAT_MODELS = ['moonshotai/kimi-k3'];
 
 const LEGACY_ATLAS_MODEL_IDS = new Map([
   ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-pro/text-to-image'],
@@ -124,11 +124,6 @@ const DEFAULT_JIMENG_VIDEO_MODELS = [
 
 const SUPPORTED_PROTOCOLS = new Set([
   'openai-compatible',
-  'modelscope',
-  'volcengine',
-  'agnes',
-  'comfyui',
-  'jimeng-cli',
   'atlas',
 ]);
 
@@ -137,75 +132,11 @@ const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
 
 const DEFAULT_ADVANCED_PROVIDERS = [
   {
-    id: 'openai-compatible',
-    label: 'OpenAI 兼容',
-    protocol: 'openai-compatible',
-    baseUrl: '',
-    enabled: false,
-    imageModels: [],
-    videoModels: [],
-    chatModels: [],
-    defaults: {},
-  },
-  {
-    id: 'modelscope',
-    label: 'ModelScope',
-    protocol: 'modelscope',
-    baseUrl: DEFAULT_MODELSCOPE_BASE_URL,
-    enabled: false,
-    imageModels: DEFAULT_MODELSCOPE_IMAGE_MODELS,
-    videoModels: [],
-    chatModels: DEFAULT_MODELSCOPE_CHAT_MODELS,
-    defaults: {
-      imageModel: DEFAULT_MODELSCOPE_IMAGE_MODELS[0],
-      chatModel: DEFAULT_MODELSCOPE_CHAT_MODELS[0],
-    },
-    modelscopeConfig: {
-      defaultsVersion: DEFAULT_MODELSCOPE_LORAS_VERSION,
-      loras: DEFAULT_MODELSCOPE_LORAS,
-    },
-  },
-  {
-    id: 'volcengine',
-    label: '火山引擎',
-    protocol: 'volcengine',
-    baseUrl: DEFAULT_VOLCENGINE_BASE_URL,
-    enabled: false,
-    imageModels: DEFAULT_VOLCENGINE_IMAGE_MODELS,
-    videoModels: DEFAULT_VOLCENGINE_VIDEO_MODELS,
-    chatModels: DEFAULT_VOLCENGINE_CHAT_MODELS,
-    defaults: {
-      imageModel: DEFAULT_VOLCENGINE_IMAGE_MODELS[0],
-      videoModel: DEFAULT_VOLCENGINE_VIDEO_MODELS[1],
-      chatModel: DEFAULT_VOLCENGINE_CHAT_MODELS[0],
-    },
-    volcengineConfig: {
-      project: 'default',
-      region: 'cn-beijing',
-    },
-  },
-  {
-    id: 'agnes',
-    label: 'Agnes AI',
-    protocol: 'agnes',
-    baseUrl: DEFAULT_AGNES_BASE_URL,
-    enabled: false,
-    imageModels: DEFAULT_AGNES_IMAGE_MODELS,
-    videoModels: DEFAULT_AGNES_VIDEO_MODELS,
-    chatModels: DEFAULT_AGNES_CHAT_MODELS,
-    defaults: {
-      imageModel: DEFAULT_AGNES_IMAGE_MODELS[0],
-      videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
-      chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
-      responseFormat: 'url',
-    },
-  },
-  {
     id: 'atlas',
     label: 'Atlas Cloud',
     protocol: 'atlas',
     baseUrl: DEFAULT_ATLAS_BASE_URL,
-    enabled: Boolean(process.env.ATLASCLOUD_API_KEY),
+    enabled: true,
     imageModels: DEFAULT_ATLAS_IMAGE_MODELS,
     videoModels: DEFAULT_ATLAS_VIDEO_MODELS,
     chatModels: DEFAULT_ATLAS_CHAT_MODELS,
@@ -216,36 +147,15 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     },
   },
   {
-    id: 'comfyui',
-    label: 'ComfyUI',
-    protocol: 'comfyui',
-    baseUrl: 'http://127.0.0.1:8188',
+    id: 'custom-api',
+    label: '自定义 API',
+    protocol: 'openai-compatible',
+    baseUrl: '',
     enabled: false,
     imageModels: [],
     videoModels: [],
     chatModels: [],
     defaults: {},
-    comfyuiConfig: {
-      instances: ['http://127.0.0.1:8188'],
-      workflows: [],
-    },
-  },
-  {
-    id: 'jimeng-cli',
-    label: '即梦 CLI',
-    protocol: 'jimeng-cli',
-    baseUrl: '',
-    enabled: false,
-    imageModels: DEFAULT_JIMENG_IMAGE_MODELS,
-    videoModels: DEFAULT_JIMENG_VIDEO_MODELS,
-    chatModels: [],
-    defaults: {},
-    jimengConfig: {
-      executablePath: '',
-      useWsl: false,
-      wslDistro: '',
-      pollSeconds: 3600,
-    },
   },
 ];
 
@@ -578,16 +488,18 @@ function normalizeProvider(raw, previous = null) {
   }
 
   if (id === 'atlas' && protocol === 'atlas') {
-    provider.imageModels = migrateAtlasModelList(provider.imageModels, DEFAULT_ATLAS_IMAGE_MODELS);
-    provider.videoModels = migrateAtlasModelList(provider.videoModels, DEFAULT_ATLAS_VIDEO_MODELS);
-    provider.chatModels = migrateAtlasModelList(provider.chatModels, DEFAULT_ATLAS_CHAT_MODELS);
+    provider.label = 'Atlas Cloud';
+    provider.baseUrl = DEFAULT_ATLAS_BASE_URL;
+    provider.enabled = true;
+    // 服务端只保留已核对的兜底模型；浏览器每次从 Atlas 官方 /models 目录替换为完整公共列表。
+    provider.imageModels = [...DEFAULT_ATLAS_IMAGE_MODELS];
+    provider.videoModels = [...DEFAULT_ATLAS_VIDEO_MODELS];
+    provider.chatModels = [...DEFAULT_ATLAS_CHAT_MODELS];
     const atlasDefaults = provider.defaults || {};
-    const imageModel = migrateAtlasModelId(atlasDefaults.imageModel);
-    const videoModel = migrateAtlasModelId(atlasDefaults.videoModel);
     provider.defaults = {
-      ...atlasDefaults,
-      imageModel: provider.imageModels.includes(imageModel) ? imageModel : DEFAULT_ATLAS_IMAGE_MODELS[0],
-      videoModel: provider.videoModels.includes(videoModel) ? videoModel : DEFAULT_ATLAS_VIDEO_MODELS[0],
+      imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],
+      videoModel: DEFAULT_ATLAS_VIDEO_MODELS[0],
+      chatModel: DEFAULT_ATLAS_CHAT_MODELS[0],
       pollIntervalMs: normalizeNumber(atlasDefaults.pollIntervalMs, 3000, 1000, 30000),
     };
   }
@@ -596,28 +508,35 @@ function normalizeProvider(raw, previous = null) {
 }
 
 function normalizeAdvancedProviders(rawProviders, currentProviders = []) {
-  const previousById = new Map(
-    (Array.isArray(currentProviders) ? currentProviders : [])
-      .filter((item) => item && typeof item === 'object')
-      .map((item) => [cleanId(item.id), item])
-      .filter(([id]) => !!id),
-  );
-  const byId = new Map();
+  const source = Array.isArray(rawProviders) ? rawProviders : [];
+  const previous = Array.isArray(currentProviders) ? currentProviders : [];
+  const all = [...previous, ...source].filter((item) => item && typeof item === 'object');
 
-  for (const template of DEFAULT_ADVANCED_PROVIDERS) {
-    const previous = previousById.get(template.id);
-    const provider = normalizeProvider({ ...clone(template), ...(previous || {}) }, previous);
-    if (provider) byId.set(provider.id, provider);
-  }
+  const findLast = (predicate) => {
+    for (let index = all.length - 1; index >= 0; index -= 1) {
+      if (predicate(all[index])) return all[index];
+    }
+    return null;
+  };
 
-  for (const raw of Array.isArray(rawProviders) ? rawProviders : []) {
-    const id = cleanId(raw?.id);
-    const previous = previousById.get(id) || byId.get(id) || null;
-    const provider = normalizeProvider(raw, previous);
-    if (provider) byId.set(provider.id, provider);
-  }
+  const atlasRaw = findLast((item) => cleanId(item.id) === 'atlas' || cleanProtocol(item.protocol) === 'atlas');
+  const legacyCustomRaw = findLast((item) => (
+    cleanId(item.id) === 'custom-api'
+    || cleanId(item.id) === 'openai-compatible'
+    || cleanProtocol(item.protocol) === 'openai-compatible'
+  ));
 
-  return [...byId.values()];
+  const atlasTemplate = clone(DEFAULT_ADVANCED_PROVIDERS[0]);
+  const customTemplate = clone(DEFAULT_ADVANCED_PROVIDERS[1]);
+  const atlas = normalizeProvider({ ...atlasTemplate, ...(atlasRaw || {}) }, atlasRaw || null)
+    || normalizeProvider(atlasTemplate, null);
+  const customSource = legacyCustomRaw
+    ? { ...legacyCustomRaw, id: 'custom-api', protocol: 'openai-compatible' }
+    : customTemplate;
+  const custom = normalizeProvider({ ...customTemplate, ...customSource }, legacyCustomRaw || null)
+    || normalizeProvider(customTemplate, null);
+
+  return [atlas, custom].filter(Boolean);
 }
 
 function maskAdvancedProviders(providers) {

@@ -315,7 +315,7 @@ function getCanvasAutoSaveDir() {
   const settings = loadSettings();
   const base = String(settings.canvasAutoSavePath || config.DEFAULT_CANVAS_AUTO_SAVE_DIR || '').trim();
   if (!base) return '';
-  return path.join(base, 'T8-penguin-canvas', 'canvases');
+  return path.join(base, 'qingchen-canvas', 'canvases');
 }
 
 function atomicWriteJson(file, data) {
@@ -1481,7 +1481,7 @@ router.post('/:id/history/:revision/restore', (req, res) => {
 
 // POST /api/canvas/:id/auto-save — 将当前画布镜像保存到用户配置的本地目录
 // 用于跨版本迁移: 用户可在「API 设置 → 画布自动保存路径」配置基础路径。
-// 实际保存位置: <path>/T8-penguin-canvas/canvases/<画布名>-<id>.json
+// 实际保存位置: <path>/qingchen-canvas/canvases/<画布名>-<id>.json
 router.post('/:id/auto-save', (req, res) => {
   try {
     const incoming = req.body;
@@ -1557,7 +1557,7 @@ router.post('/:id/auto-save', (req, res) => {
       : new Date(now).toISOString();
     const payload = removeCanvasRequestControls({
       ...authoritative,
-      schema: 't8-penguin-canvas-autosave',
+      schema: 'qingchen-canvas-autosave',
       version: 1,
       autoSavedAt,
       revision: currentRevision,

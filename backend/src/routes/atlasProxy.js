@@ -12,13 +12,14 @@
  */
 
 const express = require('express');
+const fs = require('fs');
+const config = require('../config');
+const { normalizeAdvancedProviders } = require('../providers/registry');
 
 const router = express.Router();
 
-const ATLAS_ORIGIN = String(process.env.ATLAS_BASE_URL || 'https://api.atlascloud.ai')
-  .trim()
-  .replace(/\/+$/, '');
-const ATLAS_API_ROOT = `${ATLAS_ORIGIN}/api/v1`;
+// Atlas 内置代理严格锁定官方域名；其他兼容服务必须走唯一的“自定义 API”入口。
+const ATLAS_API_ROOT = 'https://api.atlascloud.ai/api/v1';
 const REQUEST_TIMEOUT_MS = Math.max(
   5_000,
   Math.min(180_000, Number(process.env.ATLAS_REQUEST_TIMEOUT_MS) || 60_000),
@@ -46,7 +47,19 @@ class AtlasHttpError extends Error {
 }
 
 function getAtlasApiKey() {
-  return String(process.env.ATLASCLOUD_API_KEY || '').trim();
+  const envKey = String(process.env.ATLASCLOUD_API_KEY || '').trim();
+  if (envKey) return envKey;
+  try {
+    if (!fs.existsSync(config.SETTINGS_FILE)) return '';
+    const settings = JSON.parse(fs.readFileSync(config.SETTINGS_FILE, 'utf-8'));
+    const atlas = normalizeAdvancedProviders(settings?.advancedProviders)
+      .find((provider) => provider.id === 'atlas' && provider.protocol === 'atlas');
+    const savedKey = String(atlas?.apiKey || '').trim();
+    if (savedKey) return savedKey;
+    return String(settings?.zhenzhenSd2ApiKey || settings?.zhenzhenApiKey || settings?.llmApiKey || '').trim();
+  } catch {
+    return '';
+  }
 }
 
 function normalizeRequestOrigin(req) {
@@ -126,7 +139,7 @@ function errorMessage(payload, fallback) {
 async function atlasRequest(pathname, { method = 'GET', body, requireAuth = true } = {}) {
   const apiKey = getAtlasApiKey();
   if (requireAuth && !apiKey) {
-    throw new AtlasHttpError('服务端未配置 ATLASCLOUD_API_KEY', 503);
+    throw new AtlasHttpError('Atlas Cloud API Key 未配置。请设置 ATLASCLOUD_API_KEY，或在“API Key 设置”中保存 Atlas Cloud API Key', 503);
   }
 
   const controller = new AbortController();
@@ -215,10 +228,20 @@ function atlasCodeSucceeded(payload) {
 }
 
 function normalizeOutputs(data) {
-  const raw = data?.outputs ?? data?.output;
-  if (Array.isArray(raw)) return raw.filter((item) => typeof item === 'string' && item.trim());
-  if (typeof raw === 'string' && raw.trim()) return [raw.trim()];
-  return [];
+  const values = [
+    data?.outputs, data?.output, data?.urls, data?.url,
+    data?.image_urls, data?.image_url, data?.imageUrls, data?.imageUrl,
+    data?.video_urls, data?.video_url, data?.videoUrls, data?.videoUrl,
+    data?.download_url, data?.downloadUrl,
+  ];
+  const outputs = [];
+  for (const value of values) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      const url = typeof item === 'string' ? item.trim() : '';
+      if (url && !outputs.includes(url)) outputs.push(url);
+    }
+  }
+  return outputs;
 }
 
 function normalizeModel(model) {
@@ -233,6 +256,7 @@ function normalizeModel(model) {
     description: model?.profile || model?.description || '',
     pricing: model?.price || model?.pricing || null,
     tags: Array.isArray(model?.tags) ? model.tags : [],
+    categories: Array.isArray(model?.categories) ? model.categories : [],
     schema: model?.schema || null,
     readme: model?.readme || null,
   };
@@ -275,8 +299,12 @@ async function submitGeneration(req, res, endpoint, label) {
       throw new AtlasHttpError(errorMessage(payload, `Atlas ${label}任务提交失败`), 502, payload);
     }
 
-    const data = payload?.data || {};
-    const predictionId = String(data.id || '').trim();
+    const data = isPlainObject(payload?.data)
+      ? payload.data
+      : (isPlainObject(payload) ? payload : {});
+    const predictionId = String(
+      data.id || data.prediction_id || data.predictionId || data.task_id || data.taskId || '',
+    ).trim();
     const outputs = normalizeOutputs(data);
     if (!predictionId && outputs.length === 0) {
       throw new AtlasHttpError('Atlas API 未返回 predictionId 或生成结果', 502, payload);

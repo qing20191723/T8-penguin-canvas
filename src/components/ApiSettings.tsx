@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, CloudUpload, Download, ExternalLink, Eye, EyeOff, FileUp, Info, KeyRound, Loader2, Lock, Plus, Save, Settings2, TestTube2, Trash2, X, FolderOpen, ServerCog, Volume2 } from 'lucide-react';
-import { useApiKeysStore, FIXED_ZHENZHEN_BASE, FIXED_ZHENZHEN_SD2_BASE, RH_BASE, RH_INTL_BASE } from '../stores/apiKeys';
+import { useApiKeysStore, ATLAS_GENERATION_BASE_URL, ATLAS_CHAT_BASE_URL } from '../stores/apiKeys';
 import { taskCompletionSound as taskCompletionSoundController } from '../stores/taskCompletionSound';
 import { useThemeStore } from '../stores/theme';
 import type { AdvancedProviderConfig, AdvancedProviderProtocol, ApiSettings, CloudUploadProvider, CloudUploadTargetConfig } from '../types/canvas';
@@ -32,7 +32,6 @@ import {
   type ComfyFieldMapping,
 } from '../utils/comfyuiWorkflow';
 import PromptTextarea from './PromptTextarea';
-import { LocalSettingsAddonSlot } from 'virtual:t8-local-extensions';
 
 interface ApiSettingsModalProps {
   open: boolean;
@@ -94,8 +93,8 @@ const PATH_FIELDS = [
   'eagleApiBase',
 ] as const;
 
-const SETTINGS_BACKUP_SCHEMA = 't8-penguin-canvas-settings';
-const SETTINGS_BACKUP_VERSION = 1;
+const SETTINGS_BACKUP_SCHEMA = 'qingchen-canvas-settings';
+const SETTINGS_BACKUP_VERSION = 2;
 
 const ADVANCED_PROVIDER_LABELS: Record<AdvancedProviderProtocol, string> = {
   'openai-compatible': 'OpenAI 兼容',
@@ -153,13 +152,13 @@ const ADVANCED_PROVIDER_GUIDES: Record<AdvancedProviderProtocol, {
     keyLabel: 'Agnes AI API Key',
   },
   atlas: {
-    subtitle: '接入 Atlas Cloud 的图片与视频模型',
-    description: 'Atlas Cloud 使用异步任务接口并支持 300+ 模型。Render 部署优先读取服务端 ATLASCLOUD_API_KEY，本地也可在此扩展平台卡片中填写 API Key。',
-    nodeScopes: ['图像节点', '视频节点'],
-    connectionHint: 'Base URL 默认使用 https://api.atlascloud.ai/api/v1；启用后可在图像和视频节点的“扩展平台”中选择 Atlas Cloud。',
-    modelHint: '每行填写一个 Atlas 精确模型 ID。不同模型参数不同，可在节点的扩展参数中传入模型专用字段。',
+    subtitle: '清尘画布的默认且唯一内置模型平台',
+    description: '模型目录实时读取 Atlas Cloud 公共模型列表；图像与视频使用官方异步任务接口，LLM 使用官方 OpenAI 兼容接口。',
+    nodeScopes: ['LLM 节点', '图像节点', '视频节点'],
+    connectionHint: '生成接口固定为 https://api.atlascloud.ai/api/v1；LLM 接口固定为 https://api.atlascloud.ai/v1。留空保持服务端已保存的 Key 不变。',
+    modelHint: 'Atlas 模型列表由官方模型目录自动同步，不在这里手工维护。',
     baseUrlPlaceholder: 'https://api.atlascloud.ai/api/v1',
-    keyLabel: 'Atlas Cloud API Key（Render 可由服务端注入）',
+    keyLabel: 'Atlas Cloud API Key',
   },
   comfyui: {
     subtitle: '接入 ComfyUI 工作流',
@@ -422,18 +421,6 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   };
 
   const getCurrentEditableSettings = (): Partial<ApiSettings> => ({
-    zhenzhenApiKey: inputs.zhenzhenApiKey.trim(),
-    zhenzhenSd2ApiKey: inputs.zhenzhenSd2ApiKey.trim(),
-    rhApiKey: inputs.rhApiKey.trim(),
-    llmApiKey: inputs.llmApiKey.trim(),
-    gptImageApiKey: inputs.gptImageApiKey.trim(),
-    nanoBananaApiKey: inputs.nanoBananaApiKey.trim(),
-    mjApiKey: inputs.mjApiKey.trim(),
-    veoApiKey: inputs.veoApiKey.trim(),
-    soraApiKey: inputs.soraApiKey.trim(),
-    grokApiKey: inputs.grokApiKey.trim(),
-    seedanceApiKey: inputs.seedanceApiKey.trim(),
-    sunoApiKey: inputs.sunoApiKey.trim(),
     fileSavePath: fileSavePathInput.trim(),
     canvasAutoSavePath: canvasAutoSavePathInput.trim(),
     resourceLibraryPath: resourceLibraryPathInput.trim(),
@@ -442,6 +429,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     ...(advancedDirty ? { advancedProviders: advancedProvidersInput } : {}),
     ...(cloudUploadDirty ? { cloudUploadTargets: cloudUploadTargetsInput } : {}),
   });
+
 
   const isMaskedKeyValue = (value: unknown): boolean => {
     if (typeof value !== 'string') return false;
@@ -456,13 +444,6 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
       throw new Error('设置备份格式不正确');
     }
     const next: Partial<ApiSettings> = {};
-    for (const field of ALL_FIELDS) {
-      const value = (source as any)[field];
-      if (typeof value !== 'string') continue;
-      const trimmed = value.trim();
-      if (!trimmed || isMaskedKeyValue(trimmed)) continue;
-      (next as any)[field] = trimmed;
-    }
     for (const field of PATH_FIELDS) {
       const value = (source as any)[field];
       if (typeof value !== 'string') continue;
@@ -473,9 +454,43 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     if ((source as any).preferences && typeof (source as any).preferences === 'object') {
       next.preferences = { ...(source as any).preferences };
     }
-    if (Array.isArray((source as any).advancedProviders)) {
-      next.advancedProviders = (source as any).advancedProviders;
-    }
+    const importedProviders = Array.isArray((source as any).advancedProviders)
+      ? ((source as any).advancedProviders as AdvancedProviderConfig[])
+      : [];
+    const importedAtlas = importedProviders.find((provider) => provider?.protocol === 'atlas' || provider?.id === 'atlas');
+    const importedCustom = importedProviders.find((provider) => (
+      provider?.id === 'custom-api'
+      || (provider?.protocol === 'openai-compatible' && provider?.id !== 'atlas')
+    ));
+    const legacyAtlasKey = [
+      importedAtlas?.apiKey,
+      (source as any).zhenzhenSd2ApiKey,
+      (source as any).zhenzhenApiKey,
+      (source as any).llmApiKey,
+    ].find((value) => typeof value === 'string' && value.trim() && !isMaskedKeyValue(value));
+    next.advancedProviders = advancedProvidersInput.map((provider) => {
+      if (provider.id === 'atlas') {
+        return {
+          ...provider,
+          ...(importedAtlas || {}),
+          id: 'atlas',
+          label: 'Atlas Cloud',
+          protocol: 'atlas',
+          baseUrl: ATLAS_GENERATION_BASE_URL,
+          enabled: true,
+          ...(legacyAtlasKey ? { apiKey: String(legacyAtlasKey).trim() } : {}),
+        };
+      }
+      if (provider.id === 'custom-api') {
+        return {
+          ...provider,
+          ...(importedCustom || {}),
+          id: 'custom-api',
+          protocol: 'openai-compatible',
+        };
+      }
+      return provider;
+    });
     if (Array.isArray((source as any).cloudUploadTargets)) {
       next.cloudUploadTargets = (source as any).cloudUploadTargets;
     }
@@ -503,15 +518,15 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         raw = null;
       }
       const editable = getCurrentEditableSettings();
-      const exportSettings = {
-        ...(raw || {}),
-        ...Object.fromEntries(
-          Object.entries(editable).filter(([, value]) => typeof value === 'string' && value.trim())
-        ),
-        zhenzhenBaseUrl: FIXED_ZHENZHEN_BASE,
-        llmBaseUrl: FIXED_ZHENZHEN_BASE,
-        rhBaseUrl: RH_BASE,
-        rhIntlBaseUrl: RH_INTL_BASE,
+      const exportSettings: Partial<ApiSettings> = {
+        fileSavePath: editable.fileSavePath || raw?.fileSavePath || '',
+        canvasAutoSavePath: editable.canvasAutoSavePath || raw?.canvasAutoSavePath || '',
+        resourceLibraryPath: editable.resourceLibraryPath || raw?.resourceLibraryPath || '',
+        themeTemplatePath: editable.themeTemplatePath || raw?.themeTemplatePath || '',
+        eagleApiBase: editable.eagleApiBase || raw?.eagleApiBase || '',
+        advancedProviders: editable.advancedProviders || raw?.advancedProviders || advancedProvidersInput,
+        cloudUploadTargets: editable.cloudUploadTargets || raw?.cloudUploadTargets || cloudUploadTargetsInput,
+        preferences: raw?.preferences || settings.preferences,
       };
       const payload = {
         schema: SETTINGS_BACKUP_SCHEMA,
@@ -522,7 +537,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         settings: exportSettings,
       };
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      downloadJson(`t8-settings-backup-${date}.json`, payload);
+      downloadJson(`qingchen-settings-backup-${date}.json`, payload);
       setBackupMessage('已导出设置备份。注意：文件包含明文 API Key，请妥善保管。');
     } catch (e: any) {
       setBackupMessage(e?.message || '导出设置失败');
@@ -530,14 +545,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   };
 
   const applyImportedSettings = (patch: Partial<ApiSettings>) => {
-    setInputs((prev) => {
-      const nextInputs = { ...prev };
-      for (const field of ALL_FIELDS) {
-        const value = (patch as any)[field];
-        if (typeof value === 'string' && value.trim()) nextInputs[field] = value.trim();
-      }
-      return nextInputs;
-    });
+    setInputs(emptyMap());
     setShows(emptyShow());
     setClearedFields({});
     revealedRef.current = {};
@@ -843,8 +851,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   };
 
   const advancedSummary = summarizeAdvancedProviderForm(advancedProvidersInput);
+  const atlasProvider = advancedProvidersInput.find((provider) => provider.id === 'atlas' && provider.protocol === 'atlas') || null;
+  const customProvider = advancedProvidersInput.find((provider) => provider.id === 'custom-api' && provider.protocol === 'openai-compatible') || null;
   const activeAdvancedProvider = advancedProvidersInput.find((provider) => provider.id === activeAdvancedProviderId)
-    || advancedProvidersInput[0]
+    || atlasProvider
+    || customProvider
     || null;
   const cloudSummary = summarizeCloudUploadForm(cloudUploadTargetsInput);
   const activeCloudTarget = cloudUploadTargetsInput.find((target) => target.id === activeCloudTargetId)
@@ -1328,6 +1339,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     const isVolc = provider.protocol === 'volcengine';
     const isModelScope = provider.protocol === 'modelscope';
     const isAgnes = provider.protocol === 'agnes';
+    const isAtlas = provider.protocol === 'atlas';
     const sectionCls = isPixel
       ? 't8-api-settings-provider-panel border p-3 space-y-4 min-w-0'
       : 't8-api-settings-provider-panel border rounded-xl p-3 sm:p-4 space-y-4 min-w-0';
@@ -1596,14 +1608,18 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </div>
             <p className={`mt-1 text-[11px] leading-relaxed ${hintCls}`}>{guide?.subtitle}</p>
           </div>
-          <label className={`flex items-center gap-2 text-xs font-bold shrink-0 ${labelCls}`}>
-            <input
-              type="checkbox"
-              checked={!!provider.enabled}
-              onChange={(e) => updateAdvancedProvider(provider.id, { enabled: e.target.checked })}
-            />
-            在节点中显示
-          </label>
+          {isAtlas ? (
+            <span className="text-[11px] font-bold text-emerald-500 shrink-0">默认主平台</span>
+          ) : (
+            <label className={`flex items-center gap-2 text-xs font-bold shrink-0 ${labelCls}`}>
+              <input
+                type="checkbox"
+                checked={!!provider.enabled}
+                onChange={(e) => updateAdvancedProvider(provider.id, { enabled: e.target.checked })}
+              />
+              在节点中显示
+            </label>
+          )}
           <button
             type="button"
             onClick={() => handleTestAdvancedProvider(provider)}
@@ -1650,8 +1666,8 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           className={formBlockCls}
           labelClassName={labelCls}
           hintClassName={hintCls}
-          title="1. 基础信息"
-          note="显示名称只影响下拉菜单里的名字；关闭“在节点中显示”后，这个平台不会出现在图像 / 视频 / LLM 节点的高级来源里。"
+          title={isAtlas ? "1. Atlas 官方接口" : "1. 基础信息"}
+          note={isAtlas ? `生成接口：${ATLAS_GENERATION_BASE_URL}；LLM 接口：${ATLAS_CHAT_BASE_URL}。` : "显示名称只影响下拉菜单里的名字；关闭“在节点中显示”后，这个平台不会出现在图像 / 视频 / LLM 节点的模型来源里。"}
         >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <label className="space-y-1">
@@ -1659,6 +1675,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               <input
                 value={provider.label || ''}
                 onChange={(e) => updateAdvancedProvider(provider.id, { label: e.target.value })}
+                readOnly={isAtlas}
                 className={fieldInputCls}
                 placeholder={protocolLabel}
               />
@@ -1669,6 +1686,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 <input
                   value={provider.baseUrl || ''}
                   onChange={(e) => updateAdvancedProvider(provider.id, { baseUrl: e.target.value })}
+                  readOnly={isAtlas}
                   className={fieldInputCls}
                   placeholder={guide?.baseUrlPlaceholder || 'https://api.example.com/v1'}
                 />
@@ -1713,6 +1731,18 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 </button>
               </div>
             </div>
+            {isAtlas && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openExternal('https://www.atlascloud.ai/docs/zh')}
+                  className={linkBtnCls}
+                  title="打开 Atlas Cloud 官方中文文档"
+                >
+                  <ExternalLink size={11} /> Atlas 官方文档
+                </button>
+              </div>
+            )}
             {isVolc && (
               <div className={guideBoxCls}>
                 <div className="font-bold">该填哪个 Key？</div>
@@ -2181,7 +2211,21 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           </AdvancedProviderFormBlock>
         )}
 
-        {!isComfy && (
+        {isAtlas ? (
+          <AdvancedProviderFormBlock
+            className={formBlockCls}
+            labelClassName={labelCls}
+            hintClassName={hintCls}
+            title="3. Atlas 当前模型目录"
+            note="模型 ID 来自 Atlas Cloud 当前公共模型目录；刷新设置时自动同步，不能在本地伪造或追加其他平台模型。"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+              <div className={guideBoxCls}><div className="text-lg font-black">{provider.imageModels?.length || 0}</div><div>图像模型</div></div>
+              <div className={guideBoxCls}><div className="text-lg font-black">{provider.videoModels?.length || 0}</div><div>视频模型</div></div>
+              <div className={guideBoxCls}><div className="text-lg font-black">{provider.chatModels?.length || 0}</div><div>文本 / LLM 模型</div></div>
+            </div>
+          </AdvancedProviderFormBlock>
+        ) : !isComfy && (
           <AdvancedProviderFormBlock
             className={formBlockCls}
             labelClassName={labelCls}
@@ -2474,10 +2518,10 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             <h2
               className={`t8-api-settings-title text-base font-semibold ${isPixel ? 'px-title' : ''}`}
             >
-              API Key 设置 (通用 + 分类独立)
+              API Key 设置（Atlas Cloud + 自定义 API）
             </h2>
             <p className={`text-xs mt-0.5 ${hintCls}`}>
-              留空表示保持后端已存的 Key 不变 · 输入新值即覆盖 · 点眼睛可预览明文。
+              Atlas Cloud 是默认模型平台；留空保持后端已保存的 Key，输入新值即覆盖。
             </p>
           </div>
           <button
@@ -2561,73 +2605,19 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </div>
           </div>
 
-          {/* 通用与主力 Key */}
-          {renderKey(COMMON_KEYS[0], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE}` })}
-          {renderKey(COMMON_KEYS[1], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_SD2_BASE}`, clearable: true })}
-          <LocalSettingsAddonSlot
-            open={open}
-            isPixel={isPixel}
-            isDark={isDark}
-            settings={settings as any}
-            onSaved={load}
-          />
-          {renderKey(COMMON_KEYS[2], { baseUrlNote: `Base URL: ${RH_BASE}` })}
-          {renderKey(COMMON_KEYS[3], { baseUrlNote: `Base URL: ${RH_INTL_BASE}`, clearable: true })}
-          {renderKey(COMMON_KEYS[4], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与清尘同地址, Key 独立)` })}
-
-          {/* 分类独立 Key（默认折叠，点击展开 —— 新手友好） */}
-          <div className="t8-api-settings-divider pt-3 border-t">
-            {(() => {
-              const configuredCount = CLASSIFIED_KEYS.filter((spec) => {
-                const v = (settings as any)?.[spec.field];
-                return typeof v === 'string' && v.trim().length > 0;
-              }).length;
-              const totalCount = CLASSIFIED_KEYS.length;
-              return (
-                <button
-                  type="button"
-                  onClick={() => setClassifiedOpen((v) => !v)}
-                  aria-expanded={classifiedOpen}
-                  data-open={classifiedOpen}
-                  className={
-                    isPixel
-                      ? 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 px-btn'
-                      : 't8-api-settings-toggle w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition'
-                  }
-                >
-                  <Settings2 size={14} className="t8-api-settings-icon" />
-                  <span className="text-xs font-bold">分类独立 API Key【可选】</span>
-                  <span
-                    className="t8-api-settings-badge ml-1 px-1.5 py-0.5 text-[10px] rounded border"
-                    data-tone={configuredCount > 0 ? 'success' : 'muted'}
-                  >
-                    已配置 {configuredCount}/{totalCount}
-                  </span>
-                  <span className={`ml-auto flex items-center gap-1 text-[11px] ${hintCls}`}>
-                    {classifiedOpen ? '收起' : '展开'}
-                    {classifiedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </span>
-                </button>
-              );
-            })()}
-            {!classifiedOpen && (
-              <div className={`text-[11px] mt-2 ${hintCls}`}>
-                不必担心：<b>未填项会自动 fallback 到Atlas Cloud通用 Key</b>，新手可直接保存忽略此区块。
-              </div>
-            )}
-            {classifiedOpen && (
-              <div className="mt-3">
-                <div className={`text-[11px] ${hintCls} mb-3`}>
-                  为不同模型系列单独配置 Key；<b>未填则自动 fallback 到Atlas Cloud通用 Key</b>。后端会根据调用的模型名/路由自动选择。
-                </div>
-                <div className="space-y-4">
-                  {CLASSIFIED_KEYS.map((spec) => renderKey(spec, { fallbackHint: true }))}
-                </div>
-              </div>
+          {/* Atlas Cloud：唯一内置模型平台 */}
+          <div className="t8-api-settings-divider pt-3 border-t space-y-3">
+            <div className={`text-[11px] leading-relaxed ${hintCls}`}>
+              所有内置 LLM、图像与视频模型均来自 Atlas Cloud 当前公共模型目录。模型名称中的厂商前缀只是 Atlas 的模型 ID，不代表接入了其他 API 提供商。
+            </div>
+            {atlasProvider ? (
+              renderAdvancedProviderForm(atlasProvider)
+            ) : (
+              <div className="text-xs text-red-400">Atlas Cloud 配置未加载，请刷新页面后重试。</div>
             )}
           </div>
 
-          {/* v1.8.x: 扩展 API 平台，高级可选 */}
+          {/* 唯一可选自定义入口 */}
           <div className="t8-api-settings-divider pt-3 border-t">
             <button
               type="button"
@@ -2641,69 +2631,18 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               }
             >
               <ServerCog size={14} className="t8-api-settings-icon" />
-              <span className="text-xs font-bold shrink-0">扩展 API 平台【高级/可选】</span>
-              <span className={`hidden sm:inline text-[11px] ${hintCls}`}>给高级用户接入第三方平台，默认不影响主流程</span>
-              <span className="ml-auto flex items-center gap-1.5 flex-wrap justify-end">
-                <span
-                  className="t8-api-settings-badge px-1.5 py-0.5 text-[10px] rounded border"
-                  data-tone={advancedSummary.enabledCount > 0 ? 'success' : 'muted'}
-                >
-                  已启用 {advancedSummary.enabledCount}/{advancedProvidersInput.length || 0}
-                </span>
-                <span className={`text-[10px] ${hintCls}`}>密钥 {advancedSummary.configuredKeyCount}</span>
-              </span>
-              <span className={`flex items-center gap-1 text-[11px] ${hintCls}`}>
-                {advancedOpen ? '收起' : '展开'}
+              <span className="text-xs font-bold">自定义 API【可选】</span>
+              <span className={`hidden sm:inline text-[11px] ${hintCls}`}>仅保留一个 OpenAI 兼容自定义入口</span>
+              <span className={`ml-auto flex items-center gap-1 text-[11px] ${hintCls}`}>
+                {customProvider?.enabled ? '已启用' : '未启用'}
                 {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </span>
             </button>
-            {!advancedOpen && (
-              <div className={`text-[11px] mt-2 ${hintCls}`}>
-                未配置或未启用时不会影响Atlas Cloud、RunningHub、LLM 独立 Key 等主流程。
-              </div>
-            )}
             {advancedOpen && (
-              <div className="mt-3 space-y-3">
-                <div className={`text-[11px] leading-relaxed ${hintCls}`}>
-                  这里不是必填项。它只用于 ModelScope、火山引擎、Agnes AI、ComfyUI、即梦 CLI 和 OpenAI 兼容接口；平台开启后，还需要在具体节点的“高级来源”里选择它才会生效。
-                  当前状态：已启用 {advancedSummary.enabledCount} 个，已配置密钥 {advancedSummary.configuredKeyCount} 个，ComfyUI {advancedSummary.comfyuiConfigured ? '已填写地址' : '未填写地址'}，即梦 CLI {advancedSummary.jimengConfigured ? '已填写路径' : '未填写路径'}。
-                </div>
-                {advancedProvidersInput.length === 0 ? (
-                  <div className={`text-xs ${hintCls}`}>后端尚未返回扩展平台卡片，请先保存或刷新设置。</div>
-                ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)] gap-3 items-start">
-                    <div className={`space-y-2 min-w-0 ${isPixel ? '' : 'lg:sticky lg:top-0'}`}>
-                      {advancedProvidersInput.map((provider) => (
-                        <button
-                          key={provider.id}
-                          type="button"
-                          onClick={() => setActiveAdvancedProviderId(provider.id)}
-                          data-active={activeAdvancedProvider?.id === provider.id}
-                          data-enabled={!!provider.enabled}
-                          className={
-                            isPixel
-                              ? 't8-api-settings-provider-card w-full !block text-left px-2 py-2 px-btn'
-                              : 't8-api-settings-provider-card w-full block text-left px-2 py-2 rounded-md border text-xs transition'
-                          }
-                        >
-                          <div className="flex items-center gap-2 min-w-0 w-full">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${provider.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
-                            <span className="font-bold min-w-0 truncate">{ADVANCED_PROVIDER_LABELS[provider.protocol] || provider.label || provider.id}</span>
-                            <span className={`ml-auto text-[10px] shrink-0 ${provider.enabled ? 'text-emerald-500' : hintCls}`}>
-                              {provider.enabled ? '已启用' : '未启用'}
-                            </span>
-                          </div>
-                          <div className={`mt-1 text-[10px] leading-snug ${hintCls}`}>
-                            {ADVANCED_PROVIDER_GUIDES[provider.protocol]?.nodeScopes.join(' / ') || provider.protocol}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="min-w-0">
-                      {activeAdvancedProvider && renderAdvancedProviderForm(activeAdvancedProvider)}
-                    </div>
-                  </div>
-                )}
+              <div className="mt-3">
+                {customProvider
+                  ? renderAdvancedProviderForm(customProvider)
+                  : <div className={`text-xs ${hintCls}`}>自定义 API 配置未加载，请刷新页面后重试。</div>}
               </div>
             )}
           </div>
@@ -2895,7 +2834,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={fileSavePathInput}
                 onChange={(e) => setFileSavePathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen 或 ~/zhenzhen · 路径不存在时会自动创建"
+                placeholder="例：D:\\qingchen 或 ~/qingchen · 路径不存在时会自动创建"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2920,7 +2859,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={canvasAutoSavePathInput}
                 onChange={(e) => setCanvasAutoSavePathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen 或 ~/zhenzhen · 实际保存到此路径下的 T8-penguin-canvas\\canvases"
+                placeholder="例：D:\\qingchen 或 ~/qingchen · 实际保存到此路径下的 qingchen-canvas\\canvases"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2928,7 +2867,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </div>
             <div className={`flex items-center gap-2 flex-wrap text-[11px] mt-1.5 ${hintCls}`}>
               <span className="flex items-center gap-1.5">
-                <Lock size={11} /> 默认路径由后端按平台返回：Windows 为 D:\zhenzhen，macOS/Linux 为用户目录下的 zhenzhen。
+                <Lock size={11} /> 默认路径由后端按平台返回：Windows 为 D:\qingchen，macOS/Linux 为用户目录下的 qingchen。
               </span>
             </div>
           </div>
@@ -2945,7 +2884,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={resourceLibraryPathInput}
                 onChange={(e) => setResourceLibraryPathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen\\resources 或 ~/zhenzhen/resources · 路径不存在时会自动创建"
+                placeholder="例：D:\\qingchen\\resources 或 ~/qingchen/resources · 路径不存在时会自动创建"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
@@ -2970,7 +2909,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 type="text"
                 value={themeTemplatePathInput}
                 onChange={(e) => setThemeTemplatePathInput(e.target.value)}
-                placeholder="例：D:\\zhenzhen\\theme-templates 或 ~/zhenzhen/theme-templates · 路径不存在时会自动创建"
+                placeholder="例：D:\\qingchen\\theme-templates 或 ~/qingchen/theme-templates · 路径不存在时会自动创建"
                 className={inputCls}
                 autoComplete="off"
                 spellCheck={false}
