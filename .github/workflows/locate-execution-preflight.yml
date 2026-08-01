@@ -1,0 +1,68 @@
+name: Locate execution preflight blocker
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  locate:
+    if: github.event.pull_request.head.ref == 'ci/live-atlas-smoke-209a05d' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Locate UI strings and blocker logic
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          needles = [
+              '执行前只读体检',
+              '体检阻断',
+              '本次直接运行未绑定历史运行证据',
+              '存在阻断项',
+              '不能授权执行',
+              '阻断项',
+              '授权执行',
+              'read-only',
+              'preflight',
+          ]
+          roots = [Path('src'), Path('backend/src'), Path('electron')]
+          matches = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob('*'):
+                  if not path.is_file() or path.suffix.lower() not in {'.ts','.tsx','.js','.jsx','.cjs','.mjs','.json'}:
+                      continue
+                  try:
+                      text = path.read_text(encoding='utf-8')
+                  except Exception:
+                      continue
+                  lines = text.splitlines()
+                  hit_lines = []
+                  for idx, line in enumerate(lines, start=1):
+                      if any(needle.lower() in line.lower() for needle in needles):
+                          hit_lines.append(idx)
+                  if hit_lines:
+                      matches.append((path, lines, hit_lines))
+          print(f'FOUND_FILES={len(matches)}')
+          for path, lines, hit_lines in matches:
+              print(f'\n===== {path} =====')
+              shown = set()
+              for line_no in hit_lines:
+                  start = max(1, line_no - 12)
+                  end = min(len(lines), line_no + 20)
+                  key = (start, end)
+                  if key in shown:
+                      continue
+                  shown.add(key)
+                  print(f'--- lines {start}-{end} ---')
+                  for n in range(start, end + 1):
+                      print(f'{n:05d}: {lines[n-1]}')
+          if not matches:
+              raise SystemExit('No matching preflight source found')
+          PY
