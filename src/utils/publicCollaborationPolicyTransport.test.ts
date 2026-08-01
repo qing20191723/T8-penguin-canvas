@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   atlasOnlyBlockedApiPath,
+  isAtlasExecutionRequest,
   shouldBypassPublicCollaborationExecutionPolicy,
 } from './publicCollaborationPolicyTransport';
 
@@ -75,4 +76,21 @@ test('Atlas provider gateway, custom provider gateway and Electron remain availa
     pageOrigin: origin,
     desktopHost: true,
   }), null);
+});
+
+test('only same-origin POST generation requests require the Render readiness guard', () => {
+  for (const pathname of [
+    '/api/proxy/external/image',
+    '/api/proxy/external/video',
+    '/api/proxy/external/chat',
+    '/api/proxy/atlas/image',
+    '/api/proxy/atlas/video',
+    '/api/proxy/image',
+  ]) {
+    assert.equal(isAtlasExecutionRequest(`${origin}${pathname}`, 'POST', origin, false), true);
+  }
+  assert.equal(isAtlasExecutionRequest(`${origin}/api/proxy/atlas/models`, 'GET', origin, false), false);
+  assert.equal(isAtlasExecutionRequest(`${origin}/api/proxy/external/image`, 'GET', origin, false), false);
+  assert.equal(isAtlasExecutionRequest('https://example.com/api/proxy/external/image', 'POST', origin, false), false);
+  assert.equal(isAtlasExecutionRequest(`${origin}/api/proxy/external/image`, 'POST', origin, true), false);
 });
