@@ -72,6 +72,16 @@ jobs:
           if old_upload not in source or old_output not in source:
               raise SystemExit('unable to patch RH rail removal expressions')
           source = source.replace(old_upload, new_upload, 1).replace(old_output, new_output, 1)
+          source = source.replace(
+              "if 'RhImageCapabilityRail' in upload or 'RhVideoCapabilityRail' in upload:",
+              "if '<RhImageCapabilityRail' in upload or '<RhVideoCapabilityRail' in upload:",
+              1,
+          )
+          source = source.replace(
+              "if 'RhImageCapabilityRail' in output or 'RhVideoCapabilityRail' in output:",
+              "if '<RhImageCapabilityRail' in output or '<RhVideoCapabilityRail' in output:",
+              1,
+          )
           exec(compile(source, 'apply-atlas-dynamic-repair.py', 'exec'), {})
           PY
 
