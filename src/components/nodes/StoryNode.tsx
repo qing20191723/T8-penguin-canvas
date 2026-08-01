@@ -682,7 +682,7 @@ const StoryNode = ({ id, data, selected }: NodeProps) => {
       && asset.kind !== 'audio'
       && STORY_BUDGET_IMAGE_MODELS.has(configuredModelWithReferences as typeof STORY_BUDGET_IMAGE_OPTIONS[number]['value'])
       && !hasDomesticKey
-    ) throw new Error('请先在 API 设置中填写“贞贞的平价AI小屋 API Key”');
+    ) throw new Error('请先在 API 设置中填写“Atlas Cloud API Key”');
     if (!external && asset.kind !== 'audio' && configuredModelWithReferences === ZHENZHEN_IMAGE_G2_I2I_MODEL && !referenceImages.length) {
       throw new Error('G-2 图生图需要参考图；请先生成或绑定角色参考图，或改用 G-2 文生图/其他文生图模型');
     }
@@ -1877,21 +1877,21 @@ const StoryNode = ({ id, data, selected }: NodeProps) => {
       : effectiveVideoBuiltinSource === 'seedance-nz' ? SEEDANCE_NZ_MODEL_OPTIONS : LEGACY_SEEDANCE_MODEL_OPTIONS;
     return <div className={`space-y-2 ${compact ? 'rounded-xl border border-white/10 bg-black/20 p-2.5' : ''}`}>
       <div className="grid grid-cols-2 gap-2">
-        <label className={labelClass}>语言 API 平台<select value={llmChoice} onChange={(event) => selectLlmPlatform(event.target.value)} className={selectClass}><option value="builtin:zhenzhen">贞贞AI工坊内置LLM</option><option value="builtin:seedance-nz">贞贞的平价AI小屋</option>{llmProviders.map((provider) => <option key={provider.id} value={advancedChoice(provider.id)}>{provider.label} · {provider.protocol}</option>)}</select></label>
+        <label className={labelClass}>语言 API 平台<select value={llmChoice} onChange={(event) => selectLlmPlatform(event.target.value)} className={selectClass}><option value="builtin:zhenzhen">清尘AI工坊内置LLM</option><option value="builtin:seedance-nz">Atlas Cloud</option>{llmProviders.map((provider) => <option key={provider.id} value={advancedChoice(provider.id)}>{provider.label} · {provider.protocol}</option>)}</select></label>
         <label className={labelClass}>语言模型<select value={selectedLlmModel} onChange={(event) => llmSelection.available ? updateSettings({ llmProviderModel: event.target.value }) : project.settings.llmApiSource === 'seedance-nz' ? updateSettings({ llmNzModel: event.target.value }) : updateSettings({ llmModel: event.target.value })} className={selectClass}>{llmModels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className={labelClass}>图像 API 平台<select value={imageChoice} onChange={(event) => selectImagePlatform(event.target.value)} className={selectClass}><option value="builtin:legacy">贞贞 AI 工坊（海外）</option><option value="builtin:seedance-nz">贞贞的平价AI小屋</option><option value="builtin:fal">FAL（贞贞线路）</option>{imageProviders.map((provider) => <option key={provider.id} value={advancedChoice(provider.id)}>{provider.label} · {provider.protocol}</option>)}</select></label>
+        <label className={labelClass}>图像 API 平台<select value={imageChoice} onChange={(event) => selectImagePlatform(event.target.value)} className={selectClass}><option value="builtin:legacy">清尘 AI 工坊（海外）</option><option value="builtin:seedance-nz">Atlas Cloud</option><option value="builtin:fal">FAL（清尘线路）</option>{imageProviders.map((provider) => <option key={provider.id} value={advancedChoice(provider.id)}>{provider.label} · {provider.protocol}</option>)}</select></label>
         <label className={labelClass}>图像模型<select value={imageSelection.available ? imageSelection.providerModel : project.settings.imageModel} onChange={(event) => imageSelection.available ? updateSettings({ imageProviderModel: event.target.value }) : updateSettings({ imageModel: event.target.value })} className={selectClass}>{imageModels.map((item) => <option key={item.value} value={item.value} disabled={item.value === ZHENZHEN_IMAGE_G2_I2I_MODEL}>{item.label}{item.value === ZHENZHEN_IMAGE_G2_I2I_MODEL ? '（需参考图）' : ''}</option>)}</select></label>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className={labelClass}>视频 API 平台<select value={videoChoice} onChange={(event) => selectVideoPlatform(event.target.value)} className={selectClass}><option value="builtin">Seedance 2.0 内置线路</option>{videoProviders.map((provider) => <option key={provider.id} value={advancedChoice(provider.id)}>{provider.label} · {provider.protocol}</option>)}</select></label>
-        {videoSelection.available ? <label className={labelClass}>视频模型<select value={videoSelection.providerModel} onChange={(event) => updateSettings({ videoProviderModel: event.target.value })} className={selectClass}>{videoModels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : <label className={labelClass}>Seedance API 来源<select value={project.settings.videoApiSource} onChange={(event) => updateSettings({ videoApiSource: event.target.value as SeedanceBuiltinSource })} className={selectClass}><option value="auto">自动（优先平价AI小屋）</option><option value="seedance-nz">贞贞的平价AI小屋</option><option value="zhenzhen-legacy">贞贞 AI 工坊（海外）</option></select></label>}
+        {videoSelection.available ? <label className={labelClass}>视频模型<select value={videoSelection.providerModel} onChange={(event) => updateSettings({ videoProviderModel: event.target.value })} className={selectClass}>{videoModels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : <label className={labelClass}>Seedance API 来源<select value={project.settings.videoApiSource} onChange={(event) => updateSettings({ videoApiSource: event.target.value as SeedanceBuiltinSource })} className={selectClass}><option value="auto">自动（优先平价AI小屋）</option><option value="seedance-nz">Atlas Cloud</option><option value="zhenzhen-legacy">清尘 AI 工坊（海外）</option></select></label>}
       </div>
       {!videoSelection.available && <label className={labelClass}>视频模型<select value={effectiveVideoModel} onChange={(event) => effectiveVideoBuiltinSource === 'seedance-nz' ? updateSettings({ videoNzModel: event.target.value }) : updateSettings({ videoModel: event.target.value })} className={selectClass}>{videoModels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
       {!imageSelection.available && project.settings.imageModel === ZHENZHEN_IMAGE_G2_I2I_MODEL && <p className="text-[9px] text-amber-200">G-2 图生图需要参考图，Story 缺失资产不会使用该模型生成。</p>}
-      {!llmSelection.available && project.settings.llmApiSource === 'seedance-nz' && !hasDomesticKey && <p className="text-[9px] text-amber-200">尚未配置贞贞的平价AI小屋 API Key。</p>}
-      {!videoSelection.available && effectiveVideoBuiltinSource === 'seedance-nz' && !hasDomesticKey && <p className="text-[9px] text-amber-200">尚未配置贞贞的平价AI小屋 API Key。</p>}
+      {!llmSelection.available && project.settings.llmApiSource === 'seedance-nz' && !hasDomesticKey && <p className="text-[9px] text-amber-200">尚未配置Atlas Cloud API Key。</p>}
+      {!videoSelection.available && effectiveVideoBuiltinSource === 'seedance-nz' && !hasDomesticKey && <p className="text-[9px] text-amber-200">尚未配置Atlas Cloud API Key。</p>}
     </div>;
   };
 

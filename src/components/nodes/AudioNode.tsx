@@ -986,11 +986,11 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
           <div className="text-sm font-semibold text-white">音频 · {isWhisper ? 'Whisper' : isSeedAudio ? 'Seed Audio' : 'Suno'}</div>
           <div className="text-[10px] text-white/40 truncate">
             {isWhisper
-              ? 'whisper-1 · 贞贞的平价AI小屋'
+              ? 'whisper-1 · Atlas Cloud'
               : isSeedAudio
-                ? 'doubao-seed-audio-1.0 · 贞贞的平价AI小屋'
+                ? 'doubao-seed-audio-1.0 · Atlas Cloud'
                 : isSunoNz
-                  ? `${sunoNzOperation} · 贞贞的平价AI小屋`
+                  ? `${sunoNzOperation} · Atlas Cloud`
                   : `${version} · ${MODES.find((m) => m.id === mode)?.label}`}
           </div>
         </div>
@@ -1027,8 +1027,8 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
               })}
               className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none focus:border-violet-300/40"
             >
-              <option value="zhenzhen" className="bg-zinc-900">贞贞的AI工坊（原有）</option>
-              <option value="seedance-nz" className="bg-zinc-900">贞贞的平价AI小屋</option>
+              <option value="zhenzhen" className="bg-zinc-900">Atlas Cloud（原有）</option>
+              <option value="seedance-nz" className="bg-zinc-900">Atlas Cloud</option>
             </select>
           </div>
         )}

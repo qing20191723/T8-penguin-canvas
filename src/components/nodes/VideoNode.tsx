@@ -1506,7 +1506,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
         return;
       }
 
-      // === 原有贞贞工坊分支 ===
+      // === 原有Atlas Cloud分支 ===
       // 参考图预处理:
       //   - Grok: 直接传 URL (本地 /files/* 也可,后端会转上游 URL)
       //   - Veo / Sora2 / Seedance: 转 base64
@@ -1759,7 +1759,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                   ? providerSelection.provider.label
                   : videoBuiltinSource === 'seedance-nz'
                     ? 'Atlas Cloud'
-                    : '贞贞的AI工坊'}
+                    : 'Atlas Cloud'}
               </span>
             </button>
             {d?.advancedProviderOpen && (

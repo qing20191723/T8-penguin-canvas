@@ -63,8 +63,8 @@ interface KeySpec {
 }
 
 const COMMON_KEYS: KeySpec[] = [
-  { field: 'zhenzhenApiKey', label: '贞贞的AI工坊（海外） API Key', desc: '· 通用后备 · 用于图像/视频/音频生成', bullet: 'bg-amber-400' },
-  { field: 'zhenzhenSd2ApiKey', label: '贞贞的平价AI小屋 API Key', desc: '· 主力 API · 用于平价小屋 LLM、Seedance 2.0、Happy Horse、Hailuo、Kling、Vidu、Upscaler、Seedream、Zhenzhen Image G-2 与 Seed Audio', bullet: 'bg-lime-400' },
+  { field: 'zhenzhenApiKey', label: 'Atlas Cloud（海外） API Key', desc: '· 通用后备 · 用于图像/视频/音频生成', bullet: 'bg-amber-400' },
+  { field: 'zhenzhenSd2ApiKey', label: 'Atlas Cloud API Key', desc: '· 主力 API · 用于平价小屋 LLM、Seedance 2.0、Happy Horse、Hailuo、Kling、Vidu、Upscaler、Seedream、Zhenzhen Image G-2 与 Seed Audio', bullet: 'bg-lime-400' },
   { field: 'rhApiKey', label: 'RH APIKEY国内', desc: '· runninghub.cn 国内站应用', bullet: 'bg-cyan-400' },
   { field: 'rhIntlApiKey', label: 'RH APIKEY海外', desc: '· runninghub.ai 海外站应用', bullet: 'bg-blue-400' },
   { field: 'llmApiKey', label: 'LLM 独立 API Key', desc: '· 额度隔离 · 用于 LLM/Vision', bullet: 'bg-emerald-400' },
@@ -797,7 +797,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           type="button"
           onClick={() => openExternal('https://ai.t8star.org/register?aff=dP7j')}
           className={linkBtnCls}
-          title="前往贞贞的AI工坊（海外）注册获取 APIKEY"
+          title="前往Atlas Cloud（海外）注册获取 APIKEY"
         >
           <ExternalLink size={11} /> 获取 APIKey
         </button>
@@ -809,7 +809,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           type="button"
           onClick={() => openExternal('https://api.seedance.nz/sign-up?aff=ibVH')}
           className={linkBtnCls}
-          title="前往贞贞的平价AI小屋注册获取 APIKEY"
+          title="前往Atlas Cloud注册获取 APIKEY"
         >
           <ExternalLink size={11} /> 获取 APIKey
         </button>
@@ -2556,7 +2556,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 style={{ fontFamily: activeUiFontStack }}
               >
                 <span className="block text-[11px] font-bold">界面字体预览</span>
-                <span>贞贞无限画布 · 节点文字 12px / 14px / 16px · 缩小时看边缘是否清楚</span>
+                <span>清尘无限画布 · 节点文字 12px / 14px / 16px · 缩小时看边缘是否清楚</span>
               </div>
             </div>
           </div>
@@ -2573,7 +2573,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
           />
           {renderKey(COMMON_KEYS[2], { baseUrlNote: `Base URL: ${RH_BASE}` })}
           {renderKey(COMMON_KEYS[3], { baseUrlNote: `Base URL: ${RH_INTL_BASE}`, clearable: true })}
-          {renderKey(COMMON_KEYS[4], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与贞贞同地址, Key 独立)` })}
+          {renderKey(COMMON_KEYS[4], { baseUrlNote: `Base URL 锁定: ${FIXED_ZHENZHEN_BASE} (与清尘同地址, Key 独立)` })}
 
           {/* 分类独立 Key（默认折叠，点击展开 —— 新手友好） */}
           <div className="t8-api-settings-divider pt-3 border-t">
@@ -2612,13 +2612,13 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             })()}
             {!classifiedOpen && (
               <div className={`text-[11px] mt-2 ${hintCls}`}>
-                不必担心：<b>未填项会自动 fallback 到贞贞工坊通用 Key</b>，新手可直接保存忽略此区块。
+                不必担心：<b>未填项会自动 fallback 到Atlas Cloud通用 Key</b>，新手可直接保存忽略此区块。
               </div>
             )}
             {classifiedOpen && (
               <div className="mt-3">
                 <div className={`text-[11px] ${hintCls} mb-3`}>
-                  为不同模型系列单独配置 Key；<b>未填则自动 fallback 到贞贞工坊通用 Key</b>。后端会根据调用的模型名/路由自动选择。
+                  为不同模型系列单独配置 Key；<b>未填则自动 fallback 到Atlas Cloud通用 Key</b>。后端会根据调用的模型名/路由自动选择。
                 </div>
                 <div className="space-y-4">
                   {CLASSIFIED_KEYS.map((spec) => renderKey(spec, { fallbackHint: true }))}
@@ -2659,7 +2659,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
             </button>
             {!advancedOpen && (
               <div className={`text-[11px] mt-2 ${hintCls}`}>
-                未配置或未启用时不会影响贞贞工坊、RunningHub、LLM 独立 Key 等主流程。
+                未配置或未启用时不会影响Atlas Cloud、RunningHub、LLM 独立 Key 等主流程。
               </div>
             )}
             {advancedOpen && (

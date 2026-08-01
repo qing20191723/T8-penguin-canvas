@@ -14,6 +14,7 @@ const SEEDREAM_V5_EDIT_MODEL = 'bytedance/seedream-v5.0-pro/edit';
 const KLING_V3_T2V_MODEL = 'kwaivgi/kling-v3.0-std/text-to-video';
 const KLING_V3_I2V_MODEL = 'kwaivgi/kling-v3.0-std/image-to-video';
 const WAN_27_SPICY_I2V_MODEL = 'atlascloud/wan-2.7-spicy/image-to-video';
+const WAN_27_SPICY_REFERENCE_MODEL = 'atlascloud/wan-2.7-spicy/reference-to-video';
 const WAN_27_REFERENCE_MODEL = 'alibaba/wan-2.7/reference-to-video';
 const WAN_27_VIDEO_EDIT_MODEL = 'alibaba/wan-2.7/video-edit';
 const SEEDREAM_V5_SIZES = [
@@ -263,18 +264,70 @@ function normalizeWanSpicyParams(params, input, refs) {
   };
 }
 
+function appendPromptBindings(prompt, bindings) {
+  const base = String(prompt || '').trim();
+  const missing = bindings.filter(({ token }) => !base.includes(token));
+  if (!missing.length) return base;
+  const bindingText = missing.map(({ token, label }) => `${token} is ${label}`).join('. ');
+  return [base, `${bindingText}. Keep every referenced subject visually consistent throughout the video.`]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function attachedSubjectPrompt(prompt, imageCount) {
+  return appendPromptBindings(prompt, Array.from({ length: imageCount }, (_, index) => ({
+    token: `attached_subject@image${index + 1}`,
+    label: `reference subject ${index + 1}`,
+  })));
+}
+
+function characterReferencePrompt(prompt, referenceCount) {
+  const base = String(prompt || '').trim();
+  const missing = [];
+  for (let index = 1; index <= referenceCount; index += 1) {
+    const token = `character${index}`;
+    if (!new RegExp(`\\b${token}\\b`, 'i').test(base)) {
+      missing.push(`${token} corresponds to reference material ${index}`);
+    }
+  }
+  if (!missing.length) return base;
+  return [base, `${missing.join('. ')}. Preserve each character's identity consistently.`]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function normalizeWanSpicyReferenceParams(params, input, refs) {
+  if (!refs.length) throw new Error('Wan 2.7 Spicy 参考生视频至少需要一张参考图。');
+  const images = refs.slice(0, 4);
+  return {
+    prompt: attachedSubjectPrompt(firstDefined(params.prompt, input.prompt, ''), images.length),
+    negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
+    images,
+    resolution: wanResolution(firstDefined(params.resolution, input.resolution), '720P', ['720P', '1080P']),
+    ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
+    duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 10),
+    prompt_extend: false,
+    seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
+  };
+}
+
 function normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs) {
   if (!refs.length && !videoRefs.length) throw new Error('Wan 2.7 参考生视频至少需要一张参考图或一个参考视频。');
+  const images = refs.slice(0, 4);
+  const videos = videoRefs.slice(0, 3);
   return {
-    prompt: String(firstDefined(params.prompt, input.prompt, '')).trim(),
+    prompt: characterReferencePrompt(
+      firstDefined(params.prompt, input.prompt, ''),
+      Math.min(5, images.length + videos.length),
+    ),
     negative_prompt: String(firstDefined(params.negative_prompt, input.negativePrompt, input.negative, '')).trim(),
-    ...(refs.length ? { images: refs.slice(0, 6) } : {}),
-    ...(videoRefs.length ? { videos: videoRefs.slice(0, 3) } : {}),
+    ...(images.length ? { images } : {}),
+    ...(videos.length ? { videos } : {}),
     ...(audioRefs[0] ? { audio: audioRefs[0] } : {}),
     resolution: wanResolution(firstDefined(params.resolution, input.resolution), '1080P', ['720P', '1080P']),
     ratio: wanRatio(firstDefined(params.ratio, params.aspect_ratio, input.ratio, input.aspect_ratio, input.aspectRatio)),
     duration: integerBetween(firstDefined(params.duration, input.duration, input.seconds), 5, 2, 10),
-    prompt_extend: params.prompt_extend !== false,
+    prompt_extend: params.prompt_extend === true,
     seed: integerBetween(firstDefined(params.seed, input.seed), -1, -1, 2147483647),
   };
 }
@@ -544,6 +597,7 @@ async function runGeneration(provider, input, options, kind) {
 
   if (kind === 'image' && refs.length && model === SEEDREAM_V5_T2I_MODEL) model = SEEDREAM_V5_EDIT_MODEL;
   if (kind === 'video' && refs.length && model === KLING_V3_T2V_MODEL) model = KLING_V3_I2V_MODEL;
+  if (kind === 'video' && refs.length > 1 && model === WAN_27_SPICY_I2V_MODEL) model = WAN_27_SPICY_REFERENCE_MODEL;
 
   try {
     if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
@@ -552,6 +606,8 @@ async function runGeneration(provider, input, options, kind) {
       params = normalizeKlingV3Params(params, input, refs, model);
     } else if (model === WAN_27_SPICY_I2V_MODEL) {
       params = normalizeWanSpicyParams(params, input, refs);
+    } else if (model === WAN_27_SPICY_REFERENCE_MODEL || /^atlascloud\/.*reference-to-video$/i.test(model)) {
+      params = normalizeWanSpicyReferenceParams(params, input, refs);
     } else if (model === WAN_27_REFERENCE_MODEL) {
       params = normalizeWanReferenceParams(params, input, refs, videoRefs, audioRefs);
     } else if (model === WAN_27_VIDEO_EDIT_MODEL) {

@@ -53,7 +53,7 @@ const DEFAULT_SETTINGS = {
   rhIntlBaseUrl: config.RH_INTL_BASE_URL,
   // v1.2.9.16: 取消 rhWalletApiKey —— RH 钱包应用节点与普通 RunningHub 节点统一使用 rhApiKey
   llmApiKey: '',
-  llmBaseUrl: config.ZHENZHEN_BASE_URL, // 同贞贞工坊上游
+  llmBaseUrl: config.ZHENZHEN_BASE_URL, // 同Atlas Cloud上游
   // 分类 Key（留空时 fallback 到 zhenzhenApiKey）
   gptImageApiKey: '',
   nanoBananaApiKey: '',

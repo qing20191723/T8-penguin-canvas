@@ -506,7 +506,7 @@ export interface VideoModelDef {
   label: string;             // 主选项显示名
   kind: VideoKind;
   provider: ProviderType;
-  // 同一个 Tab 可以同时收录两套内置平台的模型；未标注时属于贞贞 AI 工坊。
+  // 同一个 Tab 可以同时收录两套内置平台的模型；未标注时属于清尘 AI 工坊。
   builtinSource?: VideoBuiltinSource;
   description?: string;
   // 子模型下拉(参考项目 类似 gpt-image-2-web 的 g_model / veo_model / gk_model)
@@ -872,7 +872,7 @@ export function videoModelsForSource(source: VideoBuiltinSource): VideoModelDef[
 
 /**
  * 兼容旧画布：旧数据只有 model，没有 videoBuiltinSource。
- * 精确命中目录时恢复真实来源；未知模型交给调用方回退到贞贞 AI 工坊。
+ * 精确命中目录时恢复真实来源；未知模型交给调用方回退到清尘 AI 工坊。
  */
 export function inferVideoBuiltinSource(apiModel: unknown): VideoBuiltinSource | null {
   const savedModel = String(apiModel || '').trim();

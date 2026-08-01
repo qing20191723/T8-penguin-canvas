@@ -1942,7 +1942,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                   ? providerSelection.provider.label
                   : isZhenzhenBudgetPlatformSelected
                     ? 'Atlas Cloud'
-                    : '默认贞贞工坊'}
+                    : '默认Atlas Cloud'}
               </span>
             </button>
             {d?.advancedProviderOpen && (
@@ -2496,7 +2496,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 style={{ background: '#18181b', color: '#ffffff' }}
                 className="w-full rounded border border-white/10 px-2 py-1 text-xs outline-none focus:border-cyan-400/60"
               >
-                <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>贞贞的AI工坊（海外） · 原 Seedream</option>
+                <option value="zhenzhen" style={{ background: '#18181b', color: '#ffffff' }}>Atlas Cloud（海外） · 原 Seedream</option>
                 <option value="seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>Atlas Cloud · api.seedance.nz</option>
               </select>
             </div>

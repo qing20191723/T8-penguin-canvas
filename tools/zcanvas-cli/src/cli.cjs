@@ -356,7 +356,7 @@ function helpData() {
 
 function humanHelp() {
   return [
-    'zcanvas — 贞贞无限画布 Agent CLI',
+    'zcanvas — 清尘无限画布 Agent CLI',
     '',
     'Usage: zcanvas <command> [--json|--human]',
     '',
@@ -414,7 +414,7 @@ function creatorRecoveryForError(error = {}) {
       ...result,
       whatFailed: '版本包结构、版本号或协议清单不兼容',
       existingWorkState: '未启用不兼容文件；当前安装和创作内容保持不变',
-      nextActions: ['换用与当前贞贞无限画布版本匹配的完整 Skill + CLI 版本包。'],
+      nextActions: ['换用与当前清尘无限画布版本匹配的完整 Skill + CLI 版本包。'],
     };
   }
   if (code === 'INSTALL_VERIFY_FAILED'
@@ -439,9 +439,9 @@ function creatorRecoveryForError(error = {}) {
   if (code === 'APP_NOT_RUNNING') {
     return {
       ...result,
-      whatFailed: '没有连接到正在运行的贞贞无限画布',
+      whatFailed: '没有连接到正在运行的清尘无限画布',
       existingWorkState: '没有执行画布写入或 Provider 请求，已有项目不受影响',
-      nextActions: ['启动贞贞无限画布，等待画布加载完成后继续原创作要求。'],
+      nextActions: ['启动清尘无限画布，等待画布加载完成后继续原创作要求。'],
     };
   }
   if (code === 'APP_INSTANCE_AMBIGUOUS') {
@@ -621,7 +621,7 @@ async function handleAuth(subcommand, parsed, human) {
     storePending(instance, pairing);
     emit(envelope({
       code: 'PAIRING_CONFIRMATION_REQUIRED',
-      message: '配对请求已发到贞贞无限画布，请核对验证码并在应用中批准',
+      message: '配对请求已发到清尘无限画布，请核对验证码并在应用中批准',
       data: {
         instanceId: instance.instanceId,
         clientName: pairing.clientName,
@@ -635,7 +635,7 @@ async function handleAuth(subcommand, parsed, human) {
         `批准后运行 zcanvas auth complete --instance ${instance.instanceId}。`,
       ],
     }), human, [
-      '请在贞贞无限画布中批准 Agent 连接',
+      '请在清尘无限画布中批准 Agent 连接',
       `验证码：${pairing.userCode}`,
       `权限：${pairing.requestedScopes.join(', ')}`,
       `批准后运行：zcanvas auth complete --instance ${instance.instanceId}`,
@@ -669,7 +669,7 @@ async function handleAuth(subcommand, parsed, human) {
           expiresAt: pending.expiresAt,
           status: 'pending',
         },
-        nextActions: ['回到贞贞无限画布核对验证码并点击“批准连接”，然后重新运行此命令。'],
+        nextActions: ['回到清尘无限画布核对验证码并点击“批准连接”，然后重新运行此命令。'],
       }), human);
       return EXIT_CODES.CONFIRMATION_REQUIRED;
     }
@@ -683,7 +683,7 @@ async function handleAuth(subcommand, parsed, human) {
     }
     storeSession(instance, result);
     emit(envelope({
-      message: 'Codex Agent 已安全连接贞贞无限画布',
+      message: 'Codex Agent 已安全连接清尘无限画布',
       data: {
         instanceId: instance.instanceId,
         sessionId: result.sessionId,
@@ -784,7 +784,7 @@ function selectUnambiguousCreatorWorkspace(data = {}) {
   if (!canvases.length) {
     throw new AgentClientError(
       'WORKSPACE_EMPTY',
-      '当前项目还没有可创作的画布；请先在贞贞无限画布中新建并保存一个画布',
+      '当前项目还没有可创作的画布；请先在清尘无限画布中新建并保存一个画布',
     );
   }
   throw new AgentClientError(
@@ -842,7 +842,7 @@ async function handleWorkspace(subcommand, parsed, human) {
       data: { instanceId: instance.instanceId, ...payload.data },
       nextActions: canvases.length
         ? ['使用 zcanvas workspace use --canvas <canvasId> 选择本轮创作上下文。']
-        : ['先在贞贞无限画布中创建或保存一个画布。'],
+        : ['先在清尘无限画布中创建或保存一个画布。'],
     }), human, canvases.length
       ? canvases.map((canvas) => `${canvas.id} r${canvas.revision} ${canvas.nodeCount} nodes ${canvas.name}`)
       : ['没有可用画布']);
@@ -1032,7 +1032,7 @@ async function handlePatch(subcommand, parsed, human) {
         status: approval.status,
       },
       nextActions: [
-        '在贞贞无限画布的确认弹窗中核对变更并批准。',
+        '在清尘无限画布的确认弹窗中核对变更并批准。',
         '批准后运行 zcanvas patch apply。',
       ],
     }), human, [
@@ -3543,7 +3543,7 @@ async function runCli(argv) {
       return ambiguous ? EXIT_CODES.CONFLICT : EXIT_CODES.APP_NOT_RUNNING;
     }
     emit(envelope({
-      message: '贞贞无限画布实例已连接',
+      message: '清尘无限画布实例已连接',
       data: {
         cliReady: true,
         appConnected: true,
@@ -3572,12 +3572,12 @@ async function runCli(argv) {
     emit(envelope({
       message: instances.length
         ? `发现 ${instances.length} 个可连接实例`
-        : '没有发现可连接的贞贞无限画布实例',
+        : '没有发现可连接的清尘无限画布实例',
       data: { instances },
-      nextActions: instances.length ? [] : ['启动贞贞无限画布后重试。'],
+      nextActions: instances.length ? [] : ['启动清尘无限画布后重试。'],
     }), human, instances.length
       ? instances.map((item) => `${item.appVersion} ${item.origin} ${item.instanceId}`)
-      : ['没有发现可连接的贞贞无限画布实例']);
+      : ['没有发现可连接的清尘无限画布实例']);
     return EXIT_CODES.OK;
   }
 

@@ -42,7 +42,7 @@ export default function MidjourneyNzPanel({
     <div className="space-y-2 rounded border border-cyan-400/30 bg-cyan-500/5 p-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10px] font-semibold tracking-wide text-cyan-200">
-          贞贞的平价AI小屋 · Midjourney
+          Atlas Cloud · Midjourney
         </div>
         <span className="rounded bg-cyan-400/10 px-1.5 py-0.5 text-[9px] text-cyan-100/70">
           {action.result === 'image' ? '图片' : action.result === 'video' ? '视频' : action.result === 'text' ? '文本' : '交互阶段'}
@@ -388,7 +388,7 @@ export default function MidjourneyNzPanel({
 
       {!hasApiKey && (
         <div className="rounded border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
-          尚未配置“贞贞的平价AI小屋 API Key”。
+          尚未配置“Atlas Cloud API Key”。
         </div>
       )}
     </div>

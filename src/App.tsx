@@ -58,14 +58,14 @@ const ZHAOTUTU_TAGGER_TRAINER_LABEL = '最好的打标和模型训练工具-图�
 const API_ACQUISITION_LINKS = [
   {
     id: 'zhenzhen-cn',
-    title: '贞贞的平价AI小屋（国内版）',
+    title: 'Atlas Cloud（国内版）',
     description: '主要调用国内模型，非盈利运营，仅保留 5%-10% 网站维护费用；国内模型价格约为海外版的 7.5-8 折（新网站）。',
     action: '获取国内版 API Key',
     url: 'https://api.seedance.nz/sign-up?aff=5f4w',
   },
   {
     id: 'zhenzhen-intl',
-    title: '贞贞的AI工坊（海外版）',
+    title: 'Atlas Cloud（海外版）',
     description: '主要调用海外模型并服务海外用户，也包含国内模型；由于整体成本较高，国内模型价格不具优势。',
     action: '获取海外版 API Key',
     url: 'https://ai.t8star.org/register?aff=dP7j',
@@ -169,7 +169,7 @@ const CANVAS_TUTORIALS = [
     youtube: 'https://www.youtube.com/watch?v=9Bn0BjsfwlE',
   },
   {
-    title: '教程第五弹（人造人系统，灵魂画手控制系统，贞贞无限画布！火影忍者，EVA，幽游白书主题，设计师专属优化多画布及Eagle发送）',
+    title: '教程第五弹（人造人系统，灵魂画手控制系统，清尘无限画布！火影忍者，EVA，幽游白书主题，设计师专属优化多画布及Eagle发送）',
     bilibili: 'https://www.bilibili.com/video/BV1KhVY6MEFP/',
     youtube: 'https://www.youtube.com/watch?v=_lmRmlPZ2y0',
   },
@@ -224,12 +224,12 @@ const CANVAS_TUTORIALS = [
     youtube: 'https://www.youtube.com/watch?v=K65BqvSTfh4',
   },
   {
-    title: '教程第十六弹（支持贞贞的平价AI小屋，全国内站模型比海外站便宜5-7.5折，支持宽审核，每日更新模型，RH API分离设置）',
+    title: '教程第十六弹（支持Atlas Cloud，全国内站模型比海外站便宜5-7.5折，支持宽审核，每日更新模型，RH API分离设置）',
     bilibili: 'https://www.bilibili.com/video/BV11zNM6jEQR/',
     youtube: 'https://www.youtube.com/watch?v=_G9xLFd0DN0',
   },
   {
-    title: '教程第十七弹（支持贞贞的平价AI小屋的全套LLM模型，图像模型(gpt-image-2低价版,grok image,midjourney 8.2)，视频模型(veo-omni(支持视频编辑),grok-video 1.5)，音频转译whisper-1,音乐模型suno5.5等，新增工作流医生，新增生成节点复用开关，图像节点新增提示词不输出模式，新增story全自动制片，新增3D表情节点，循环器重新增自定义并发模式，RH工具箱新增视频抠像功能，视频节点新增抠像TAB，视频节点新增获取当前帧，新增海螺视频，vidu视频，happyhorse视频，Wan视频，可灵视频支持，修复已知Bug）',
+    title: '教程第十七弹（支持Atlas Cloud的全套LLM模型，图像模型(gpt-image-2低价版,grok image,midjourney 8.2)，视频模型(veo-omni(支持视频编辑),grok-video 1.5)，音频转译whisper-1,音乐模型suno5.5等，新增工作流医生，新增生成节点复用开关，图像节点新增提示词不输出模式，新增story全自动制片，新增3D表情节点，循环器重新增自定义并发模式，RH工具箱新增视频抠像功能，视频节点新增抠像TAB，视频节点新增获取当前帧，新增海螺视频，vidu视频，happyhorse视频，Wan视频，可灵视频支持，修复已知Bug）',
     bilibili: 'https://www.bilibili.com/video/BV1ob3g6pESq/',
     youtube: 'https://www.youtube.com/watch?v=B-2ICzUtcNU',
   },
@@ -328,7 +328,7 @@ function App() {
   // 「画布教程」教程合集浮层开关
   const [canvasTutorialOpen, setCanvasTutorialOpen] = useState(false);
   const canvasTutorialWrapRef = useRef<HTMLDivElement>(null);
-  // 「贞贞工坊」推广浮层开关
+  // 「Atlas Cloud」推广浮层开关
   const [zhenOpen, setZhenOpen] = useState(false);
   const zhenWrapRef = useRef<HTMLDivElement>(null);
   // 「最新应用」推广浮层开关
@@ -484,7 +484,7 @@ function App() {
     };
   }, [canvasTutorialOpen]);
 
-  // 「贞贞工坊」浮层: 点击容器外部 / 按 ESC 自动关闭
+  // 「Atlas Cloud」浮层: 点击容器外部 / 按 ESC 自动关闭
   useEffect(() => {
     if (!zhenOpen) return;
     const onDocDown = (e: MouseEvent) => {
@@ -1704,7 +1704,7 @@ function App() {
             )}
           </div>
 
-          {/* 「贞贞工坊」推广按钮: 同款胶囊, 主调 紫色(区分于 mint/yellow/pink) */}
+          {/* 「Atlas Cloud」推广按钮: 同款胶囊, 主调 紫色(区分于 mint/yellow/pink) */}
           <div ref={zhenWrapRef} className="relative hidden" aria-hidden="true">
             <button
               onClick={() => setZhenOpen((v) => !v)}
@@ -1721,10 +1721,10 @@ function App() {
                           : 'bg-violet-50 border-violet-300 text-violet-700 hover:bg-violet-100'
                     }`
               }
-              title="贞贞工坊 · 海外站与 Discord"
+              title="Atlas Cloud · 海外站与 Discord"
             >
               <Wand2 size={14} />
-              <span className="text-[11px]">贞贞工坊</span>
+              <span className="text-[11px]">Atlas Cloud</span>
             </button>
 
             {/* 推广浮层 */}
@@ -1745,7 +1745,7 @@ function App() {
                 {/* 标题 */}
                 <div className={`flex items-center gap-2 ${isPixel ? '' : isDark ? 'text-violet-300' : 'text-violet-700'}`}>
                   <Wand2 size={16} className={isPixel ? '' : 'shrink-0'} />
-                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>贞贞工坊 · AI 创作社区</span>
+                  <span className={`text-sm font-bold ${isPixel ? 'px-title' : ''}`}>Atlas Cloud · AI 创作社区</span>
                 </div>
 
                 {/* 副标 */}
@@ -1816,7 +1816,7 @@ function App() {
                     }`}
                   />
                   <span>
-                    贞贞的 AI 工坊预计于
+                    清尘的 AI 工坊预计于
                     <span className={isPixel ? 'font-bold' : `font-semibold ${isDark ? 'text-amber-200' : 'text-amber-900'}`}> 5月27日 — 5月29日 </span>
                     开始恢复注册！
                   </span>

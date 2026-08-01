@@ -28,11 +28,11 @@ const SOURCE_PATHS = [
 
 const PLATFORM_META = Object.freeze({
   zhenzhen: {
-    label: '贞贞的AI工坊',
-    description: '贞贞海外模型与内置生成能力。',
+    label: 'Atlas Cloud',
+    description: 'Atlas Cloud 模型与生成能力。',
   },
   'seedance-nz': {
-    label: '贞贞的平价AI小屋',
+    label: 'Atlas Cloud',
     description: 'api.seedance.nz 的国内/平价模型与创作动作。',
   },
   fal: {
@@ -250,7 +250,7 @@ function buildRuntimeCatalog() {
         parameterKind: family === 'seedream-v5-pro' ? 'seedream-v5' : 'seedance-nz-image',
         supportsReference: maxReferenceImages !== 0,
         maxReferenceImages,
-        description: '贞贞的平价AI小屋图像模型',
+        description: 'Atlas Cloud 图像模型',
       },
     ));
   }

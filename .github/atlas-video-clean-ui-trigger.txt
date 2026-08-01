@@ -1,6 +1,0 @@
-run verified Atlas reference-video and clean public UI repair
-regenerate provider capability digest
-register compatibility digest
-preserve hidden compatibility setters
-clean generated branding sources
-include yaml branding

@@ -149,7 +149,7 @@ router.post('/import', express.json({ limit: '8mb' }), async (req, res) => {
     }
     const payload = {
       app: 't8-penguin-canvas',
-      tags: Array.isArray(req.body?.tags) ? req.body.tags.map((x) => safeText(x, '', 60)).filter(Boolean).slice(0, 20) : ['T8', '贞贞画布'],
+      tags: Array.isArray(req.body?.tags) ? req.body.tags.map((x) => safeText(x, '', 60)).filter(Boolean).slice(0, 20) : ['T8', '清尘画布'],
       materials: materials.map(materialToBridgeItem),
     };
     let result;

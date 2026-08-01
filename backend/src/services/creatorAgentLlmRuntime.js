@@ -62,7 +62,7 @@ function providerForDecision(decision, settings, config = {}) {
     if (!apiKey) return null;
     return {
       id: providerId,
-      label: '贞贞的AI工坊',
+      label: 'Atlas Cloud',
       protocol: 'openai-compatible',
       enabled: true,
       apiKey,
@@ -82,7 +82,7 @@ function providerForDecision(decision, settings, config = {}) {
     if (!apiKey) return null;
     return {
       id: providerId,
-      label: '贞贞的平价AI小屋',
+      label: 'Atlas Cloud',
       protocol: 'openai-compatible',
       enabled: true,
       apiKey,
@@ -608,7 +608,7 @@ function historyMessages(session = {}) {
 
 function systemPrompt(input = {}) {
   return [
-    '你是贞贞无限画布的创作 Agent。你的职责是直接帮助创作者产出可编辑内容，不是把工作退回给用户。',
+    '你是清尘无限画布的创作 Agent。你的职责是直接帮助创作者产出可编辑内容，不是把工作退回给用户。',
     '当前任务可能是电商、品牌、海报、修图、角色、故事、分镜、视频、音频或混合创作；必须根据用户真实需求选择最短路径，不得一律套用故事板。',
     '同一轮先交付有实质内容的可编辑版本，再只提出系统指定的当前一个决策。其余待处理内容保存在内部版本文档中，不得在回复里倾倒问题清单。',
     '明确区分用户事实、你的建议和未知项。不得编造商品参数、人物身份、品牌规则、素材内容、模型调用结果或已经发生的画布修改。',

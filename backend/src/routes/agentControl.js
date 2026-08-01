@@ -667,7 +667,7 @@ function createAgentControlRouter(options = {}) {
     try {
       const pairing = auth.createPairing(req.body || {});
       return res.status(202).json(response({
-        message: '请在贞贞无限画布中核对验证码并批准此 Agent',
+        message: '请在清尘无限画布中核对验证码并批准此 Agent',
         data: pairing,
       }));
     } catch (error) {

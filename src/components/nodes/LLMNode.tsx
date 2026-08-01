@@ -67,7 +67,7 @@ import {
 
 /**
  * LLM / Vision 节点 —— 完全对齐 gpt-image-2-web Chat (index.html L1600 / L8128~L8400)
- *  - 贞贞工坊常用模型 + Custom 自定义模型名
+ *  - Atlas Cloud常用模型 + Custom 自定义模型名
  *  - temperature(0~2) + max_tokens(100~128000)
  *  - 系统提示词 + localStorage 预设保存/加载
  *  - 图像上传(多模态 vision)
@@ -955,7 +955,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
               type="text"
               value={modelSelection.customModelInput}
               maxLength={200}
-              placeholder="填写贞贞工坊支持的模型名称"
+              placeholder="填写Atlas Cloud支持的模型名称"
               onChange={(e) => update({
                 useCustomModel: true,
                 customModel: e.target.value,

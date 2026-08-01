@@ -401,7 +401,7 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
   const zhenzhenModelPresetValue = isZhenzhenCustomModel || !BATCH_TAGGER_ZHENZHEN_MODELS.some((model) => model.id === activeModel) ? BATCH_TAGGER_CUSTOM_MODEL_VALUE : activeModel;
   const modelscopeHint = isExternal && providerSelection.providerSource === 'modelscope'
     ? 'ModelScope 推荐 Qwen/Qwen3-VL-235B-A22B-Instruct；文本 Qwen3 会自动切到 VL。'
-    : '贞贞默认走 LLM 独立 Key；可选 LLM/Vision 预设或 Custom 自定义模型。';
+    : '清尘默认走 LLM 独立 Key；可选 LLM/Vision 预设或 Custom 自定义模型。';
 
   const patchItems = (items: BatchTagItem[]) => {
     const summary = summarizeBatchProgress(items as any);
@@ -1094,7 +1094,7 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
                   }}
                   disabled={running}
                 >
-                  <option value="zhenzhen">贞贞 LLM 独立 Key</option>
+                  <option value="zhenzhen">清尘 LLM 独立 Key</option>
                   {llmProviders.map((provider) => (
                     <option key={provider.id} value={provider.id}>{provider.label || provider.id}</option>
                   ))}
@@ -1122,7 +1122,7 @@ function BatchTaggerNode({ id, data, selected }: NodeProps) {
               ) : (
                 <div className="space-y-1.5">
                   <label className="block">
-                    <FieldLabel>贞贞模型</FieldLabel>
+                    <FieldLabel>清尘模型</FieldLabel>
                     <select
                       className="t8-select w-full px-2 py-1.5 text-xs"
                       value={zhenzhenModelPresetValue}

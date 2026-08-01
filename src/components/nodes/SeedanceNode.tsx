@@ -554,11 +554,11 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
 
       if (isSeedanceNzSelected && activeFrameMode === 'first'
         && (imageUrls.length !== 1 || videoUrls.length > 0 || audioUrls.length > 0)) {
-        throw new Error('贞贞的平价AI小屋的首帧模式只接受 1 张图片；混合素材请改为“自动/多参”');
+        throw new Error('Atlas Cloud的首帧模式只接受 1 张图片；混合素材请改为“自动/多参”');
       }
       if (isSeedanceNzSelected && activeFrameMode === 'firstlast'
         && (imageUrls.length !== 2 || videoUrls.length > 0 || audioUrls.length > 0)) {
-        throw new Error('贞贞的平价AI小屋的首尾帧模式只接受 2 张图片；混合素材请改为“自动/多参”');
+        throw new Error('Atlas Cloud的首尾帧模式只接受 2 张图片；混合素材请改为“自动/多参”');
       }
 
       const payload: SeedanceSubmitRequest = {
@@ -727,8 +727,8 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
             {isExternalSelected && providerSelection.provider
               ? `${providerSelection.provider.label || providerSelection.provider.id} · ${externalProviderModel || '未选模型'}`
               : (isSeedanceNzSelected
-                ? `贞贞的平价AI小屋 · ${seedanceNzModel}`
-                : '贞贞的AI工坊（海外） · Seedance 2.0')}
+                ? `Atlas Cloud · ${seedanceNzModel}`
+                : 'Atlas Cloud（海外） · Seedance 2.0')}
           </div>
         </div>
         {isJimengCliSelected && <JimengCliHelpButton />}
@@ -748,7 +748,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                   ? providerSelection.provider.label
                   : (builtinSource === 'auto'
                     ? `主力自动 · ${effectiveTaskProvider === 'seedance-nz' ? '平价AI小屋' : '海外AI工坊'}`
-                    : (effectiveTaskProvider === 'seedance-nz' ? '贞贞的平价AI小屋' : '贞贞的AI工坊（海外）'))}
+                    : (effectiveTaskProvider === 'seedance-nz' ? 'Atlas Cloud' : 'Atlas Cloud（海外）'))}
               </span>
             </button>
             {d?.advancedProviderOpen && (
@@ -789,10 +789,10 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                       主力 API（自动：优先平价AI小屋）
                     </option>
                     <option value="builtin:seedance-nz" style={{ background: '#18181b', color: '#ffffff' }}>
-                      贞贞的平价AI小屋 · api.seedance.nz
+                      Atlas Cloud · api.seedance.nz
                     </option>
                     <option value="builtin:zhenzhen-legacy" style={{ background: '#18181b', color: '#ffffff' }}>
-                      贞贞的AI工坊（海外） · ai.t8star.org
+                      Atlas Cloud（海外） · ai.t8star.org
                     </option>
                     {videoAdvancedProviders.map((provider) => (
                       <option key={provider.id} value={provider.id} style={{ background: '#18181b', color: '#ffffff' }}>
@@ -880,7 +880,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
             )}
             {isSeedanceNzSelected && !hasSeedanceNzKey && (
               <div className="mt-1 text-[10px] text-amber-200">
-                尚未配置“贞贞的平价AI小屋 API Key”，请先到 API 设置填写。
+                尚未配置“Atlas Cloud API Key”，请先到 API 设置填写。
               </div>
             )}
           </div>

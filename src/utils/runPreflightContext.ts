@@ -255,13 +255,13 @@ function classifiedKeyConfigured(settings: ApiSettings, hint: unknown) {
 function missingOverseasCredentialMessage(kind: string, hint: unknown) {
   const field = classifiedKeyField(hint);
   const target = field
-    ? `“${CLASSIFIED_KEY_LABELS[field]}”分类 API Key；也可以填写“贞贞的AI工坊（海外） API Key”作为通用后备`
-    : '“贞贞的AI工坊（海外） API Key”';
+    ? `“${CLASSIFIED_KEY_LABELS[field]}”分类 API Key；也可以填写“Atlas Cloud（海外） API Key”作为通用后备`
+    : '“Atlas Cloud（海外） API Key”';
   return `未检测到当前${kind}所需的 API Key。请点击右上角齿轮打开“API 设置”，填写${target}，保存后重新运行。`;
 }
 
 function missingDomesticCredentialMessage() {
-  return '未检测到“贞贞的平价AI小屋 API Key”。请点击右上角齿轮打开“API 设置”，填写并保存该 Key，然后重新运行。';
+  return '未检测到“Atlas Cloud API Key”。请点击右上角齿轮打开“API 设置”，填写并保存该 Key，然后重新运行。';
 }
 
 function selectedRuntimeCredentialGroup(data: Record<string, unknown>) {
@@ -333,7 +333,7 @@ function builtInCredentialNotice(node: Node, settings: ApiSettings): RunPrefligh
         : capabilityNotice(
             node,
             'provider.seedance-nz-credential-missing',
-            '未检测到 Story 所选“贞贞的平价AI小屋”所需的 API Key。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。',
+            '未检测到 Story 所选“Atlas Cloud”所需的 API Key。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。',
           );
     }
     if (source && source !== 'zhenzhen') return null;
@@ -342,7 +342,7 @@ function builtInCredentialNotice(node: Node, settings: ApiSettings): RunPrefligh
       : capabilityNotice(
           node,
           'provider.llm-credential-missing',
-          '未检测到 Story 所选“贞贞AI工坊内置LLM”所需的独立 LLM API Key。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。',
+          '未检测到 Story 所选“清尘AI工坊内置LLM”所需的独立 LLM API Key。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。',
         );
   }
 
@@ -417,14 +417,14 @@ function builtInCredentialNotice(node: Node, settings: ApiSettings): RunPrefligh
       : capabilityNotice(
           node,
           'provider.seedance-nz-credential-missing',
-          '未检测到“贞贞的平价AI小屋 API Key”。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。',
+          '未检测到“Atlas Cloud API Key”。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。',
         );
   }
 
   if (node.type === 'llm' || node.type === 'batch-tagger') {
     return configuredSecret(settings.llmApiKey)
       ? null
-      : capabilityNotice(node, 'provider.llm-credential-missing', '未检测到当前语言模型所需的“贞贞的AI工坊-独立 LLM API Key”。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。');
+      : capabilityNotice(node, 'provider.llm-credential-missing', '未检测到当前语言模型所需的“Atlas Cloud-独立 LLM API Key”。请点击右上角齿轮打开“API 设置”，填写并保存，然后重新运行。');
   }
 
   if (['runninghub', 'runninghub-wallet', 'rh-tools', 'rh-toolbox'].includes(String(node.type || ''))) {
