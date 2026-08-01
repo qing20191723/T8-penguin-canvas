@@ -1,1 +1,0 @@
-Temporary verification placeholder.
