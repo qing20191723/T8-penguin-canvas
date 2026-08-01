@@ -82,6 +82,11 @@ jobs:
               "if '<RhImageCapabilityRail' in output or '<RhVideoCapabilityRail' in output:",
               1,
           )
+          source = source.replace(
+              "    window.requestAnimationFrame(() => rf.updateNodeInternals(id));",
+              "",
+              1,
+          )
           exec(compile(source, 'apply-atlas-dynamic-repair.py', 'exec'), {})
           PY
 
