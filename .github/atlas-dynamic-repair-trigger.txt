@@ -5,3 +5,4 @@ approved workflow trigger
 fixed extraction trigger
 preserve strings trigger
 split rails trigger
+anchored rails trigger
