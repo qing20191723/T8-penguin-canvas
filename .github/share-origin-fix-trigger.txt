@@ -1,2 +1,0 @@
-apply forwarded origin and disable public collaboration worker
-approved workflow trigger 2026-08-01
