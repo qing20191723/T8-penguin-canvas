@@ -16,15 +16,41 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Locate preflight UI, collaboration requests and auth guards
+      - name: Print exact collaboration preflight call context
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== exact UI strings ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E '执行前只读体检|体检阻断|历史运行证据|只读体检|阻断项' src backend electron tools || true
-          echo '=== collaboration endpoint strings ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E '/api/collaboration|collaboration/e|projectId=|execution.*evidence|evidence.*execution' src backend electron tools || true
-          echo '=== 401 and auth guards in collaboration backend ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E 'status\(401\)|sendStatus\(401\)|401.*json|unauthor|authority|authorization|management.*token|session.*token' backend/src | head -n 1500 || true
-          echo '=== files changed since 15:47 baseline candidates ==='
-          git log --since='2026-08-01T07:47:00Z' --name-status --pretty='format:COMMIT %H %cI %s' -- src backend electron | head -n 2500
+          python3 <<'PY'
+          from pathlib import Path
+          needles = [
+              'getCollaborationExecutionPolicy',
+              'execution-policy',
+              'collaboration_management_auth_required',
+              'buildRunPreflight',
+              'runPreflight',
+          ]
+          roots = [Path('src'), Path('backend/src')]
+          for root in roots:
+              for path in root.rglob('*'):
+                  if not path.is_file() or path.suffix not in {'.ts', '.tsx', '.js', '.cjs'}:
+                      continue
+                  try:
+                      lines = path.read_text(encoding='utf-8').splitlines()
+                  except Exception:
+                      continue
+                  hits = [i for i, line in enumerate(lines) if any(n in line for n in needles)]
+                  if not hits:
+                      continue
+                  print(f'\n===== {path} =====')
+                  shown = set()
+                  for i in hits:
+                      start = max(0, i - 18)
+                      end = min(len(lines), i + 24)
+                      key = (start, end)
+                      if key in shown:
+                          continue
+                      shown.add(key)
+                      print(f'--- lines {start+1}-{end} ---')
+                      for j in range(start, end):
+                          print(f'{j+1:6}: {lines[j]}')
+          PY
