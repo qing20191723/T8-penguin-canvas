@@ -63,6 +63,35 @@ jobs:
           fi
           echo "Qingchen root page verified; bytes=$(wc -c < /tmp/root.html)"
 
+      - name: Verify public canvas write authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://qingchen-atlascloud-canvas.onrender.com'
+          origin='https://qingchen-atlascloud-canvas.onrender.com'
+          test_name="live-origin-smoke-$(date +%s)"
+          good_code=$(curl -L -sS -o /tmp/canvas-create.json -w '%{http_code}' --max-time 120 \
+            -X POST "$base/api/canvas" \
+            -H "Origin: $origin" \
+            -H 'Content-Type: application/json' \
+            --data "{\"name\":\"$test_name\"}")
+          cat /tmp/canvas-create.json
+          test "$good_code" = '200'
+          canvas_id=$(node -e "const d=require('/tmp/canvas-create.json'); if(!d.success||!d.data?.id) process.exit(1); process.stdout.write(String(d.data.id))")
+          cleanup_code=$(curl -L -sS -o /tmp/canvas-delete.json -w '%{http_code}' --max-time 120 \
+            -X DELETE "$base/api/canvas/$canvas_id" \
+            -H "Origin: $origin")
+          cat /tmp/canvas-delete.json
+          test "$cleanup_code" = '200'
+          evil_code=$(curl -L -sS -o /tmp/canvas-evil.json -w '%{http_code}' --max-time 120 \
+            -X POST "$base/api/canvas" \
+            -H 'Origin: https://evil.example' \
+            -H 'Content-Type: application/json' \
+            --data '{"name":"must-not-create"}')
+          cat /tmp/canvas-evil.json
+          test "$evil_code" = '403'
+          echo "Public canvas write verified and cleaned up: $canvas_id"
+
       - name: Verify migrated Atlas settings and model catalog
         shell: bash
         run: |
