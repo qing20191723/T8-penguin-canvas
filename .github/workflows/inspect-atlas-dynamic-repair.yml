@@ -1,0 +1,35 @@
+name: Inspect Atlas dynamic repair
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.head_ref == 'fix/upload-autosize-atlas-pro-models'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Inspect relevant source paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== legacy labels ==='
+          grep -RInE '即梦编辑|即梦|Jimeng|jimeng|RH图像|RH视频|RhImageCapabilityRail|RhVideoCapabilityRail' src backend | head -300 || true
+          echo '=== Atlas static models ==='
+          grep -RInE 'DEFAULT_ATLAS|seedream-v5\.0-lite|kling-v3\.0-std|protocol.*atlas|LLM_PROTOCOLS' src backend | head -400 || true
+          echo '=== external LLM ==='
+          grep -RInE 'generateExternalLlm|generateChatWithProvider|generateChat\(' src backend | head -300 || true
+          echo '=== upload sizing ==='
+          grep -RInE 'setSize\(|onLoadedMetadata|naturalWidth|naturalHeight|videoWidth|videoHeight|ResizableCorners' src/components/nodes/UploadNode.tsx src/components | head -400 || true
+          echo '=== revision conflict ==='
+          grep -RInE 'revision 冲突|status === 409|baseRevision|pendingSaveByCanvasRef' src/components/Canvas.tsx backend/src/routes/canvas.js | head -500 || true
+          echo '=== provider settings ==='
+          grep -RInE 'advancedProviders|chatModels|imageModels|videoModels|atlas/models' src backend | head -500 || true
