@@ -76,7 +76,8 @@ jobs:
           assert "id: 'atlas'" in store and "id: 'custom-api'" in store
           assert "'openai-compatible',\n  'atlas'," in registry
           assert 'return [atlas, custom].filter(Boolean);' in registry
-          assert 'https://api.atlascloud.ai/api/v1/model/generateImage' in atlas or "`${providerBaseUrl(provider)}/model/generateImage`" in atlas
+          assert "const DEFAULT_BASE_URL = 'https://api.atlascloud.ai/api/v1'" in atlas
+          assert "const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';" in atlas
           assert "const DEFAULT_CHAT_BASE_URL = 'https://api.atlascloud.ai/v1'" in atlas
           assert 'https://static.atlascloud.ai/model/schema/' in atlas_schema
           assert "'qingchen'" in config
