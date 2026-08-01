@@ -18,8 +18,8 @@ jobs:
         env:
           APP_ORIGIN: https://qingchen-atlascloud-canvas.onrender.com
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
 
           const origin = process.env.APP_ORIGIN.replace(/\/+$/, '');
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
