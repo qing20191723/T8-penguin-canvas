@@ -27,14 +27,10 @@ interface JsonRecord {
 }
 
 interface RememberedCanvasSave {
-  canvasId: string;
-  payload: JsonRecord;
   digest: string;
-  capturedAt: number;
 }
 
 const latestCanvasSaveById = new Map<string, RememberedCanvasSave>();
-const knownCanvasRevisionById = new Map<string, number>();
 
 export interface PublicCollaborationPolicyRequestContext {
   requestUrl: string;
@@ -297,18 +293,7 @@ function jsonReplayInit(input: RequestInfo | URL, init: RequestInit | undefined,
 function rememberCanvasSave(canvasId: string, payload: JsonRecord) {
   const digest = canvasSnapshotDigest(payload);
   if (!digest) return;
-  latestCanvasSaveById.set(canvasId, {
-    canvasId,
-    payload,
-    digest,
-    capturedAt: Date.now(),
-  });
-}
-
-function rememberCanvasRevision(canvasId: string, value: unknown) {
-  const revision = Number(value);
-  if (!Number.isSafeInteger(revision) || revision < 1) return;
-  knownCanvasRevisionById.set(canvasId, revision);
+  latestCanvasSaveById.set(canvasId, { digest });
 }
 
 async function fetchAuthoritativeCanvas(
@@ -340,11 +325,10 @@ async function recoverEquivalentCanvasSave(
     const authoritative = await fetchAuthoritativeCanvas(originalFetch, canvasId);
     if (authoritative) {
       const latest = latestCanvasSaveById.get(canvasId);
-      const equivalentAttempt = equivalentCanvasSnapshot(authoritative.payload, attemptedPayload);
-      const equivalentLatest = Boolean(latest)
-        && latest!.digest === canvasSnapshotDigest(authoritative.payload);
+      const authoritativeDigest = canvasSnapshotDigest(authoritative.payload);
+      const equivalentAttempt = authoritativeDigest === canvasSnapshotDigest(attemptedPayload);
+      const equivalentLatest = Boolean(latest) && latest!.digest === authoritativeDigest;
       if (equivalentAttempt || equivalentLatest) {
-        rememberCanvasRevision(canvasId, authoritative.revision);
         return jsonResponse({
           success: true,
           data: {
@@ -380,7 +364,6 @@ async function recoverProjectRunCreation(
 
   const authoritative = await fetchAuthoritativeCanvas(originalFetch, canvasId);
   if (!authoritative || latest.digest !== canvasSnapshotDigest(authoritative.payload)) return null;
-  rememberCanvasRevision(canvasId, authoritative.revision);
 
   const retryPayload: JsonRecord = {
     ...runPayload,
@@ -391,13 +374,12 @@ async function recoverProjectRunCreation(
     jsonReplayInit(input, init, retryPayload),
   );
   if (retry.ok) {
+    const responseHeaders = new Headers(retry.headers);
+    responseHeaders.set('X-Qingchen-Run-Recovery', 'verified-authoritative-snapshot');
     return new Response(retry.body, {
       status: retry.status,
       statusText: retry.statusText,
-      headers: {
-        ...Object.fromEntries(retry.headers.entries()),
-        'X-Qingchen-Run-Recovery': 'verified-authoritative-snapshot',
-      },
+      headers: responseHeaders,
     });
   }
   return retry;
@@ -543,34 +525,13 @@ export function installPublicCollaborationPolicyTransport() {
     const projectRunCreate = isProjectRunCreateRequest(parsed.href, method, window.location.origin, desktopHost);
     const requestPayload = canvasId || projectRunCreate ? await requestJsonBody(input, init) : null;
 
-    let effectiveInit = init;
-    if (canvasId && requestPayload) {
-      rememberCanvasSave(canvasId, requestPayload);
-      const knownRevision = knownCanvasRevisionById.get(canvasId) || 0;
-      const requestedRevision = Number(requestPayload.baseRevision);
-      if (knownRevision > 0 && Number.isSafeInteger(requestedRevision) && requestedRevision < knownRevision) {
-        effectiveInit = jsonReplayInit(input, init, {
-          ...requestPayload,
-          baseRevision: knownRevision,
-        });
-      }
-    }
+    if (canvasId && requestPayload) rememberCanvasSave(canvasId, requestPayload);
 
-    const requestTarget: RequestInfo | URL = effectiveInit === init
-      ? input
-      : (input instanceof Request ? input.url : input);
-    let response = await originalFetch(requestTarget, effectiveInit);
+    let response = await originalFetch(input, init);
 
-    if (canvasId && requestPayload) {
-      if (response.ok) {
-        const successPayload = await responseJson(response);
-        if (isRecord(successPayload) && isRecord(successPayload.data)) {
-          rememberCanvasRevision(canvasId, successPayload.data.revision);
-        }
-      } else if (response.status === 409) {
-        const recovered = await recoverEquivalentCanvasSave(originalFetch, canvasId, requestPayload);
-        if (recovered) response = recovered;
-      }
+    if (canvasId && requestPayload && !response.ok && response.status === 409) {
+      const recovered = await recoverEquivalentCanvasSave(originalFetch, canvasId, requestPayload);
+      if (recovered) response = recovered;
     }
 
     if (projectRunCreate && requestPayload && !response.ok) {
