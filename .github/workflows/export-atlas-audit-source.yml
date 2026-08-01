@@ -20,14 +20,28 @@ jobs:
           ref: fix/atlas-only-qingchen-config
           fetch-depth: 1
 
-      - name: Archive repository source
+      - name: Probe Atlas public model catalog
         shell: bash
         run: |
-          tar --exclude=.git --exclude=node_modules --exclude=dist -czf /tmp/atlas-audit-source.tar.gz .
+          curl --fail --silent --show-error --location \
+            https://api.atlascloud.ai/api/v1/models \
+            --output /tmp/atlas-models.json
+          node <<'NODE'
+          const fs = require('fs');
+          const payload = JSON.parse(fs.readFileSync('/tmp/atlas-models.json', 'utf8'));
+          const items = Array.isArray(payload) ? payload : Array.isArray(payload.data) ? payload.data : Array.isArray(payload.items) ? payload.items : [];
+          console.log(JSON.stringify({
+            topLevelType: Array.isArray(payload) ? 'array' : typeof payload,
+            topLevelKeys: payload && !Array.isArray(payload) && typeof payload === 'object' ? Object.keys(payload) : [],
+            itemCount: items.length,
+            firstItems: items.slice(0, 3),
+          }, null, 2));
+          if (!items.length) process.exit(2);
+          NODE
 
-      - name: Upload source artifact
+      - name: Upload Atlas model catalog artifact
         uses: actions/upload-artifact@v4
         with:
-          name: atlas-audit-source
-          path: /tmp/atlas-audit-source.tar.gz
+          name: atlas-model-catalog
+          path: /tmp/atlas-models.json
           retention-days: 1
