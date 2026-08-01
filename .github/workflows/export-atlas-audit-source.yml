@@ -53,6 +53,104 @@ jobs:
           git apply --check /tmp/atlas-only-qingchen.patch
           git apply /tmp/atlas-only-qingchen.patch
 
+      - name: Correct Atlas provider default construction
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('src/stores/apiKeys.ts')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace(
+              'function ensureAtlasAndCustomProviders(settings: ApiSettings): AdvancedProviderConfig[] {',
+              'function ensureAtlasAndCustomProviders(settings: { advancedProviders?: AdvancedProviderConfig[] }): AdvancedProviderConfig[] {',
+          )
+          old = '''  const atlas: AdvancedProviderConfig = {
+            id: 'atlas',
+            label: 'Atlas Cloud',
+            protocol: 'atlas',
+            baseUrl: ATLAS_GENERATION_BASE_URL,
+            enabled: true,
+            imageModels: ATLAS_FALLBACK_IMAGE_MODELS,
+            videoModels: ATLAS_FALLBACK_VIDEO_MODELS,
+            chatModels: ATLAS_FALLBACK_CHAT_MODELS,
+            defaults: {
+              imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
+              videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
+              chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
+              pollIntervalMs: 3000,
+            },
+            ...(atlasSource || {}),
+            id: 'atlas',
+            label: 'Atlas Cloud',
+            protocol: 'atlas',
+            baseUrl: ATLAS_GENERATION_BASE_URL,
+            enabled: true,
+          };
+
+          const custom: AdvancedProviderConfig = {
+            id: 'custom-api',
+            label: '自定义 API',
+            protocol: 'openai-compatible',
+            baseUrl: '',
+            enabled: false,
+            imageModels: [],
+            videoModels: [],
+            chatModels: [],
+            defaults: {},
+            ...(customSource || {}),
+            id: 'custom-api',
+            protocol: 'openai-compatible',
+          };
+          '''
+          new = '''  const atlas: AdvancedProviderConfig = {
+            ...(atlasSource || {}),
+            id: 'atlas',
+            label: 'Atlas Cloud',
+            protocol: 'atlas',
+            baseUrl: ATLAS_GENERATION_BASE_URL,
+            enabled: true,
+            imageModels: Array.isArray(atlasSource?.imageModels) && atlasSource.imageModels.length
+              ? atlasSource.imageModels
+              : ATLAS_FALLBACK_IMAGE_MODELS,
+            videoModels: Array.isArray(atlasSource?.videoModels) && atlasSource.videoModels.length
+              ? atlasSource.videoModels
+              : ATLAS_FALLBACK_VIDEO_MODELS,
+            chatModels: Array.isArray(atlasSource?.chatModels) && atlasSource.chatModels.length
+              ? atlasSource.chatModels
+              : ATLAS_FALLBACK_CHAT_MODELS,
+            defaults: {
+              imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
+              videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
+              chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
+              pollIntervalMs: 3000,
+              ...(atlasSource?.defaults || {}),
+            },
+          };
+
+          const custom: AdvancedProviderConfig = {
+            ...(customSource || {}),
+            id: 'custom-api',
+            label: customSource?.label || '自定义 API',
+            protocol: 'openai-compatible',
+            baseUrl: customSource?.baseUrl || '',
+            enabled: customSource?.enabled === true,
+            imageModels: Array.isArray(customSource?.imageModels) ? customSource.imageModels : [],
+            videoModels: Array.isArray(customSource?.videoModels) ? customSource.videoModels : [],
+            chatModels: Array.isArray(customSource?.chatModels) ? customSource.chatModels : [],
+            defaults: { ...(customSource?.defaults || {}) },
+          };
+          '''
+          if old not in source:
+              raise SystemExit('Expected Atlas provider construction block not found')
+          source = source.replace(old, new, 1)
+          source = source.replace(
+              'advancedProviders: ensureAtlasAndCustomProviders({ advancedProviders: [] } as ApiSettings),',
+              'advancedProviders: ensureAtlasAndCustomProviders({ advancedProviders: [] }),',
+              1,
+          )
+          path.write_text(source, encoding='utf-8')
+          PY
+
       - name: Static Atlas-only and Qingchen assertions
         shell: bash
         run: |
