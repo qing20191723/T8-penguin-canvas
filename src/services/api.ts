@@ -817,12 +817,6 @@ export async function getSettings(options: { signal?: AbortSignal } = {}): Promi
   return res.data;
 }
 
-// 获取明文 Key（仅用于设置弹窗内眼睛预览，不脱敏）
-export async function getRawSettings(): Promise<ApiSettings> {
-  const res = await request<{ success: boolean; data: ApiSettings }>(`${BASE}/settings/raw`);
-  return res.data;
-}
-
 export async function updateSettings(patch: Partial<ApiSettings>): Promise<void> {
   await request(`${BASE}/settings`, {
     method: 'POST',

@@ -525,15 +525,23 @@ function normalizeAdvancedProviders(rawProviders, currentProviders = []) {
     || cleanId(item.id) === 'openai-compatible'
     || cleanProtocol(item.protocol) === 'openai-compatible'
   ));
+  const previousAtlas = [...previous].reverse().find((item) => (
+    cleanId(item?.id) === 'atlas' || cleanProtocol(item?.protocol) === 'atlas'
+  )) || null;
+  const previousCustom = [...previous].reverse().find((item) => (
+    cleanId(item?.id) === 'custom-api'
+    || cleanId(item?.id) === 'openai-compatible'
+    || cleanProtocol(item?.protocol) === 'openai-compatible'
+  )) || null;
 
   const atlasTemplate = clone(DEFAULT_ADVANCED_PROVIDERS[0]);
   const customTemplate = clone(DEFAULT_ADVANCED_PROVIDERS[1]);
-  const atlas = normalizeProvider({ ...atlasTemplate, ...(atlasRaw || {}) }, atlasRaw || null)
+  const atlas = normalizeProvider({ ...atlasTemplate, ...(atlasRaw || {}) }, previousAtlas || atlasRaw || null)
     || normalizeProvider(atlasTemplate, null);
   const customSource = legacyCustomRaw
     ? { ...legacyCustomRaw, id: 'custom-api', protocol: 'openai-compatible' }
     : customTemplate;
-  const custom = normalizeProvider({ ...customTemplate, ...customSource }, legacyCustomRaw || null)
+  const custom = normalizeProvider({ ...customTemplate, ...customSource }, previousCustom || legacyCustomRaw || null)
     || normalizeProvider(customTemplate, null);
 
   return [atlas, custom].filter(Boolean);

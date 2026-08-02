@@ -20,6 +20,8 @@ services:
         value: 10000
       - key: NODE_ENV
         value: production
+      - key: T8_WEB_RUNTIME
+        value: 1
       - key: T8PC_FRONTEND_DIST
         value: ../dist
       - key: T8_FIGMA_BRIDGE_AUTOSTART
