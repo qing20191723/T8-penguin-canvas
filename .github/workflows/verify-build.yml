@@ -30,5 +30,8 @@ jobs:
           T8_WEB_DEPLOY: '1'
         run: npm ci --include=dev
 
+      - name: Verify protected memory diagnostics
+        run: node --test tests/memoryDiagnostics.test.cjs tests/renderMemoryDiagnostics.test.cjs
+
       - name: Build frontend
         run: npm run build
