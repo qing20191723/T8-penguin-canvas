@@ -19,10 +19,11 @@ const recoveryManifest = cliArgs.includes('--recovery-manifest');
 const tag = cliArgs.find((argument) => !argument.startsWith('--'))
   || process.env.T8_RELEASE_TAG
   || `v${version}`;
-const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'T8mars/T8-penguin-canvas';
+const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'qing20191723/T8-penguin-canvas';
 const productName = pkg.build && pkg.build.productName ? pkg.build.productName : 'T8-PenguinCanvas';
 const installerName = `${productName}-Setup-${version}.exe`;
 const blockmapName = `${installerName}.blockmap`;
+const checksumName = `${installerName}.sha256`;
 const distDir = path.join(ROOT, 'dist_electron');
 const releaseTarget = String(process.env.T8_RELEASE_TARGET || '').toLowerCase();
 const releaseRemote = process.env.T8_RELEASE_REMOTE || 'origin';
@@ -86,6 +87,12 @@ function hashFile(filePath, algorithm, encoding = 'hex') {
     fs.closeSync(descriptor);
   }
   return hash.digest(encoding);
+}
+
+function assertInstallerChecksumFile(checksumPath, installerPath) {
+  const expected = `${hashFile(installerPath, 'sha256')}  ${path.basename(installerPath)}`;
+  const actual = fs.readFileSync(checksumPath, 'utf8').trim();
+  if (actual !== expected) fail(`installer SHA-256 sidecar mismatch: ${path.basename(checksumPath)}`);
 }
 
 function remoteTagTarget() {
@@ -183,7 +190,7 @@ function main() {
       fail(`draft ${tag} targets ${data.targetCommitish || '(missing)'}, expected ${releaseTarget}`);
     }
   }
-  const expectedAssetNames = [installerName, blockmapName, 'latest.yml'];
+  const expectedAssetNames = [installerName, blockmapName, 'latest.yml', checksumName];
   const assetByName = assertExactReleaseAssets(data.assets, expectedAssetNames);
   let expectedByName;
   let sealedRecovery;
@@ -228,6 +235,8 @@ function main() {
         blockmapName,
         '--pattern',
         'latest.yml',
+        '--pattern',
+        checksumName,
         '--dir',
         tmp,
         '--clobber',
@@ -255,6 +264,7 @@ function main() {
       const latestPath = path.join(tmp, 'latest.yml');
       const latest = fs.readFileSync(latestPath, 'utf-8');
       const downloadedInstallerPath = path.join(tmp, installerName);
+      assertInstallerChecksumFile(path.join(tmp, checksumName), downloadedInstallerPath);
       const installerSha512 = hashFile(downloadedInstallerPath, 'sha512', 'base64');
       const installerSize = fs.statSync(downloadedInstallerPath).size;
       if (recoveryManifest
@@ -279,7 +289,7 @@ function main() {
   const isLatest = prepublish ? false : releaseIsMarkedLatest();
   if (!prepublish && !isLatest) fail(`${tag} is not marked as GitHub Latest`);
 
-  console.log(`[verify-release] assets ok: ${installerName}, ${blockmapName}, latest.yml`);
+  console.log(`[verify-release] assets ok: ${installerName}, ${blockmapName}, latest.yml, ${checksumName}`);
   console.log(`[verify-release] url: ${data.url}`);
   console.log(`[verify-release] latest: ${prepublish ? 'not-required-before-publish' : (isLatest ? 'yes' : 'no')}`);
   console.log(

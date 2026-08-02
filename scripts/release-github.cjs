@@ -13,19 +13,19 @@ const {
 } = require('./release-provenance.cjs');
 const { assertReleaseWorktreeClean } = require('./release-worktree.cjs');
 const { assertLatestYamlArtifact } = require('./latest-yml.cjs');
-const { assertCollaborationReleaseEvidenceForPublish } = require('./collaboration-release-evidence.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const pkg = require(path.join(ROOT, 'package.json'));
 const version = pkg.version;
 const tag = process.env.T8_RELEASE_TAG || `v${version}`;
-const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'T8mars/T8-penguin-canvas';
+const repo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'qing20191723/T8-penguin-canvas';
 const productName = pkg.build && pkg.build.productName ? pkg.build.productName : 'T8-PenguinCanvas';
 const distDir = path.join(ROOT, 'dist_electron');
 const installerName = `${productName}-Setup-${version}.exe`;
 const installer = path.join(distDir, installerName);
 const blockmap = path.join(distDir, `${installerName}.blockmap`);
 const latest = path.join(distDir, 'latest.yml');
+const checksum = path.join(distDir, `${installerName}.sha256`);
 const notesFile = path.join(ROOT, 'release-notes', `${tag}.md`);
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
@@ -398,7 +398,7 @@ function releaseNotesBody(releaseTarget) {
     '',
     '- Electron 桌面端接入 GitHub Release 自动更新。',
     '- 顶栏新增检查、下载、重启安装状态入口。',
-    '- Release 资产包含 NSIS 安装包、blockmap 与 latest.yml。',
+    '- Release 资产包含 NSIS 安装包、blockmap、latest.yml 与安装包 SHA-256。',
     '',
   ].join('\n');
 }
@@ -649,25 +649,6 @@ function main() {
   const releaseTarget = getGitTarget();
   assertReleaseGitState(releaseTarget);
 
-  if (!dryRun) {
-    const evidence = assertCollaborationReleaseEvidenceForPublish({
-      root: ROOT,
-      version,
-      target: releaseTarget,
-    });
-    if (evidence.deferred) {
-      console.warn(
-        `[release] collaboration evidence deferred for ${evidence.releaseVersion}: `
-        + `${evidence.reason}; post-release evidence remains required`,
-      );
-    } else {
-      console.log(
-        `[release] collaboration evidence: ${evidence.checkCount} checks, `
-        + `${evidence.artifactCount} artifacts, manifest ${evidence.manifestSha256}`,
-      );
-    }
-  }
-
   let sealedRecovery;
   if (!dryRun) {
     try {
@@ -682,7 +663,7 @@ function main() {
     }
   }
 
-  const assets = [installer, blockmap, latest];
+  const assets = [installer, blockmap, latest, checksum];
   const expectedAssetNames = assets.map((asset) => path.basename(asset));
   const expectedArtifacts = sealedRecovery?.recovery.artifacts || {};
   const title = `贞贞的无限画布${tag}`;

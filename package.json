@@ -19,7 +19,7 @@
     "canvas",
     "node-editor",
     "workflow",
-    "runninghub",
+    "atlas-cloud",
     "electron",
     "react",
     "xyflow"
@@ -53,14 +53,16 @@
     "desktop-atlas:dev": "concurrently \"npm run desktop-atlas:backend\" \"npm run desktop-atlas:vite\"",
     "electron:desktop-atlas": "cross-env T8_DESKTOP_ATLAS_RUNTIME=1 T8PC_PACKAGED=0 electron electron/main.cjs",
     "encrypt": "cross-env ELECTRON_RUN_AS_NODE=1 node node_modules/electron/cli.js electron/encrypt.cjs",
-    "prepack:enc": "npm run rh-toolbox:check && npm run build:desktop-atlas && npm run encrypt",
-    "prepack:runtimes": "node scripts/prepare-runtime-archives.cjs",
+    "prepack:enc": "npm run build:desktop-atlas && npm run encrypt",
+    "prepack:runtimes": "npm run desktop:package:verify",
     "rebuild:electron": "electron-rebuild -f -w better-sqlite3 --arch x64",
-    "dist:dir": "npm run prepack:enc && npm run prepack:runtimes && npm run rebuild:electron && electron-builder --win --x64 --dir --config.npmRebuild=false && cross-env T8_DIRECTORY_BUILD=1 node electron/_post_build.cjs",
-    "dist": "npm run prepack:enc && npm run prepack:runtimes && npm run rebuild:electron && electron-builder --win --x64 --config.npmRebuild=false && node electron/_post_build.cjs",
+    "dist:dir": "npm run prepack:enc && npm run prepack:runtimes && npm run rebuild:electron && electron-builder --win --x64 --dir --config.npmRebuild=false && cross-env T8_DIRECTORY_BUILD=1 node electron/_post_build.cjs && node scripts/verify-desktop-atlas-install.cjs --app-dir dist_electron/win-unpacked",
+    "dist": "npm run prepack:enc && npm run prepack:runtimes && npm run rebuild:electron && electron-builder --win --x64 --config.npmRebuild=false && node electron/_post_build.cjs && node scripts/verify-desktop-atlas-package.cjs --artifact",
     "dist:release": "node scripts/dist-release.cjs",
     "release:github": "node scripts/release-github.cjs",
     "release:verify": "node scripts/verify-github-release.cjs",
+    "desktop:package:verify": "node scripts/verify-desktop-atlas-package.cjs",
+    "desktop:install:verify": "node scripts/verify-desktop-atlas-install.cjs",
     "worktree:check": "node scripts/worktree-role.cjs inspect",
     "worktree:development": "node scripts/worktree-role.cjs development",
     "worktree:core": "node scripts/worktree-role.cjs core",
@@ -159,6 +161,8 @@
       "!node_modules/tailwindcss/**/*",
       "!node_modules/autoprefixer/**/*",
       "!node_modules/concurrently/**/*",
+      "!node_modules/yjs/**/*",
+      "!node_modules/ws/**/*",
       "!node_modules/@types/**/*",
       "!node_modules/**/*.{md,markdown,ts,map,d.ts}",
       "!node_modules/**/{test,tests,__tests__,docs,examples,example,sample,benchmark}/**",
@@ -175,26 +179,6 @@
     ],
     "extraResources": [
       {
-        "from": ".agents/skills/zhenzhen-canvas",
-        "to": "agent/skills/zhenzhen-canvas",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "tools/zcanvas-cli",
-        "to": "tools/zcanvas-cli",
-        "filter": [
-          "bin/**/*",
-          "src/**/*",
-          "commandCatalog.json",
-          "creativeCapabilityManifest.json",
-          "generated/**/*",
-          "manifest.json",
-          "package.json"
-        ]
-      },
-      {
         "from": "build/backend-enc",
         "to": "backend-enc",
         "filter": [
@@ -209,41 +193,11 @@
         ]
       },
       {
-        "from": "extension",
-        "to": "extension/web-image-reverse",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
         "from": "shared",
         "to": "shared",
         "filter": [
           "achievementManifest.json",
           "videoTransitions.json"
-        ]
-      },
-      {
-        "from": "resources/achievement-media",
-        "to": "resources/achievement-media",
-        "filter": [
-          "*.t8media"
-        ]
-      },
-      {
-        "from": "tools/runtime-archives",
-        "to": "tools/runtime-archives",
-        "filter": [
-          "remove-ai-watermarks-runtime.zip",
-          "parsehub-pythonlibs.zip",
-          "runtime-archives-manifest.json"
-        ]
-      },
-      {
-        "from": "tools/asset-semantic",
-        "to": "tools/asset-semantic",
-        "filter": [
-          "semantic_runner.py"
         ]
       },
       {
@@ -260,33 +214,12 @@
       {
         "from": "node_modules/ffmpeg-static/ffmpeg.exe",
         "to": "tools/ffmpeg-compat/ffmpeg.exe"
-      },
-      {
-        "from": "tools/parsehub-bridge",
-        "to": "tools/parsehub-bridge",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "tools/figma-bridge",
-        "to": "tools/figma-bridge",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "tools/photoshop-bridge/plugin",
-        "to": "tools/photoshop-bridge/plugin",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "publish": [
       {
         "provider": "github",
-        "owner": "T8mars",
+        "owner": "qing20191723",
         "repo": "T8-penguin-canvas",
         "releaseType": "release"
       }

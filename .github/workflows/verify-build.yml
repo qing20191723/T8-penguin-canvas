@@ -41,6 +41,12 @@ jobs:
           node --test backend/src/services/desktopAtlasRuntime.test.js tests/desktopSecretStore.test.cjs
           node --test tests/desktopAtlasStartup.test.cjs
 
+      - name: Verify desktop Atlas packaging and update policy
+        run: |
+          node --test tests/desktopAtlasPackaging.test.cjs
+          npm run desktop:package:verify
+          npm run test:electron:ts -- tests/electronUpdater.test.ts
+
       - name: Verify Web credential boundary
         run: npm run test:electron:ts -- tests/advancedProviderSettingsRoute.test.ts
 
@@ -109,3 +115,4 @@ jobs:
             }
           }
           NODE
+          node scripts/verify-desktop-atlas-package.cjs --frontend

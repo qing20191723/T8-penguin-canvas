@@ -3,13 +3,16 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles/index.css';
 import './styles/atlasOnly.css';
+import { DESKTOP_ATLAS_RUNTIME } from './config/atlasOnlyRuntime';
 import { installPublicCollaborationPolicyTransport } from './utils/publicCollaborationPolicyTransport';
 
-installPublicCollaborationPolicyTransport();
+if (!DESKTOP_ATLAS_RUNTIME) installPublicCollaborationPolicyTransport();
 
-const CollaborationWorkspace = lazy(() => import('./components/CollaborationWorkspace'));
+const CollaborationWorkspace = DESKTOP_ATLAS_RUNTIME
+  ? (() => null)
+  : lazy(() => import('./components/CollaborationWorkspace'));
 
-const rootView = window.location.pathname.startsWith('/collab')
+const rootView = !DESKTOP_ATLAS_RUNTIME && window.location.pathname.startsWith('/collab')
   ? <Suspense fallback={<div className="grid h-screen place-items-center">正在加载协作画布…</div>}><CollaborationWorkspace /></Suspense>
   : <App />;
 
