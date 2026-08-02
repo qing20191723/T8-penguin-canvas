@@ -33,11 +33,23 @@ const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_ONLY_RUNTIM
   { type: 'fal-toolbox-maker', label: 'FAL应用制作工具', category: 'fal', description: '维护者专用：从 fal.ai API 文档生成 Fal超市 manifest 草稿，开发环境可见，用户包不打入', icon: 'FileJson', color: 'violet' },
 ] : [];
 
+const nodeDisplayOverride = (item: CanvasNodeSchemaManifest['types'][number]): Pick<NodeMeta, 'label' | 'description'> => {
+  if (item.type === 'seedance') {
+    return {
+      label: '视频',
+      description: 'Atlas Cloud 视频生成：Wan 2.7、Seedance、Kling、Grok、Veo 等模型',
+    };
+  }
+  return {
+    label: item.label,
+    description: item.description,
+  };
+};
+
 const manifestRegistry: NodeMeta[] = CANVAS_NODE_SCHEMA_MANIFEST.types.map((item) => ({
   type: item.type,
-  label: item.label,
+  ...nodeDisplayOverride(item),
   category: item.category,
-  description: item.description,
   icon: item.icon,
   color: item.color,
   ...(item.hidden === true || (ATLAS_ONLY_RUNTIME && ATLAS_ONLY_HIDDEN_NODE_TYPES.has(item.type))
