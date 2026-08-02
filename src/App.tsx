@@ -30,7 +30,7 @@ import { portraitResourceToNodeData } from './utils/portraitResource';
 import { applyUiFontPreference } from './utils/uiFont';
 import { LocalModalSlot, LocalTopbarSlot } from 'virtual:t8-local-extensions';
 import { DESKTOP_ATLAS_RUNTIME } from './config/atlasOnlyRuntime';
-import { readRememberedAtlasModel } from './components/AtlasModelPicker';
+import { readRememberedAtlasModel } from './utils/atlasModelCatalog';
 
 const Canvas = lazy(() => import('./components/Canvas'));
 const ApiSettingsModal = lazy(() => import('./components/ApiSettings'));

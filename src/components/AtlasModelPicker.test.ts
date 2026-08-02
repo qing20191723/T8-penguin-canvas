@@ -6,7 +6,7 @@ import {
   atlasModelOperation,
   readRememberedAtlasModel,
   rememberAtlasModel,
-} from './AtlasModelPicker';
+} from '../utils/atlasModelCatalog.ts';
 import type { AtlasCatalogItem } from '../types/canvas';
 
 function item(id: string, type: string): AtlasCatalogItem {
