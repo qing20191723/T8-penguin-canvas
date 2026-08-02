@@ -2,6 +2,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('node:crypto');
 const multer = require('multer');
 const config = require('../config');
 const {
@@ -14,6 +15,15 @@ const {
   normalizeCloudUploadTargets,
   summarizeCloudUploadTargets,
 } = require('../cloudUploads/settings');
+const {
+  applySecrets: applyDesktopSecrets,
+  extractSecrets: extractDesktopSecrets,
+  hasSecrets: hasDesktopSecrets,
+  mergePayload: mergeDesktopSecrets,
+  readSecrets: readDesktopSecrets,
+  stripSecrets: stripDesktopSecrets,
+  writeSecrets: writeDesktopSecrets,
+} = require('../services/desktopSecretStore');
 
 const router = express.Router();
 
@@ -245,7 +255,10 @@ function maskKey(k) {
 }
 
 function loadSettings({ persistMigrations = true } = {}) {
-  if (!fs.existsSync(config.SETTINGS_FILE)) return { ...DEFAULT_SETTINGS };
+  if (!fs.existsSync(config.SETTINGS_FILE)) {
+    if (!config.DESKTOP_ATLAS_RUNTIME) return { ...DEFAULT_SETTINGS };
+    return applyDesktopSecrets(DEFAULT_SETTINGS, readDesktopSecrets(config.DESKTOP_SECRET_FILE));
+  }
   try {
     const data = JSON.parse(fs.readFileSync(config.SETTINGS_FILE, 'utf-8'));
     // 强制 base URL 与配置一致(防篡改)
@@ -261,19 +274,59 @@ function loadSettings({ persistMigrations = true } = {}) {
     merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(data.taskCompletionSound);
     const keyMigration = migrateAtlasProviderKey(merged);
     const pathMigration = migrateLegacyDefaultPaths(keyMigration.settings);
-    if (persistMigrations && (keyMigration.changed || pathMigration.changed)) {
-      saveSettings(pathMigration.settings);
+    let resolved = pathMigration.settings;
+    if (config.DESKTOP_ATLAS_RUNTIME) {
+      const encrypted = readDesktopSecrets(config.DESKTOP_SECRET_FILE);
+      const plaintext = extractDesktopSecrets(resolved);
+      const combined = mergeDesktopSecrets(encrypted, plaintext);
+      if (hasDesktopSecrets(plaintext)) {
+        writeDesktopSecrets(config.DESKTOP_SECRET_FILE, combined);
+        writeSettingsFile(stripDesktopSecrets(resolved));
+      }
+      resolved = applyDesktopSecrets(resolved, combined);
     }
-    return pathMigration.settings;
-  } catch {
+    if (persistMigrations && (keyMigration.changed || pathMigration.changed)) {
+      saveSettings(resolved);
+    }
+    return resolved;
+  } catch (error) {
+    if (config.DESKTOP_ATLAS_RUNTIME && String(error?.code || '').startsWith('desktop_')) throw error;
     return { ...DEFAULT_SETTINGS };
   }
 }
 
-function saveSettings(settings) {
+function writeSettingsFile(settings) {
   const dir = path.dirname(config.SETTINGS_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(config.SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+  const tempPath = path.join(
+    dir,
+    `.${path.basename(config.SETTINGS_FILE)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`,
+  );
+  try {
+    const fd = fs.openSync(tempPath, 'wx', 0o600);
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tempPath, config.SETTINGS_FILE);
+  } catch (error) {
+    try { fs.rmSync(tempPath, { force: true }); } catch (_) {}
+    throw error;
+  }
+}
+
+function saveSettings(settings) {
+  if (!config.DESKTOP_ATLAS_RUNTIME) {
+    writeSettingsFile(settings);
+    return;
+  }
+  const incoming = extractDesktopSecrets(settings);
+  const current = readDesktopSecrets(config.DESKTOP_SECRET_FILE);
+  const combined = mergeDesktopSecrets(current, incoming);
+  if (hasDesktopSecrets(combined)) writeDesktopSecrets(config.DESKTOP_SECRET_FILE, combined);
+  writeSettingsFile(stripDesktopSecrets(settings));
 }
 
 // v1.2.10.2/v1.3.1: 启动时确保本地保存路径存在(不存在则 mkdir -p)
@@ -302,30 +355,37 @@ ensureLocalSavePaths();
 
 // GET /api/settings — 获取全部设置(脱敏 Key 仅返回最后4位)
 router.get('/', (_req, res) => {
-  const settings = loadSettings();
-  const masked = {
-    ...settings,
-    zhenzhenApiKey: maskKey(settings.zhenzhenApiKey),
-    zhenzhenSd2ApiKey: maskKey(settings.zhenzhenSd2ApiKey),
-    rhApiKey: maskKey(settings.rhApiKey),
-    rhIntlApiKey: maskKey(settings.rhIntlApiKey),
-    llmApiKey: maskKey(settings.llmApiKey),
-    advancedProviders: maskAdvancedProviders(settings.advancedProviders),
-    advancedProviderSummary: summarizeAdvancedProviders(settings.advancedProviders),
-    cloudUploadTargets: maskCloudUploadTargets(settings.cloudUploadTargets),
-    cloudUploadSummary: summarizeCloudUploadTargets(settings.cloudUploadTargets),
-    taskCompletionSound: getTaskCompletionSoundPublic(settings),
-  };
-  for (const f of CLASSIFIED_KEY_FIELDS) {
-    masked[f] = maskKey(settings[f]);
+  try {
+    const settings = loadSettings();
+    const masked = {
+      ...settings,
+      zhenzhenApiKey: maskKey(settings.zhenzhenApiKey),
+      zhenzhenSd2ApiKey: maskKey(settings.zhenzhenSd2ApiKey),
+      rhApiKey: maskKey(settings.rhApiKey),
+      rhIntlApiKey: maskKey(settings.rhIntlApiKey),
+      llmApiKey: maskKey(settings.llmApiKey),
+      advancedProviders: maskAdvancedProviders(settings.advancedProviders),
+      advancedProviderSummary: summarizeAdvancedProviders(settings.advancedProviders),
+      cloudUploadTargets: maskCloudUploadTargets(settings.cloudUploadTargets),
+      cloudUploadSummary: summarizeCloudUploadTargets(settings.cloudUploadTargets),
+      taskCompletionSound: getTaskCompletionSoundPublic(settings),
+    };
+    for (const f of CLASSIFIED_KEY_FIELDS) masked[f] = maskKey(settings[f]);
+    res.json({ success: true, data: masked });
+  } catch (error) {
+    const unavailable = error?.code === 'desktop_secure_storage_unavailable';
+    res.status(unavailable ? 503 : 500).json({
+      success: false,
+      code: error?.code || 'settings_load_failed',
+      error: unavailable ? 'Windows 安全存储当前不可用' : '设置读取失败',
+    });
   }
-  res.json({ success: true, data: masked });
 });
 
 // GET /api/settings/raw — desktop/local compatibility only. A Web deployment
 // must never expose persisted provider credentials through its public server.
 router.get('/raw', (_req, res) => {
-  if (config.WEB_DEPLOYMENT) {
+  if (config.WEB_DEPLOYMENT || config.DESKTOP_ATLAS_RUNTIME) {
     return res.status(404).json({ success: false, error: 'not_found' });
   }
   res.json({ success: true, data: loadSettings() });
@@ -402,43 +462,54 @@ router.delete('/task-completion-sound', (_req, res) => {
 
 // POST /api/settings — 更新设置
 router.post('/', (req, res) => {
-  const current = loadSettings();
-  const incoming = req.body || {};
-  const { taskCompletionSound: _ignoredTaskCompletionSound, ...safeIncoming } = incoming;
-  const hasAdvancedProviders = Object.prototype.hasOwnProperty.call(incoming, 'advancedProviders');
-  const hasCloudUploadTargets = Object.prototype.hasOwnProperty.call(incoming, 'cloudUploadTargets');
-  const merged = {
-    ...current,
-    ...safeIncoming,
-    // base URL 强制为配置值,不允许覆盖
-    zhenzhenBaseUrl: config.ATLAS_GENERATION_BASE_URL,
-    zhenzhenSd2BaseUrl: config.ATLAS_GENERATION_BASE_URL,
-    rhBaseUrl: '',
-    rhIntlBaseUrl: '',
-    llmBaseUrl: config.ATLAS_CHAT_BASE_URL,
-  };
-  merged.advancedProviders = hasAdvancedProviders
-    ? normalizeAdvancedProviders(incoming.advancedProviders, current.advancedProviders)
-    : normalizeAdvancedProviders(current.advancedProviders);
-  merged.cloudUploadTargets = hasCloudUploadTargets
-    ? normalizeCloudUploadTargets(incoming.cloudUploadTargets, current.cloudUploadTargets)
-    : normalizeCloudUploadTargets(current.cloudUploadTargets);
-  merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(current.taskCompletionSound);
-  saveSettings(merged);
+  try {
+    const current = loadSettings();
+    const incoming = req.body || {};
+    const { taskCompletionSound: _ignoredTaskCompletionSound, ...safeIncoming } = incoming;
+    const hasAdvancedProviders = Object.prototype.hasOwnProperty.call(incoming, 'advancedProviders');
+    const hasCloudUploadTargets = Object.prototype.hasOwnProperty.call(incoming, 'cloudUploadTargets');
+    const merged = {
+      ...current,
+      ...safeIncoming,
+      // base URL 强制为配置值,不允许覆盖
+      zhenzhenBaseUrl: config.ATLAS_GENERATION_BASE_URL,
+      zhenzhenSd2BaseUrl: config.ATLAS_GENERATION_BASE_URL,
+      rhBaseUrl: '',
+      rhIntlBaseUrl: '',
+      llmBaseUrl: config.ATLAS_CHAT_BASE_URL,
+    };
+    merged.advancedProviders = hasAdvancedProviders
+      ? normalizeAdvancedProviders(incoming.advancedProviders, current.advancedProviders)
+      : normalizeAdvancedProviders(current.advancedProviders);
+    merged.cloudUploadTargets = hasCloudUploadTargets
+      ? normalizeCloudUploadTargets(incoming.cloudUploadTargets, current.cloudUploadTargets)
+      : normalizeCloudUploadTargets(current.cloudUploadTargets);
+    merged.taskCompletionSound = normalizeTaskCompletionSoundSettings(current.taskCompletionSound);
+    saveSettings(merged);
   // v1.2.10.2/v1.3.1/v1.3.4: 保存后重新确保本地保存路径存在
-  for (const field of ['fileSavePath', 'canvasAutoSavePath', 'resourceLibraryPath', 'themeTemplatePath']) {
-    if (typeof incoming[field] !== 'string' || !incoming[field].trim()) continue;
-    try {
-      const p = incoming[field].trim();
-      if (!fs.existsSync(p)) {
-        fs.mkdirSync(p, { recursive: true });
-        console.log(`[settings] 创建${field}: ${p}`);
+    for (const field of ['fileSavePath', 'canvasAutoSavePath', 'resourceLibraryPath', 'themeTemplatePath']) {
+      if (typeof incoming[field] !== 'string' || !incoming[field].trim()) continue;
+      try {
+        const p = incoming[field].trim();
+        if (!fs.existsSync(p)) {
+          fs.mkdirSync(p, { recursive: true });
+          console.log(`[settings] 创建${field}: ${p}`);
+        }
+      } catch (e) {
+        console.warn(`[settings] mkdir ${field} 失败:`, e?.message || e);
       }
-    } catch (e) {
-      console.warn(`[settings] mkdir ${field} 失败:`, e?.message || e);
     }
+    res.json({ success: true });
+  } catch (error) {
+    const unavailable = error?.code === 'desktop_secure_storage_unavailable';
+    res.status(unavailable ? 503 : 500).json({
+      success: false,
+      code: error?.code || 'settings_save_failed',
+      error: unavailable
+        ? 'Windows 安全存储当前不可用，API Key 未保存'
+        : '设置保存失败',
+    });
   }
-  res.json({ success: true });
 });
 
 // =====================

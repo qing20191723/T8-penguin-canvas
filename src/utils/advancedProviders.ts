@@ -1,5 +1,5 @@
 import type { AdvancedProviderConfig, AdvancedProviderSummary, CanvasProviderSource } from '../types/canvas';
-import { ATLAS_ONLY_RUNTIME } from '../config/atlasOnlyRuntime';
+import { ATLAS_LIGHTWEIGHT_RUNTIME } from '../config/atlasOnlyRuntime';
 
 const MASKED_RE = /^\*{2,}/;
 
@@ -219,13 +219,13 @@ export interface AdvancedProviderSelection {
   available: boolean;
 }
 
-const IMAGE_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+const IMAGE_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
   ? ['openai-compatible', 'atlas']
   : ['openai-compatible', 'atlas', 'modelscope', 'volcengine', 'agnes', 'jimeng-cli', 'comfyui']);
-const VIDEO_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+const VIDEO_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
   ? ['openai-compatible', 'atlas']
   : ['openai-compatible', 'atlas', 'volcengine', 'agnes', 'jimeng-cli']);
-const LLM_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+const LLM_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
   ? ['openai-compatible', 'atlas']
   : ['openai-compatible', 'atlas', 'modelscope', 'volcengine']);
 

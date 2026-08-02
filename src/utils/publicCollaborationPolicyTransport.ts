@@ -1,6 +1,7 @@
 import {
-  ATLAS_ONLY_BLOCKED_API_PREFIXES,
+  RUNTIME_BLOCKED_API_PREFIXES,
   ATLAS_ONLY_RUNTIME,
+  DESKTOP_ATLAS_RUNTIME,
 } from '../config/atlasOnlyRuntime';
 
 const COLLABORATION_MANAGEMENT_HEADER = 'x-t8-collaboration-management-token';
@@ -74,8 +75,8 @@ export function shouldBypassPublicCollaborationExecutionPolicy(
 }
 
 export function atlasOnlyBlockedApiPath(context: AtlasOnlyRequestContext): string | null {
-  if (context.desktopHost) return null;
-  if (!ATLAS_ONLY_RUNTIME) {
+  if (context.desktopHost && !DESKTOP_ATLAS_RUNTIME) return null;
+  if (!ATLAS_ONLY_RUNTIME && !DESKTOP_ATLAS_RUNTIME) {
     try {
       const hostname = new URL(context.pageOrigin).hostname.toLowerCase();
       if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return null;
@@ -91,7 +92,7 @@ export function atlasOnlyBlockedApiPath(context: AtlasOnlyRequestContext): strin
   }
   if (requestUrl.origin !== context.pageOrigin) return null;
   const pathname = requestUrl.pathname.replace(/\/+$/, '') || '/';
-  return ATLAS_ONLY_BLOCKED_API_PREFIXES.find((prefix) => (
+  return RUNTIME_BLOCKED_API_PREFIXES.find((prefix) => (
     pathname === prefix || pathname.startsWith(`${prefix}/`)
   )) || null;
 }

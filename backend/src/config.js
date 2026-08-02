@@ -12,6 +12,7 @@ const crypto = require('node:crypto');
 //             数据/输入/输出/缩略图都位于该 userData 下,近可读写;
 //             前端静态产物位于 T8PC_FRONTEND_DIST(默认 resources/frontend)。
 const IS_PACKAGED = process.env.T8PC_PACKAGED === '1';
+const DESKTOP_ATLAS_RUNTIME = process.env.T8_DESKTOP_ATLAS_RUNTIME === '1';
 const mib = (value) => value * 1024 * 1024;
 
 function resolveDevelopmentProjectDatabaseStoragePolicy32() {
@@ -100,6 +101,10 @@ function ensureDevManagementAuthority() {
 }
 
 function resolveManagementAuthorityToken() {
+  if (DESKTOP_ATLAS_RUNTIME) {
+    delete process.env.T8_COLLAB_MANAGEMENT_TOKEN;
+    return '';
+  }
   const injectedRaw = process.env.T8_COLLAB_MANAGEMENT_TOKEN;
   if (injectedRaw != null) {
     delete process.env.T8_COLLAB_MANAGEMENT_TOKEN;
@@ -156,9 +161,9 @@ const DATA_ROOT = IS_PACKAGED
 const USER_HOME_DIR = os.homedir() || process.env.USERPROFILE || process.env.HOME || PROJECT_DIR;
 const LEGACY_WINDOWS_DEFAULT_ROOT = 'D:\\zhenzhen';
 const LEGACY_HOME_DEFAULT_ROOT = path.join(USER_HOME_DIR, 'zhenzhen');
-const DEFAULT_QINGCHEN_ROOT = process.platform === 'win32'
-  ? 'D:\\qingchen'
-  : path.join(USER_HOME_DIR, 'qingchen');
+const DEFAULT_QINGCHEN_ROOT = DESKTOP_ATLAS_RUNTIME
+  ? path.join(DATA_ROOT, 'library')
+  : (process.platform === 'win32' ? 'D:\\qingchen' : path.join(USER_HOME_DIR, 'qingchen'));
 const DEFAULT_RESOURCE_LIBRARY_DIR = path.join(DEFAULT_QINGCHEN_ROOT, 'resources');
 const DEFAULT_THEME_TEMPLATE_DIR = path.join(DEFAULT_QINGCHEN_ROOT, 'theme-templates');
 
@@ -174,6 +179,7 @@ const config = {
   HTTP_SHUTDOWN_TIMEOUT_MS: Math.max(100, Math.min(120_000, Number.parseInt(process.env.T8PC_HTTP_SHUTDOWN_TIMEOUT_MS || '5000', 10) || 5_000)),
   NODE_ENV: process.env.NODE_ENV || (IS_PACKAGED ? 'production' : 'development'),
   IS_PACKAGED,
+  DESKTOP_ATLAS_RUNTIME,
 
   // 数据 / 资源目录
   // 开发模式: 项目根下 data/input/output/thumbnails
@@ -240,6 +246,7 @@ const config = {
   // 数据文件
   CANVAS_FILE: path.join(DATA_ROOT, 'data', 'canvas_list.json'),
   SETTINGS_FILE: path.join(DATA_ROOT, 'data', 'settings.json'),
+  DESKTOP_SECRET_FILE: path.join(DATA_ROOT, 'data', 'desktop-provider-secrets.enc.json'),
   FEISHU_BITABLE_PRIVATE_FILE: path.join(DATA_ROOT, 'data', 'feishu_bitable.private.json'),
   ACHIEVEMENTS_FILE: path.join(DATA_ROOT, 'data', 'achievements.json'),
   RH_APPS_FILE: path.join(DATA_ROOT, 'data', 'rh_apps.json'),
@@ -294,7 +301,16 @@ const config = {
 
 // 提前创建打包后的数据目录(避免首次启动报错)
 if (IS_PACKAGED) {
-  for (const dir of [config.DATA_DIR, config.INPUT_DIR, config.OUTPUT_DIR, config.THUMBNAILS_DIR, config.ASSET_PREVIEWS_DIR, config.ASSET_BLOB_DIR, config.COLLAB_UPLOAD_TEMP_DIR]) {
+  const packagedDataDirs = [
+    config.DATA_DIR,
+    config.INPUT_DIR,
+    config.OUTPUT_DIR,
+    config.THUMBNAILS_DIR,
+    config.ASSET_PREVIEWS_DIR,
+    config.ASSET_BLOB_DIR,
+    ...(DESKTOP_ATLAS_RUNTIME ? [] : [config.COLLAB_UPLOAD_TEMP_DIR]),
+  ];
+  for (const dir of packagedDataDirs) {
     try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
   }
 }

@@ -131,7 +131,9 @@ function localExtensionsPlugin() {
 // T8-penguin-canvas Vite 配置
 // 端口策略:前端 11422 / 后端 18766(避开主项目 5176/18765 与常见 51xx 占用)
 export default defineConfig(({ command }) => {
-  const managementToken = command === 'serve' ? ensureManagementAuthority() : '';
+  const desktopAtlasRuntime = process.env.VITE_T8_DESKTOP_ATLAS_RUNTIME === '1'
+    || process.env.T8_DESKTOP_ATLAS_RUNTIME === '1';
+  const managementToken = command === 'serve' && !desktopAtlasRuntime ? ensureManagementAuthority() : '';
   const backendTarget = command === 'serve' ? developmentBackendTarget() : 'http://127.0.0.1:18766';
   const atlasOnlyRuntime = process.env.VITE_T8_ATLAS_ONLY_RUNTIME === '1'
     || (command === 'build' && String(process.env.RENDER || '').toLowerCase() === 'true');
@@ -208,6 +210,7 @@ export default defineConfig(({ command }) => {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
     __APP_NAME__: JSON.stringify('T8-penguin-canvas'),
     __T8_ATLAS_ONLY_RUNTIME__: JSON.stringify(atlasOnlyRuntime),
+    __T8_DESKTOP_ATLAS_RUNTIME__: JSON.stringify(desktopAtlasRuntime),
   },
   };
 });

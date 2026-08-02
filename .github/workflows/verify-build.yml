@@ -33,6 +33,11 @@ jobs:
       - name: Verify Atlas adapters and official schema boundary
         run: node --test backend/src/providers/adapters.test.js backend/src/providers/atlas.test.js backend/src/providers/atlasSchema.test.js backend/src/providers/registry.test.js backend/src/services/providerSubmissionContext.test.js backend/src/services/atlasLightRuntime.test.js
 
+      - name: Verify desktop Atlas runtime and secure storage
+        run: |
+          node --test backend/src/services/desktopAtlasRuntime.test.js tests/desktopSecretStore.test.cjs
+          node --test tests/desktopAtlasStartup.test.cjs
+
       - name: Verify Web credential boundary
         run: npm run test:electron:ts -- tests/advancedProviderSettingsRoute.test.ts
 
@@ -73,4 +78,31 @@ jobs:
             }
           }
           console.log(`Scanned ${files.length} frontend bundle files.`);
+          NODE
+
+      - name: Build desktop Atlas frontend profile
+        env:
+          ATLASCLOUD_API_KEY: ci-desktop-atlas-secret-must-not-enter-frontend-bundle
+        run: npm run build:desktop-atlas
+
+      - name: Scan desktop frontend bundle for credentials
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const forbidden = [
+            'ci-desktop-atlas-secret-must-not-enter-frontend-bundle',
+            '/api/settings/raw',
+            '/settings/raw',
+          ];
+          const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+            const target = path.join(dir, entry.name);
+            return entry.isDirectory() ? walk(target) : [target];
+          });
+          for (const file of walk('dist')) {
+            const body = fs.readFileSync(file);
+            for (const value of forbidden) {
+              if (body.includes(Buffer.from(value))) throw new Error(`${value} found in ${file}`);
+            }
+          }
           NODE

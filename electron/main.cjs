@@ -1829,13 +1829,16 @@ async function startBackend() {
   backendPort = await findFreePort(developmentBackendPortPreference());
   backendInstanceId = crypto.randomBytes(32).toString('base64url');
   dbgLog(`[backend] picked port=${backendPort}`);
-  collaborationManagementToken = ensureCollaborationManagementAuthority();
+  // The distributable application is the single-user Atlas desktop profile.
+  // Collaboration authority is intentionally not created or injected here.
+  collaborationManagementToken = '';
 
   // 把环境变量传给后端
   process.env.PORT = String(backendPort);
   process.env.HOST = '127.0.0.1';
   process.env.T8PC_USER_DATA = getUserDataDir();
   process.env.T8PC_PACKAGED = isPackaged() ? '1' : '0';
+  process.env.T8_DESKTOP_ATLAS_RUNTIME = '1';
   process.env.T8PC_APP_VERSION = APP_VERSION;
   process.env.T8PC_BACKEND_INSTANCE_ID = backendInstanceId;
   process.env.T8PC_RES = isPackaged() ? process.resourcesPath : path.resolve(__dirname, '..');
@@ -1858,7 +1861,7 @@ async function startBackend() {
       entry = path.resolve(__dirname, '..', 'backend', 'src', 'server.js');
       dbgLog(`[backend] loading dev entry: ${entry}`);
     }
-    process.env.T8_COLLAB_MANAGEMENT_TOKEN = collaborationManagementToken;
+    if (collaborationManagementToken) process.env.T8_COLLAB_MANAGEMENT_TOKEN = collaborationManagementToken;
     try {
       backendModule = require(entry);
     } finally {

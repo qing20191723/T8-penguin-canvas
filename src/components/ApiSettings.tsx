@@ -3,6 +3,7 @@ import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2, Save, Server, X } from '
 import { useApiKeysStore, ATLAS_CHAT_BASE_URL, ATLAS_GENERATION_BASE_URL } from '../stores/apiKeys';
 import type { AdvancedProviderConfig, ApiSettings } from '../types/canvas';
 import { parseAdvancedProviderModelText, stringifyAdvancedProviderModels } from '../utils/advancedProviders';
+import { DESKTOP_ATLAS_RUNTIME } from '../config/atlasOnlyRuntime';
 
 interface ApiSettingsModalProps {
   open: boolean;
@@ -159,7 +160,11 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
               <Server className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-300" size={20} />
               <div className="min-w-0 flex-1">
                 <h3 className="font-black text-zinc-900 dark:text-white">Atlas Cloud</h3>
-                <p className="mt-1 text-xs leading-5 text-zinc-600 dark:text-zinc-300">Render 环境变量 <code className="font-mono">ATLASCLOUD_API_KEY</code> 优先。输入框留空不会清除服务端环境变量。</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-600 dark:text-zinc-300">
+                  {DESKTOP_ATLAS_RUNTIME
+                    ? '密钥使用当前 Windows 用户的安全存储加密，仅在本机后端内存中解密；留空会保留已保存密钥。'
+                    : <>Render 环境变量 <code className="font-mono">ATLASCLOUD_API_KEY</code> 优先。输入框留空不会清除服务端环境变量。</>}
+                </p>
                 <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                   <div className="rounded-xl border border-teal-200 bg-white/80 px-3 py-2 dark:border-teal-800 dark:bg-zinc-950/50">生成：<span className="break-all font-mono">{ATLAS_GENERATION_BASE_URL}</span></div>
                   <div className="rounded-xl border border-teal-200 bg-white/80 px-3 py-2 dark:border-teal-800 dark:bg-zinc-950/50">LLM：<span className="break-all font-mono">{ATLAS_CHAT_BASE_URL}</span></div>
@@ -167,7 +172,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
                 <label className="mt-4 block">
                   <span className="mb-1.5 block text-xs font-semibold">Atlas API Key（可选，本地覆盖）</span>
                   <div className="flex gap-2">
-                    <input type={showAtlasKey ? 'text' : 'password'} value={atlasKey} onChange={(event) => setAtlasKey(event.target.value)} placeholder={atlas.hasApiKey || atlas.apiKey ? '已保存；留空保持不变' : 'Render 已配置时可留空'} className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-teal-500 dark:border-zinc-700 dark:bg-zinc-950" />
+                    <input type={showAtlasKey ? 'text' : 'password'} value={atlasKey} onChange={(event) => setAtlasKey(event.target.value)} placeholder={atlas.hasApiKey || atlas.apiKey ? '已安全保存；留空保持不变' : (DESKTOP_ATLAS_RUNTIME ? '输入你的 Atlas API Key' : 'Render 已配置时可留空')} className="min-w-0 flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-teal-500 dark:border-zinc-700 dark:bg-zinc-950" />
                     <button type="button" onClick={() => setShowAtlasKey((value) => !value)} className="rounded-xl border border-zinc-300 px-3 dark:border-zinc-700" aria-label="显示或隐藏 Atlas Key">{showAtlasKey ? <EyeOff size={18} /> : <Eye size={18} />}</button>
                   </div>
                 </label>
