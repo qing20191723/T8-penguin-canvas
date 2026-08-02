@@ -16,6 +16,8 @@ const DEFAULT_JSON_MAX_DEPTH = 64;
 const DEFAULT_JSON_MAX_NODES = 50_000;
 const DEFAULT_UPLOAD_RESPONSE_MAX_BYTES = 64 * 1024;
 const REQUEST_WRITE_CHUNK_BYTES = 64 * 1024;
+const DISK_CHECK_INTERVAL_BYTES = 8 * 1024 * 1024;
+const DEFAULT_DISK_RESERVE_BYTES = 64 * 1024 * 1024;
 const SUPPORTED_PROTOCOLS = new Set(['http:', 'https:']);
 const TUN_FAKE_IPV4_NETWORK = 0xc6120000;
 const TUN_FAKE_IPV4_PREFIX_LENGTH = 15;
@@ -1170,6 +1172,21 @@ async function writeWholeChunk(handle, chunk) {
   }
 }
 
+function assertDownloadDiskSpace(targetPath, requiredBytes = 0, reserveBytes = DEFAULT_DISK_RESERVE_BYTES) {
+  if (typeof fs.statfsSync !== 'function') return;
+  let stat;
+  try { stat = fs.statfsSync(path.dirname(targetPath)); }
+  catch (_) { return; }
+  const available = Number(stat.bavail) * Number(stat.bsize);
+  const required = Math.max(0, Number(requiredBytes) || 0) + Math.max(0, Number(reserveBytes) || 0);
+  if (Number.isFinite(available) && available < required) {
+    throw remoteMediaError('ENOSPC', '磁盘剩余空间不足，无法安全完成远程媒体下载。', {
+      availableBytes: available,
+      requiredBytes: required,
+    });
+  }
+}
+
 /**
  * Stream a DNS-pinned remote HTTP(S) response into a new caller-controlled file.
  *
@@ -1192,7 +1209,21 @@ async function safeRemoteMediaDownload(inputUrl, targetPath, options = {}) {
   try {
     const opened = await openSafeRemoteResponse(inputUrl, normalizedOptions, state);
     response = opened.response;
-    const byteSize = await consumeResponse(response, state, (chunk) => writeWholeChunk(target.handle, chunk));
+    let knownContentLength;
+    try { knownContentLength = assertContentLength(response, state.maxBytes); }
+    catch (error) { response.destroy(error); throw error; }
+    const reserveBytes = nonNegativeInteger(options.diskReserveBytes, DEFAULT_DISK_RESERVE_BYTES);
+    assertDownloadDiskSpace(target.absolutePath, knownContentLength || 0, reserveBytes);
+    let writtenBytes = 0;
+    let nextDiskCheck = DISK_CHECK_INTERVAL_BYTES;
+    const byteSize = await consumeResponse(response, state, async (chunk) => {
+      await writeWholeChunk(target.handle, chunk);
+      writtenBytes += chunk.length;
+      if (writtenBytes >= nextDiskCheck) {
+        assertDownloadDiskSpace(target.absolutePath, 0, reserveBytes);
+        nextDiskCheck = writtenBytes + DISK_CHECK_INTERVAL_BYTES;
+      }
+    }, knownContentLength);
     await target.handle.sync();
     await target.handle.close();
     closed = true;

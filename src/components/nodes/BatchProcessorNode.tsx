@@ -18,6 +18,7 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import { PORT_COLOR } from '../../config/portTypes';
+import { idempotentUploadFetch } from '../../services/idempotentUpload';
 import {
   copyFileToOutput,
   openOutputFolder,
@@ -151,7 +152,7 @@ async function uploadBatchFile(file: File, index: number): Promise<BatchProcesso
   if (!kind) return null;
   const fd = new FormData();
   fd.append('file', file);
-  const response = await fetch('/api/files/upload', { method: 'POST', body: fd });
+  const response = await idempotentUploadFetch('/api/files/upload', fd, file);
   const json = await response.json().catch(() => null);
   if (!response.ok || !json?.success || !json.data?.url) {
     throw new Error(json?.error || `上传失败 HTTP ${response.status}`);

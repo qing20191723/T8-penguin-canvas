@@ -556,7 +556,7 @@ router.get('/image-providers', (_req, res) => {
   res.json({ success: true, data: { providers } });
 });
 
-router.post('/upload-base64', express.json({ limit: '120mb' }), (req, res) => {
+router.post('/upload-base64', express.json({ limit: '20mb' }), (req, res) => {
   try {
     const body = req.body || {};
     const raw = body.dataUrl || body.data || body.b64 || body.b64_json;

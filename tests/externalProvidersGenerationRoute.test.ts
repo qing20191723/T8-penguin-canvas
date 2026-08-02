@@ -8,6 +8,8 @@ import multer from 'multer';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const VALID_PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+const VALID_MP4 = Buffer.concat([Buffer.alloc(4), Buffer.from('ftypisom'), Buffer.alloc(24)]);
 
 async function listen(app: any) {
   return new Promise<any>((resolve) => {
@@ -32,7 +34,7 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
   });
   upstreamApp.post('/v1/images/generations', (req, res) => {
     upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
-    res.json({ data: [{ b64_json: Buffer.from('PNGDATA').toString('base64'), mime_type: 'image/png' }] });
+    res.json({ data: [{ b64_json: VALID_PNG.toString('base64'), mime_type: 'image/png' }] });
   });
   upstreamApp.post('/v1/images/edits', upload.any(), (req, res) => {
     upstreamCalls.push({
@@ -42,11 +44,11 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
       auth: req.header('authorization'),
       contentType: req.header('content-type'),
     });
-    res.json({ data: [{ b64_json: Buffer.from('EDITPNG').toString('base64'), mime_type: 'image/png' }] });
+    res.json({ data: [{ b64_json: VALID_PNG.toString('base64'), mime_type: 'image/png' }] });
   });
   upstreamApp.post('/v1/videos/generations', (req, res) => {
     upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
-    res.json({ data: { video_url: 'data:video/mp4;base64,TVA0REFUQQ==', task_id: 'video-route-1' } });
+    res.json({ data: { video_url: `data:video/mp4;base64,${VALID_MP4.toString('base64')}`, task_id: 'video-route-1' } });
   });
   const upstreamServer = await listen(upstreamApp);
   t.after(() => upstreamServer.close());
@@ -105,7 +107,7 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
     body: JSON.stringify({ providerId: 'openai-compatible', prompt: 'hello route' }),
   }).then((res) => res.json());
 
-  assert.equal(llm.success, true);
+  assert.equal(llm.success, true, JSON.stringify(llm));
   assert.equal(llm.data.text, 'external hello');
   assert.equal(llm.data.requestId, 'req-route-chat');
   assert.equal(llm.data.upstreamHttpStatus, 200);
@@ -135,7 +137,7 @@ test('external provider generation routes run enabled OpenAI compatible LLM and 
     }),
   }).then((res) => res.json());
 
-  assert.equal(imageEdit.success, true);
+  assert.equal(imageEdit.success, true, JSON.stringify(imageEdit));
   assert.equal(imageEdit.data.imageUrls.length, 1);
   assert.match(imageEdit.data.imageUrls[0], /^\/files\/output\/external_/);
   assert.equal(fs.existsSync(path.join(config.OUTPUT_DIR, path.basename(imageEdit.data.imageUrls[0]))), true);
@@ -180,7 +182,7 @@ test('external Agnes image route sends image edit aliases through generations JS
   const upstreamCalls: any[] = [];
   upstreamApp.post('/v1/images/generations', (req, res) => {
     upstreamCalls.push({ path: req.path, body: req.body, auth: req.header('authorization') });
-    res.json({ data: [{ b64_json: Buffer.from('AGNES_EDIT').toString('base64'), mime_type: 'image/png' }] });
+    res.json({ data: [{ b64_json: VALID_PNG.toString('base64'), mime_type: 'image/png' }] });
   });
   const upstreamServer = await listen(upstreamApp);
   t.after(() => upstreamServer.close());
@@ -284,9 +286,11 @@ test('ComfyUI external image route persists mixed image video and audio outputs'
   }));
   upstreamApp.get('/view', (req, res) => {
     const filename = String(req.query.filename || '');
-    if (filename.endsWith('.mp4')) return res.type('video/mp4').send(Buffer.from('MP4DATA'));
-    if (filename.endsWith('.wav')) return res.type('audio/wav').send(Buffer.from('WAVDATA'));
-    return res.type('image/png').send(Buffer.from('PNGDATA'));
+    if (filename.endsWith('.mp4')) return res.type('video/mp4').send(Buffer.concat([
+      Buffer.alloc(4), Buffer.from('ftypisom'), Buffer.alloc(24),
+    ]));
+    if (filename.endsWith('.wav')) return res.type('audio/wav').send(Buffer.from('RIFF0000WAVEfmt '));
+    return res.type('image/png').send(Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'));
   });
   const upstreamServer = await listen(upstreamApp);
   t.after(() => upstreamServer.close());
@@ -347,7 +351,7 @@ test('ComfyUI external image route persists mixed image video and audio outputs'
     body: JSON.stringify({ providerId: 'comfyui-mixed', providerModel: 'mixed-workflow' }),
   }).then((res) => res.json());
 
-  assert.equal(result.success, true);
+  assert.equal(result.success, true, JSON.stringify(result));
   assert.deepEqual(result.data.outputKinds, ['image', 'video', 'audio', 'text']);
   assert.equal(result.data.primaryKind, 'image');
   assert.equal(result.data.text, 'mixed caption');

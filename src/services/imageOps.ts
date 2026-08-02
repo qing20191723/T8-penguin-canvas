@@ -2,6 +2,7 @@
  * 图像变换 service - /api/image/*
  */
 import type { GridComposeRequest } from '../utils/gridEditor';
+import { idempotentUploadFetch } from './idempotentUpload';
 
 async function postOp<T = any>(path: string, body: any): Promise<T> {
   const r = await fetch(`/api/image/${path}`, {
@@ -194,7 +195,7 @@ export async function uploadFileBlob(file: File | Blob, filename?: string): Prom
   const fd = new FormData();
   const fname = filename || (file instanceof File ? file.name : `compose-${Date.now()}.png`);
   fd.append('file', file, fname);
-  const r = await fetch('/api/files/upload', { method: 'POST', body: fd });
+  const r = await idempotentUploadFetch('/api/files/upload', fd, file);
   const json = await r.json();
   if (!r.ok || !json.success) throw new Error(json?.error || `HTTP ${r.status}`);
   return json.data.url as string;
