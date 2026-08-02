@@ -28,6 +28,15 @@ test('public provider registry keeps only Atlas Cloud plus one optional custom A
   assert.deepEqual(atlas.videoModels, DEFAULT_ADVANCED_PROVIDERS[0].videoModels);
   assert.deepEqual(atlas.chatModels, DEFAULT_ADVANCED_PROVIDERS[0].chatModels);
   assert.ok(!atlas.imageModels.includes('foreign/model'));
+  for (const model of [
+    'bytedance/seedream-v5.0-pro/text-to-image',
+    'google/nano-banana-pro/edit',
+    'openai/gpt-image-2/text-to-image',
+  ]) assert.ok(atlas.imageModels.includes(model), `missing Atlas image model ${model}`);
+  for (const model of [
+    'atlascloud/wan-2.7-spicy/image-to-video',
+    'bytedance/seedance-2.0/reference-to-video',
+  ]) assert.ok(atlas.videoModels.includes(model), `missing Atlas video model ${model}`);
 
   const custom = providers[1];
   assert.equal(custom.id, 'custom-api');

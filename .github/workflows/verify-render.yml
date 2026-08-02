@@ -91,11 +91,18 @@ jobs:
           }
           for(const id of [
             'bytedance/seedream-v5.0-pro/edit',
+            'google/nano-banana-pro/text-to-image',
+            'google/nano-banana-pro/edit',
+            'openai/gpt-image-2/text-to-image',
+            'openai/gpt-image-2/edit',
           ]) if(!atlas.imageModels?.includes(id)) throw new Error(`missing image model ${id}`);
           for(const id of [
             'atlascloud/wan-2.7-spicy/image-to-video',
             'alibaba/wan-2.7/reference-to-video',
             'alibaba/wan-2.7/video-edit',
+            'bytedance/seedance-2.0/text-to-video',
+            'bytedance/seedance-2.0/image-to-video',
+            'bytedance/seedance-2.0/reference-to-video',
           ]) if(!atlas.videoModels?.includes(id)) throw new Error(`missing video model ${id}`);
 
           const catalog=require('/tmp/models.json');

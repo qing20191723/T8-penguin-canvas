@@ -79,6 +79,10 @@ const DEFAULT_AGNES_CHAT_MODELS = [
 const DEFAULT_ATLAS_IMAGE_MODELS = [
   'bytedance/seedream-v5.0-pro/text-to-image',
   'bytedance/seedream-v5.0-pro/edit',
+  'google/nano-banana-pro/text-to-image',
+  'google/nano-banana-pro/edit',
+  'openai/gpt-image-2/text-to-image',
+  'openai/gpt-image-2/edit',
 ];
 
 const DEFAULT_ATLAS_VIDEO_MODELS = [
@@ -88,6 +92,9 @@ const DEFAULT_ATLAS_VIDEO_MODELS = [
   'kwaivgi/kling-v3.0-std/image-to-video',
   'alibaba/wan-2.7/reference-to-video',
   'alibaba/wan-2.7/video-edit',
+  'bytedance/seedance-2.0/text-to-video',
+  'bytedance/seedance-2.0/image-to-video',
+  'bytedance/seedance-2.0/reference-to-video',
 ];
 
 const DEFAULT_ATLAS_CHAT_MODELS = ['moonshotai/kimi-k3'];
