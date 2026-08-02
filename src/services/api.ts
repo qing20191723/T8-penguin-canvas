@@ -113,6 +113,29 @@ export class ApiRequestError extends Error {
   }
 }
 
+export interface AtlasCapabilityItem {
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
+  enum?: unknown[];
+  fields?: AtlasCapabilityField[];
+}
+
+export interface AtlasCapabilityField extends AtlasCapabilityItem {
+  name: string;
+  required: boolean;
+  default?: unknown;
+  min?: number;
+  max?: number;
+  items?: AtlasCapabilityItem;
+}
+
+export interface AtlasModelCapability {
+  schema: 't8-atlas-model-capability-v1';
+  model: string;
+  kind: 'image' | 'video' | 'audio' | 'text' | 'other';
+  schemaDigest: string;
+  fields: AtlasCapabilityField[];
+}
+
 export interface ProjectRunIntentClaimInput {
   intentId: string;
   expectedQueueRevision: number;
@@ -173,6 +196,13 @@ export async function checkBackendStatus(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export function getAtlasModelCapability(model: string, options: { signal?: AbortSignal } = {}) {
+  return request<AtlasModelCapability>(
+    `${BASE}/proxy/atlas/schema?model=${encodeURIComponent(model)}`,
+    { signal: options.signal },
+  );
 }
 
 // ========== 画布列表 ==========

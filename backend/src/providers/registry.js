@@ -82,10 +82,10 @@ const DEFAULT_ATLAS_IMAGE_MODELS = [
 ];
 
 const DEFAULT_ATLAS_VIDEO_MODELS = [
+  'atlascloud/wan-2.7-spicy/reference-to-video',
+  'atlascloud/wan-2.7-spicy/image-to-video',
   'kwaivgi/kling-v3.0-std/text-to-video',
   'kwaivgi/kling-v3.0-std/image-to-video',
-  'atlascloud/wan-2.7-spicy/image-to-video',
-  'atlascloud/wan-2.7-spicy/reference-to-video',
   'alibaba/wan-2.7/reference-to-video',
   'alibaba/wan-2.7/video-edit',
 ];

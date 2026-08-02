@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": ["model"],
+  "properties": {
+    "model": { "type": "string", "default": "kwaivgi/kling-v3.0-4k/text-to-video" },
+    "prompt": { "type": "string", "maxLength": 2500 },
+    "duration": { "type": "integer", "default": 5, "enum": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] },
+    "aspect_ratio": { "type": "string", "default": "16:9", "enum": ["16:9", "9:16", "1:1"] },
+    "cfg_scale": { "type": "number", "default": 0.5, "minimum": 0, "maximum": 1 },
+    "sound": { "type": "boolean", "default": true },
+    "multi_prompt": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["prompt", "duration"],
+        "properties": {
+          "prompt": { "type": "string", "maxLength": 512 },
+          "duration": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

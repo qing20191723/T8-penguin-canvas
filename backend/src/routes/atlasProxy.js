@@ -3,6 +3,7 @@
  *
  * Public routes:
  *   GET  /api/proxy/atlas/models
+ *   GET  /api/proxy/atlas/schema?model=...
  *   POST /api/proxy/atlas/image
  *   POST /api/proxy/atlas/video
  *   GET  /api/proxy/atlas/poll/:predictionId
@@ -15,6 +16,7 @@ const express = require('express');
 const fs = require('fs');
 const config = require('../config');
 const { normalizeAdvancedProviders } = require('../providers/registry');
+const { getAtlasModelCapability } = require('../providers/atlasSchema');
 
 const router = express.Router();
 
@@ -287,6 +289,28 @@ router.get('/models', async (_req, res) => {
     });
   } catch (error) {
     return sendAtlasError(res, error, '获取 Atlas 模型列表失败');
+  }
+});
+
+router.get('/schema', async (req, res) => {
+  const model = String(req.query.model || '').trim();
+  if (!model || model.length > 300 || /[\x00-\x1f\x7f]/.test(model)) {
+    return res.status(400).json({
+      success: false,
+      code: 'atlas_model_invalid',
+      error: 'Atlas model 参数无效',
+    });
+  }
+  try {
+    return res.json(await getAtlasModelCapability(model));
+  } catch (error) {
+    const message = String(error?.message || 'Atlas 官方模型 Schema 不可用');
+    const statusCode = /不存在模型|没有提供/.test(message) ? 404 : 502;
+    return res.status(statusCode).json({
+      success: false,
+      code: statusCode === 404 ? 'atlas_schema_unavailable' : 'atlas_schema_fetch_failed',
+      error: message,
+    });
   }
 });
 

@@ -55,6 +55,7 @@ import {
   type SeedanceBuiltinSource,
 } from '../../config/seedance';
 import JimengCliHelpButton from './JimengCliHelpButton';
+import AtlasCapabilityFields from './AtlasCapabilityFields';
 
 /**
  * SeedanceNode — 字节 Seedance 2.0 视频分镜节点
@@ -722,7 +723,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
           <Film size={13} />
         </div>
         <div className="flex-1">
-          <div className="text-sm font-semibold text-white">SD2.0</div>
+          <div className="text-sm font-semibold text-white">视频</div>
           <div className="text-[10px] text-white/40">
             {isExternalSelected && providerSelection.provider
               ? `${providerSelection.provider.label || providerSelection.provider.id} · ${externalProviderModel || '未选模型'}`
@@ -779,6 +780,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                         providerSource: provider.protocol,
                         providerId: provider.id,
                         providerModel: nextModels[0] || '',
+                        ...(provider.protocol === 'atlas' ? { providerParams: {} } : {}),
                         ...(provider.protocol === 'jimeng-cli' ? { resolution: '720p' } : {}),
                       });
                     }}
@@ -810,6 +812,7 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                         const nextModel = e.target.value;
                         update({
                           providerModel: nextModel,
+                          ...(providerSelection.provider?.protocol === 'atlas' ? { providerParams: {} } : {}),
                           ...(providerSelection.provider?.protocol === 'jimeng-cli'
                             && nextModel !== 'seedance2.0_vip'
                             ? { resolution: '720p' }
@@ -824,6 +827,14 @@ const SeedanceNode = ({ id, data, selected }: NodeProps) => {
                       ))}
                     </select>
                   </div>
+                )}
+                {isExternalSelected && providerSelection.provider?.protocol === 'atlas' && (
+                  <AtlasCapabilityFields
+                    model={externalProviderModel}
+                    kind="video"
+                    params={providerParams}
+                    onChange={(patch) => update({ providerParams: { ...providerParams, ...patch } })}
+                  />
                 )}
                 {savedExternalMissing && (
                   <div className="text-[10px] text-amber-200 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">

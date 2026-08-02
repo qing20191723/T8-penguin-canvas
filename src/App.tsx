@@ -755,7 +755,16 @@ function App() {
   );
 
   const buildSidebarNodeOptions = useCallback((type: NodeType): Parameters<AddNodeFn>[1] | undefined => {
-    if (!atlasProvider || !['image', 'video', 'llm'].includes(type)) return undefined;
+    if (!atlasProvider || !['image', 'video', 'seedance', 'llm'].includes(type)) return undefined;
+    if (type === 'seedance') {
+      return {
+        data: {
+          providerSource: 'atlas',
+          providerId: 'atlas',
+          providerModel: 'atlascloud/wan-2.7-spicy/reference-to-video',
+        },
+      };
+    }
     const models = type === 'image'
       ? atlasProvider.imageModels
       : type === 'video'

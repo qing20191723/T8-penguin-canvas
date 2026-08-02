@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["model", "reference_images", "prompt"],
+  "properties": {
+    "model": { "type": "string", "default": "atlascloud/wan-2.7-spicy/reference-to-video", "enum": ["atlascloud/wan-2.7-spicy/reference-to-video"] },
+    "reference_images": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "type": "string" } },
+    "prompt": { "type": "string", "minLength": 1, "maxLength": 5000 },
+    "duration": { "type": "integer", "default": 5, "minimum": 2, "maximum": 15 },
+    "resolution": { "type": "string", "default": "720P", "enum": ["720P", "1080P", "1080P-SR", "1440P-SR"] },
+    "aspect_ratio": { "type": "string", "default": "auto", "enum": ["auto", "16:9", "9:16", "4:3", "3:4", "1:1"] }
+  }
+}
