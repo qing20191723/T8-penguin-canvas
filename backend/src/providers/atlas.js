@@ -575,11 +575,18 @@ function appendPromptBindings(prompt, bindings) {
 }
 
 function atlasImageMentionPrompt(prompt, imageCount) {
-  const base = String(prompt || '').trim();
+  let base = String(prompt || '').trim();
   const missing = [];
   for (let index = 1; index <= imageCount; index += 1) {
     const token = `@image${index}`;
-    if (!base.includes(token)) missing.push(token);
+    const attached = new RegExp(`[\\p{L}\\p{N}_-]+${token}\\b`, 'iu');
+    if (attached.test(base)) continue;
+    const bare = new RegExp(`(^|[\\s([{,;:])${token}\\b`, 'giu');
+    if (bare.test(base)) {
+      base = base.replace(bare, `$1subject${index}${token}`);
+      continue;
+    }
+    missing.push(`subject${index}${token}`);
   }
   if (!missing.length) return base;
   return [base, `Use ${missing.join(', ')} as ordered reference subjects and keep them visually consistent.`]

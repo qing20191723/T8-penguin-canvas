@@ -213,7 +213,7 @@ test('Atlas LLM uses the official OpenAI-compatible v1 chat endpoint', async () 
   assert.equal(result.text, 'pong');
 });
 
-test('Spicy reference-to-video binds every image with official @imageN syntax', async () => {
+test('Spicy reference-to-video binds every image with official attached subject@imageN syntax', async () => {
   const result = await atlas.generateVideo(provider, {
     model: 'atlascloud/wan-2.7-spicy/reference-to-video',
     prompt: 'The subjects walk forward together.',
@@ -227,11 +227,25 @@ test('Spicy reference-to-video binds every image with official @imageN syntax', 
       assert.equal(body.model, 'atlascloud/wan-2.7-spicy/reference-to-video');
       assert.equal(body.reference_images.length, 3);
       for (let index = 1; index <= 3; index += 1) {
-        assert.match(body.prompt, new RegExp(`@image${index}`));
+        assert.match(body.prompt, new RegExp(`subject${index}@image${index}`));
       }
       assert.equal(body.aspect_ratio, 'auto');
       assert.ok(!('images' in body));
       assert.ok(!('prompt_extend' in body));
+    }, 'https://example.com/spicy-reference.mp4'),
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Spicy reference-to-video repairs a bare @imageN mention before submission', async () => {
+  const result = await atlas.generateVideo(provider, {
+    model: 'atlascloud/wan-2.7-spicy/reference-to-video',
+    prompt: '@image1 remains centered during a slow push in.',
+    images: ['https://example.com/subject-1.png'],
+  }, {
+    fetchImpl: generationFetch((_url, body) => {
+      assert.match(body.prompt, /subject1@image1 remains centered/);
+      assert.doesNotMatch(body.prompt, /(^|\s)@image1\b/);
     }, 'https://example.com/spicy-reference.mp4'),
   });
   assert.equal(result.ok, true);
