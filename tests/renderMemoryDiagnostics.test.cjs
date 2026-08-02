@@ -56,6 +56,7 @@ async function startBootstrap(root, token = '') {
     T8_COLLAB_MANAGEMENT_TOKEN: 'collaboration-management-token-abcdefghijklmnopqrstuvwxyz',
     T8PC_BACKEND_INSTANCE_ID: 'backend-instance-token-abcdefghijklmnopqrstuvwxyz123456',
     T8_FIGMA_BRIDGE_AUTOSTART: '0',
+    T8_ATLAS_ONLY_RUNTIME: '0',
   };
   if (token) env.T8_MEMORY_DEBUG_TOKEN = token;
   else delete env.T8_MEMORY_DEBUG_TOKEN;
@@ -77,6 +78,9 @@ test('Render memory diagnostics are undiscoverable by default and protected when
   t.after(() => stop(disabled.child));
   const disabledResponse = await fetch(`http://127.0.0.1:${disabled.port}/api/debug/memory`);
   assert.equal(disabledResponse.status, 404);
+  const publicStatus = await fetch(`http://127.0.0.1:${disabled.port}/api/status`).then((response) => response.json());
+  assert.equal(publicStatus.runtime, 'atlas-only');
+  assert.deepEqual(publicStatus.storage, { persistence: 'unknown' });
   await stop(disabled.child);
 
   const token = 'memory-debug-token-abcdefghijklmnopqrstuvwxyz';

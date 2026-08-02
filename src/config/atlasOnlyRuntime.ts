@@ -5,11 +5,14 @@ import type { NodeType } from '../types/canvas';
  * readable for old documents, but they are not selectable or allowed to start
  * background traffic in the public web runtime.
  */
-export const ATLAS_ONLY_RUNTIME = String(import.meta.env?.VITE_T8_ATLAS_ONLY_RUNTIME || '') === '1';
+export const ATLAS_ONLY_RUNTIME = typeof __T8_ATLAS_ONLY_RUNTIME__ === 'boolean'
+  ? __T8_ATLAS_ONLY_RUNTIME__
+  : String(import.meta.env?.VITE_T8_ATLAS_ONLY_RUNTIME || '') === '1';
 
 export const ATLAS_RUNTIME_CREDENTIAL_MARKER = '****server';
 
 export const ATLAS_ONLY_HIDDEN_NODE_TYPES: ReadonlySet<NodeType> = new Set<NodeType>([
+  'video',
   'runninghub',
   'runninghub-wallet',
   'rh-config',
