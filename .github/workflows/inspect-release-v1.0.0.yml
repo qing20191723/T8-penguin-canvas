@@ -1,0 +1,42 @@
+name: Inspect v1.0.0 release
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read formal release workflow status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: 342026c10df929d94b98a2aec9fe0aa18d971674
+        run: |
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=20" > release-runs.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('release-runs.json', 'utf8'));
+          const expected = process.env.RELEASE_SHA;
+          const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
+          const matching = runs.filter((run) => run.head_sha === expected);
+          console.log(JSON.stringify({
+            expected,
+            total: runs.length,
+            matching: matching.map((run) => ({
+              id: run.id,
+              status: run.status,
+              conclusion: run.conclusion,
+              event: run.event,
+              head_sha: run.head_sha,
+              created_at: run.created_at,
+              updated_at: run.updated_at,
+              html_url: run.html_url,
+            })),
+          }, null, 2));
+          if (!matching.length) process.exitCode = 2;
+          NODE
