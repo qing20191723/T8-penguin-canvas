@@ -36,8 +36,12 @@ const Canvas = lazy(() => import('./components/Canvas'));
 const ApiSettingsModal = lazy(() => import('./components/ApiSettings'));
 const ResourceLibraryDrawer = lazy(() => import('./components/ResourceLibraryDrawer'));
 const ThemeTemplateManager = lazy(() => import('./components/ThemeTemplateManager'));
-const AgentControlPairingModal = lazy(() => import('./components/AgentControlPairingModal'));
-const AgentControlApprovalModal = lazy(() => import('./components/AgentControlApprovalModal'));
+const AgentControlPairingModal = DESKTOP_ATLAS_RUNTIME
+  ? (() => null)
+  : lazy(() => import('./components/AgentControlPairingModal'));
+const AgentControlApprovalModal = DESKTOP_ATLAS_RUNTIME
+  ? (() => null)
+  : lazy(() => import('./components/AgentControlApprovalModal'));
 
 // vite.config 注入的编译期常量（与 package.json 同步），勿硬编码 v1.x.x
 declare const __APP_VERSION__: string;

@@ -15,7 +15,7 @@ test('package config enables GitHub release updates and local release scripts', 
   assert.ok(pkg.dependencies['electron-updater']);
   assert.ok(pkg.dependencies['electron-log']);
   assert.equal(publish.provider, 'github');
-  assert.equal(publish.owner, 'T8mars');
+  assert.equal(publish.owner, 'qing20191723');
   assert.equal(publish.repo, 'T8-penguin-canvas');
   assert.match(pkg.scripts['dist:release'], /scripts\/dist-release\.cjs|scripts\\dist-release\.cjs/);
   assert.match(pkg.scripts['release:verify'], /verify-github-release\.cjs/);
@@ -70,7 +70,7 @@ test('preload and frontend expose a narrow updater surface', () => {
   assert.match(button, /打开安装向导/);
 });
 
-test('release scripts verify installer, blockmap, latest.yml, and GitHub assets', () => {
+test('release scripts verify installer, blockmap, latest.yml, SHA-256, and GitHub assets', () => {
   const postBuild = read('../electron/_post_build.cjs');
   const distRelease = read('../scripts/dist-release.cjs');
   const release = read('../scripts/release-github.cjs');
@@ -99,6 +99,7 @@ test('release scripts verify installer, blockmap, latest.yml, and GitHub assets'
   assert.match(verify, /remote tag \$\{tag\} targets/);
   assert.match(verify, /release asset SHA-256 mismatch/);
   assert.match(verify, /release asset advertised SHA-256 mismatch/);
+  assert.match(verify, /installer SHA-256 sidecar mismatch/);
   assert.match(verify, /unexpected release asset/);
   assert.match(verify, /isImmutable/);
   assert.match(verify, /publisher-level no-overwrite only/);

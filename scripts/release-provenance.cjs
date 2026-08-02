@@ -22,6 +22,7 @@ function artifactPaths(root, pkg) {
       { key: 'installer', name: installerName, path: path.join(distDir, installerName), sha512: true },
       { key: 'blockmap', name: `${installerName}.blockmap`, path: path.join(distDir, `${installerName}.blockmap`) },
       { key: 'latest', name: 'latest.yml', path: path.join(distDir, 'latest.yml') },
+      { key: 'checksum', name: `${installerName}.sha256`, path: path.join(distDir, `${installerName}.sha256`) },
     ],
   };
 }

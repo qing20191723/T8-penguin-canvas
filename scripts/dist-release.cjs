@@ -15,23 +15,17 @@ const {
   writeReleaseProvenance,
 } = require('./release-provenance.cjs');
 const { assertReleaseWorktreeClean } = require('./release-worktree.cjs');
-const { assertCollaborationReleaseEvidenceForPublish } = require('./collaboration-release-evidence.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const pkg = require(path.join(ROOT, 'package.json'));
 const releaseApproval = `release-${pkg.version}`;
 const releaseRemote = process.env.T8_RELEASE_REMOTE || 'origin';
-const releaseRepo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'T8mars/T8-penguin-canvas';
+const releaseRepo = process.env.T8_RELEASE_REPO || process.env.GITHUB_REPOSITORY || 'qing20191723/T8-penguin-canvas';
 const releaseTag = process.env.T8_RELEASE_TAG || `v${pkg.version}`;
 const env = {
   ...process.env,
-  T8_REQUIRE_AI_WATERMARK_RUNTIME: '1',
-  T8_REQUIRE_PARSEHUB_RUNTIME: '1',
-  T8_REQUIRE_RUNTIME_ARCHIVES: '1',
   T8_REQUIRE_UPDATE_ARTIFACTS: '1',
-  T8_REQUIRE_LOCAL_PRIVATE: '1',
-  T8_ENABLE_LOCAL_PRIVATE: '1',
-  T8_DISABLE_LOCAL_EXTENSIONS: '0',
+  T8_DESKTOP_ATLAS_RUNTIME: '1',
 };
 
 function command(name) {
@@ -289,27 +283,6 @@ function run(label, executable, args) {
 function main() {
   assertReleaseApproval();
   const releaseTarget = assertReleaseTarget();
-  try {
-    const evidence = assertCollaborationReleaseEvidenceForPublish({
-      root: ROOT,
-      version: pkg.version,
-      target: releaseTarget,
-    });
-    if (evidence.deferred) {
-      console.warn(
-        `[dist-release] collaboration evidence deferred for ${evidence.releaseVersion}: `
-        + `${evidence.reason}; post-release evidence remains required`,
-      );
-    } else {
-      console.log(
-        `[dist-release] collaboration evidence: ${evidence.checkCount} checks, `
-        + `${evidence.artifactCount} artifacts, manifest ${evidence.manifestSha256}`,
-      );
-    }
-  } catch (error) {
-    console.error(`[dist-release] collaboration release gate failed: ${error?.message || error}`);
-    process.exit(1);
-  }
   assertReleaseSourceClean('release worktree check before build or recovery');
   const prepared = prepareReleaseBuild(releaseTarget);
   if (prepared.completed) {
@@ -325,12 +298,12 @@ function main() {
     process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder',
   );
 
-  run('RH toolbox release manifest check', command('npm'), ['run', 'rh-toolbox:check']);
   run('build + encrypt', command('npm'), ['run', 'prepack:enc']);
-  run('prepare runtime archives', command('npm'), ['run', 'prepack:runtimes']);
+  run('verify desktop Atlas package policy', command('npm'), ['run', 'prepack:runtimes']);
   run('rebuild native modules for Electron', command('npm'), ['run', 'rebuild:electron']);
   run('electron-builder nsis', electronBuilder, ['--win', '--x64', '--config.npmRebuild=false']);
   run('post-build checks', process.execPath, [path.join(ROOT, 'electron', '_post_build.cjs')]);
+  run('desktop Atlas artifact checks', process.execPath, [path.join(ROOT, 'scripts', 'verify-desktop-atlas-package.cjs'), '--artifact']);
   assertReleaseTargetUnchanged(releaseTarget, 'release target check before provenance');
   assertReleaseSourceClean('release worktree check before provenance sealing');
   try {
