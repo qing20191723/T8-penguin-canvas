@@ -12,7 +12,7 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     env:
-      RELEASE_SHA: 4168113a772db65611e52c772c7688601da42717
+      RELEASE_SHA: c075f5925924888c4aa8df678929ea9c562470e2
     steps:
       - name: Dispatch only when fixed SHA has no release run
         env:
