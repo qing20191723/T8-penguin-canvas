@@ -105,8 +105,6 @@ function proxyToBackend(req, res) {
       res.destroy(error);
       return;
     }
-    backendReady = false;
-    phase = backendError ? 'failed' : 'starting-backend';
     res.setHeader('Retry-After', '2');
     res.status(503).json({
       success: false,
