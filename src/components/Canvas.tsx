@@ -27,6 +27,7 @@ import '@xyflow/react/dist/style.css';
 import { Play, Copy, CopyPlus, Trash2, FolderPlus, PackagePlus, Library, Download, Workflow, Send as SendIcon, Sparkles } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { useCanvasStore } from '../stores/canvas';
+import { idempotentUploadFetch } from '../services/idempotentUpload';
 import { useApiKeysStore } from '../stores/apiKeys';
 import { useThemeStore } from '../stores/theme';
 import { useShortcutStore } from '../stores/shortcuts';
@@ -2923,7 +2924,7 @@ async function uploadCanvasMediaFile(file: File, kind: MediaKind, index: number)
   const fileName = fallbackMediaName(file, kind, index);
   const fd = new FormData();
   fd.append('file', file, fileName);
-  const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
+  const res = await idempotentUploadFetch('/api/files/upload', fd, file);
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(json.error || `上传失败 HTTP ${res.status}`);

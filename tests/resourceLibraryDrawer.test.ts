@@ -38,5 +38,6 @@ test('resource upload api helper stages local files through the existing file up
   );
   assert.match(api, /new FormData\(\)/);
   assert.match(api, /fd\.append\('file', file\)/);
-  assert.match(api, /fetch\(`\$\{BASE\}\/files\/upload`/);
+  assert.match(api, /idempotentUploadFetch\(`\$\{BASE\}\/files\/upload`, fd, file/);
+  assert.match(api, /xhr\.setRequestHeader\('Idempotency-Key', idempotencyKey\)/);
 });

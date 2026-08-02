@@ -402,8 +402,39 @@ app.use('/api/creator-agent/v1', (req, res, next) => {
     });
   });
 }, creatorAgentRouter);
-app.use(express.json({ limit: '120mb' }));
-app.use(express.urlencoded({ extended: true, limit: '120mb' }));
+const webBodyLimits = process.env.T8_WEB_DEPLOY === '1' || process.env.RENDER === 'true';
+function tightenedBodyLimit(envName, defaultBytes) {
+  const configured = Math.trunc(Number(process.env[envName]));
+  return Number.isSafeInteger(configured) && configured > 0
+    ? Math.min(configured, defaultBytes)
+    : defaultBytes;
+}
+const genericJsonParser = express.json({
+  limit: webBodyLimits ? tightenedBodyLimit('T8_WEB_JSON_MAX_BYTES', 2 * 1024 * 1024) : '120mb',
+});
+const documentJsonParser = express.json({
+  limit: webBodyLimits ? tightenedBodyLimit('T8_WEB_DOCUMENT_JSON_MAX_BYTES', 32 * 1024 * 1024) : '120mb',
+});
+app.use((req, res, next) => {
+  const pathname = String(req.originalUrl || req.url || '').split('?')[0];
+  if (/^\/api\/(?:files|photoshop-bridge)\/upload-base64$/.test(pathname)) return next();
+  const parser = /^\/api\/(?:canvas|project-runs|subflows)(?:\/|$)/.test(pathname)
+    ? documentJsonParser
+    : genericJsonParser;
+  return parser(req, res, (error) => {
+    if (!error) return next();
+    const tooLarge = error?.type === 'entity.too.large';
+    return res.status(tooLarge ? 413 : 400).json({
+      success: false,
+      code: tooLarge ? 'request_too_large' : 'invalid_json',
+      error: tooLarge ? '请求体超过允许大小' : 'JSON 请求体无效',
+    });
+  });
+});
+app.use(express.urlencoded({
+  extended: true,
+  limit: webBodyLimits ? tightenedBodyLimit('T8_WEB_FORM_MAX_BYTES', 2 * 1024 * 1024) : '120mb',
+}));
 
 // 简易访问日志
 app.use((req, _res, next) => {

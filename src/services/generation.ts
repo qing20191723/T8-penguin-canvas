@@ -5,6 +5,7 @@
 import type { AdvancedProviderConfig } from '../types/canvas';
 import type { SunoNzOperation, SunoNzResultFamily } from '../providers/models';
 import { normalizeProviderErrorMessage } from '../utils/providerErrorMessage.ts';
+import { idempotentUploadFetch } from './idempotentUpload';
 
 export interface ProviderTransportTrace {
   /** 上游或本地代理显式返回的请求 ID；绝不从通用 id 字段猜测。 */
@@ -879,7 +880,7 @@ export function fileToDataUrl(file: File): Promise<string> {
 export async function uploadFile(file: File): Promise<{ url: string; filename: string }> {
   const fd = new FormData();
   fd.append('file', file);
-  const r = await fetch('/api/files/upload', { method: 'POST', body: fd });
+  const r = await idempotentUploadFetch('/api/files/upload', fd, file);
   const data = await r.json();
   if (!r.ok || !data.success) {
     throw providerResponseError(r, data);
@@ -1809,4 +1810,3 @@ export async function uploadRhAsset(url: string, site: RhSite = 'cn'): Promise<{
 // ============================================================================
 // (原崩溃前遗留的 MJ 代码块已移除; MJ 实现参见上方 buildMjPrompt / submitMjImagine / queryMjTask / uploadMjImage 及 fileToDataUrl)
 // ============================================================================
-

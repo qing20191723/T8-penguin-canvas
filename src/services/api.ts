@@ -6,6 +6,14 @@ import type { AdvancedProviderConfig, ApiSettings, CanvasData, CanvasListItem, C
 import type { ThemeTemplate } from '../theme/types';
 import type { MediaKind } from '../utils/mediaCollection';
 import type { RhToolboxManifest } from '../utils/rhToolbox';
+import {
+  idempotencyKeyForUpload,
+  idempotentUploadFetch,
+  MAX_UPLOAD_ATTEMPTS,
+  recoverableUploadResponse,
+  uploadRetryAfterMs,
+  waitForUploadRetry,
+} from './idempotentUpload';
 import type {
   AssetAvailabilityRefreshInput,
   AssetAvailabilityRefreshResult,
@@ -3714,20 +3722,24 @@ export async function uploadResourceLocalFile(
 
   if (options.onProgress && typeof XMLHttpRequest !== 'undefined') {
     return await new Promise<UploadedResourceLocalFile>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+      let xhr: XMLHttpRequest | null = null;
+      let settled = false;
       const cleanup = () => {
         options.signal?.removeEventListener('abort', abort);
+        if (!xhr) return;
         xhr.upload.onprogress = null;
         xhr.onload = null;
         xhr.onerror = null;
         xhr.onabort = null;
       };
       const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
         cleanup();
         callback();
       };
       const abort = () => {
-        if (xhr.readyState !== XMLHttpRequest.DONE) xhr.abort();
+        if (xhr && xhr.readyState !== XMLHttpRequest.DONE) xhr.abort();
       };
 
       if (options.signal?.aborted) {
@@ -3735,46 +3747,60 @@ export async function uploadResourceLocalFile(
         return;
       }
       options.signal?.addEventListener('abort', abort, { once: true });
-      xhr.open('POST', `${BASE}/files/upload`);
-      xhr.responseType = 'json';
-      xhr.upload.onprogress = (event) => {
-        const total = event.lengthComputable && event.total > 0 ? event.total : null;
-        options.onProgress?.({
-          loaded: Math.max(0, event.loaded),
-          total,
-          percent: total === null
-            ? null
-            : Math.max(0, Math.min(100, Math.round((event.loaded / total) * 100))),
-        });
-      };
-      xhr.onload = () => {
-        let payload: unknown = xhr.response;
-        if (!payload) {
-          try {
-            payload = JSON.parse(xhr.responseText);
-          } catch {
-            payload = null;
+      const idempotencyKey = idempotencyKeyForUpload(file);
+      const sendAttempt = (attempt: number) => {
+        if (settled) return;
+        xhr = new XMLHttpRequest();
+        xhr.open('POST', `${BASE}/files/upload`);
+        xhr.setRequestHeader('Idempotency-Key', idempotencyKey);
+        xhr.responseType = 'json';
+        xhr.upload.onprogress = (event) => {
+          const total = event.lengthComputable && event.total > 0 ? event.total : null;
+          options.onProgress?.({
+            loaded: Math.max(0, event.loaded),
+            total,
+            percent: total === null
+              ? null
+              : Math.max(0, Math.min(100, Math.round((event.loaded / total) * 100))),
+          });
+        };
+        xhr.onload = async () => {
+          if (!xhr || settled) return;
+          let payload: unknown = xhr.response;
+          if (!payload) {
+            try {
+              payload = JSON.parse(xhr.responseText);
+            } catch {
+              payload = null;
+            }
           }
-        }
-        try {
-          const uploaded = parseUploadedResourceLocalFile(payload, xhr.status);
-          finish(() => resolve(uploaded));
-        } catch (error) {
-          finish(() => reject(error));
-        }
+          if (attempt < MAX_UPLOAD_ATTEMPTS && recoverableUploadResponse(xhr.status, payload)) {
+            const retryAfter = uploadRetryAfterMs(xhr.getResponseHeader('Retry-After'));
+            try {
+              await waitForUploadRetry(retryAfter, options.signal);
+              sendAttempt(attempt + 1);
+            } catch (error) {
+              finish(() => reject(error));
+            }
+            return;
+          }
+          try {
+            const uploaded = parseUploadedResourceLocalFile(payload, xhr.status);
+            finish(() => resolve(uploaded));
+          } catch (error) {
+            finish(() => reject(error));
+          }
+        };
+        xhr.onerror = () => finish(() => reject(new Error('附件上传网络连接失败')));
+        xhr.onabort = () => finish(() => reject(creatorUploadAbortError()));
+        options.onProgress?.({ loaded: 0, total: file.size || null, percent: 0 });
+        xhr.send(fd);
       };
-      xhr.onerror = () => finish(() => reject(new Error('附件上传网络连接失败')));
-      xhr.onabort = () => finish(() => reject(creatorUploadAbortError()));
-      options.onProgress?.({ loaded: 0, total: file.size || null, percent: 0 });
-      xhr.send(fd);
+      sendAttempt(1);
     });
   }
 
-  const res = await fetch(`${BASE}/files/upload`, {
-    method: 'POST',
-    body: fd,
-    signal: options.signal,
-  });
+  const res = await idempotentUploadFetch(`${BASE}/files/upload`, fd, file, { signal: options.signal });
   const json = await res.json().catch(() => null);
   return parseUploadedResourceLocalFile(json, res.status);
 }
