@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["model", "prompt"],
+  "properties": {
+    "model": { "type": "string", "default": "alibaba/wan-2.7/reference-to-video", "enum": ["alibaba/wan-2.7/reference-to-video"] },
+    "prompt": { "type": "string" },
+    "images": { "type": "array", "items": { "type": "string" } },
+    "videos": { "type": "array", "items": { "type": "string" } },
+    "audio": { "type": "string" },
+    "resolution": { "type": "string", "default": "1080P", "enum": ["720P", "1080P"] },
+    "ratio": { "type": "string", "default": "16:9", "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+    "duration": { "type": "integer", "default": 5, "minimum": 2, "maximum": 10 },
+    "seed": { "type": "integer", "default": -1, "minimum": -1, "maximum": 2147483647 }
+  }
+}

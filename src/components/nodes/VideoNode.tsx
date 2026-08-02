@@ -91,6 +91,7 @@ import {
 } from '../../utils/materialExclusion';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 import JimengCliHelpButton from './JimengCliHelpButton';
+import AtlasCapabilityFields from './AtlasCapabilityFields';
 
 /**
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
@@ -1814,6 +1815,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                         providerSource: provider.protocol,
                         providerId: provider.id,
                         providerModel: nextModels[0] || '',
+                        ...(provider.protocol === 'atlas' ? { providerParams: {} } : {}),
                         ...(provider.protocol === 'jimeng-cli' ? { resolution: '720p' } : {}),
                         ...(provider.protocol === 'agnes'
                           ? {
@@ -1844,6 +1846,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                         const nextModel = e.target.value;
                         update({
                           providerModel: nextModel,
+                          ...(providerSelection.provider?.protocol === 'atlas' ? { providerParams: {} } : {}),
                           ...(providerSelection.provider?.protocol === 'jimeng-cli'
                             && nextModel !== 'seedance2.0_vip'
                             ? { resolution: '720p' }
@@ -1871,6 +1874,12 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                     </button>
                     {d?.atlasParamsOpen && (
                       <>
+                        <AtlasCapabilityFields
+                          model={externalProviderModel}
+                          kind="video"
+                          params={providerParams}
+                          onChange={updateProviderParams}
+                        />
                         <textarea
                           value={atlasParamsText}
                           onChange={(e) => updateAtlasParamsText(e.target.value)}
