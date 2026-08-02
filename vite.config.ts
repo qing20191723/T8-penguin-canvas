@@ -133,6 +133,8 @@ function localExtensionsPlugin() {
 export default defineConfig(({ command }) => {
   const managementToken = command === 'serve' ? ensureManagementAuthority() : '';
   const backendTarget = command === 'serve' ? developmentBackendTarget() : 'http://127.0.0.1:18766';
+  const atlasOnlyRuntime = process.env.VITE_T8_ATLAS_ONLY_RUNTIME === '1'
+    || (command === 'build' && String(process.env.RENDER || '').toLowerCase() === 'true');
   return {
   plugins: [react(), localExtensionsPlugin()],
   assetsInclude: ['**/*.mid'],
@@ -205,6 +207,7 @@ export default defineConfig(({ command }) => {
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
     __APP_NAME__: JSON.stringify('T8-penguin-canvas'),
+    __T8_ATLAS_ONLY_RUNTIME__: JSON.stringify(atlasOnlyRuntime),
   },
   };
 });

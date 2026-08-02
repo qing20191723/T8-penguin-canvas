@@ -9,6 +9,7 @@ const videoNodeSource = readFileSync(new URL('../src/components/nodes/VideoNode.
 const legacyVideoNodeSource = readFileSync(new URL('../src/components/nodes/SeedanceNode.tsx', import.meta.url), 'utf8');
 const capabilityFieldsSource = readFileSync(new URL('../src/components/nodes/AtlasCapabilityFields.tsx', import.meta.url), 'utf8');
 const atlasRouteSource = readFileSync(new URL('../backend/src/routes/atlasProxy.js', import.meta.url), 'utf8');
+const atlasRuntimeSource = readFileSync(new URL('../src/config/atlasOnlyRuntime.ts', import.meta.url), 'utf8');
 
 test('verified Atlas fallbacks preserve model-specific 4K and size semantics', () => {
   const nano = verifiedAtlasFallbackCapability('google/nano-banana-pro/text-to-image', 'image');
@@ -38,6 +39,7 @@ test('image, video and legacy video nodes render sanitized Atlas capability fiel
 test('new sidebar video node keeps the legacy seedance type but initializes Atlas Wan 2.7 Spicy', () => {
   assert.match(appSource, /\['image', 'video', 'seedance', 'llm'\]/);
   assert.match(appSource, /type === 'seedance'[\s\S]*?providerSource: 'atlas'[\s\S]*?providerId: 'atlas'[\s\S]*?providerModel: 'atlascloud\/wan-2\.7-spicy\/reference-to-video'/);
+  assert.match(atlasRuntimeSource, /ATLAS_ONLY_HIDDEN_NODE_TYPES[\s\S]*?'video'/);
   assert.match(legacyVideoNodeSource, />视频<\/div>/);
 });
 

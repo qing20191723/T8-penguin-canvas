@@ -25,6 +25,11 @@ const {
 
 process.env.T8_WEB_DEPLOY = '1';
 process.env.T8_FIGMA_BRIDGE_AUTOSTART = '0';
+// renderServer is the public Web entry point, so its child must always use the
+// reduced Atlas runtime even when an existing Render service has not synced
+// newly-added Blueprint environment variables yet.
+process.env.T8_ATLAS_ONLY_RUNTIME = '1';
+process.env.T8PC_ASSET_PREVIEW_CONCURRENCY ||= '1';
 
 const PUBLIC_HOST = '0.0.0.0';
 const PUBLIC_PORT = Math.max(1, Number.parseInt(process.env.PORT || '10000', 10) || 10000);
@@ -78,6 +83,10 @@ function publicStatus() {
     publicAddress: `http://${PUBLIC_HOST}:${PUBLIC_PORT}`,
     internalAddress: `http://${INTERNAL_HOST}:${INTERNAL_PORT}`,
     commit: String(process.env.RENDER_GIT_COMMIT || '').trim() || undefined,
+    runtime: 'atlas-only',
+    storage: {
+      persistence: process.env.T8_PERSISTENT_DISK_CONFIGURED === '1' ? 'configured' : 'unknown',
+    },
     error: backendError || undefined,
     uptimeSeconds: Math.round(process.uptime()),
   };
@@ -290,6 +299,8 @@ function startFullBackend() {
       PORT: String(INTERNAL_PORT),
       T8_WEB_DEPLOY: '1',
       T8_FIGMA_BRIDGE_AUTOSTART: '0',
+      T8_ATLAS_ONLY_RUNTIME: '1',
+      T8PC_ASSET_PREVIEW_CONCURRENCY: process.env.T8PC_ASSET_PREVIEW_CONCURRENCY || '1',
       T8_MEMORY_INTERNAL_TOKEN: memoryInternalToken,
     },
     stdio: 'inherit',
