@@ -5,7 +5,7 @@ import type { NodeType } from '../types/canvas';
  * readable for old documents, but they are not selectable or allowed to start
  * background traffic in the public web runtime.
  */
-export const ATLAS_ONLY_RUNTIME = true;
+export const ATLAS_ONLY_RUNTIME = String(import.meta.env?.VITE_T8_ATLAS_ONLY_RUNTIME || '') === '1';
 
 export const ATLAS_RUNTIME_CREDENTIAL_MARKER = '****server';
 

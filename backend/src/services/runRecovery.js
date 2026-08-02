@@ -2,6 +2,8 @@
 
 const ACTIVE_STATUSES = new Set(['queued', 'running', 'polling']);
 const RECOVERY_KINDS = new Set([
+  'atlas',
+  'custom',
   'runninghub',
   'seedance',
   'seedream-nz',
@@ -120,6 +122,7 @@ function recoveryRequest(baseUrl, descriptor) {
     options: { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
   });
   const taskId = encodeURIComponent(descriptor.taskId || '');
+  if (descriptor.kind === 'atlas') return get(`/api/proxy/atlas/poll/${taskId}`);
   if (descriptor.kind === 'runninghub') return get(`/api/proxy/runninghub/query?taskId=${taskId}&site=${encodeURIComponent(descriptor.site || 'cn')}`);
   if (descriptor.kind === 'seedance') return get(`/api/proxy/seedance/query?taskId=${taskId}&taskProvider=${encodeURIComponent(descriptor.taskProvider || 'seedance-nz')}`);
   if (descriptor.kind === 'seedream-nz') return get(`/api/proxy/image/seedance-nz/status/${taskId}`);
@@ -218,6 +221,10 @@ class RunRecoveryManager {
     this.stopping = false;
     this.shutdownPromise = null;
     this.lifecycleAbortController = new AbortController();
+    this.allowedRecoveryKinds = options.allowedRecoveryKinds
+      ? new Set([...options.allowedRecoveryKinds].map((kind) => boundedText(kind, 80).toLowerCase()).filter(Boolean))
+      : null;
+    this.concurrency = Math.max(1, Math.min(4, Number(options.concurrency) || 4));
     this.lastResult = { status: 'idle', recovered: 0, failed: 0, interrupted: 0, deferred: 0, pending: 0, startedAt: null, finishedAt: null };
   }
 
@@ -260,13 +267,13 @@ class RunRecoveryManager {
     const tickets = this.database.listPendingRunRecoveries();
     const result = { status: 'running', recovered: 0, failed: 0, interrupted: 0, deferred: 0, pending: tickets.length, startedAt: Date.now(), finishedAt: null };
     this.lastResult = result;
-    for (let index = 0; index < tickets.length; index += 4) {
+    for (let index = 0; index < tickets.length; index += this.concurrency) {
       if (this.stopping) {
         result.deferred += tickets.length - index;
         result.pending = 0;
         break;
       }
-      const chunk = tickets.slice(index, index + 4);
+      const chunk = tickets.slice(index, index + this.concurrency);
       const settled = await Promise.allSettled(chunk.map((ticket) => this.recoverTicket(ticket)));
       for (const outcome of settled) {
         if (outcome.status === 'rejected') continue;
@@ -293,6 +300,12 @@ class RunRecoveryManager {
   async recoverTicket(ticket) {
     if (this.stopping) return 'deferred';
     const descriptor = normalizeRunRecoveryDescriptor(ticket.attempt.metadata?.recovery);
+    if (descriptor && this.allowedRecoveryKinds && !this.allowedRecoveryKinds.has(descriptor.kind)) {
+      return this.interruptTicket(ticket, `Atlas Web 轻量运行时不恢复旧平台任务（${descriptor.kind}）；历史证据已保留`);
+    }
+    if (descriptor?.kind === 'custom') {
+      return this.interruptTicket(ticket, '自定义 API 任务缺少可验证的统一轮询契约；历史证据已保留');
+    }
     if (!descriptor) return this.interruptTicket(ticket, '恢复描述缺失或不受支持');
     const startedAt = Date.now();
     const started = this.database.beginRunRecoveryAttempt({

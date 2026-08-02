@@ -26115,7 +26115,15 @@ class ProjectDatabase {
       maxDbBytes: row.max_db_bytes,
       keepReferenced: Boolean(row.keep_referenced),
       updatedAt: row.updated_at,
-    } : { projectId: String(projectId), maxDays: 30, maxRuns: 5000, maxAssetRefs: 100000, maxDbBytes: 2 * 1024 * 1024 * 1024, keepReferenced: true, updatedAt: 0 };
+    } : {
+      projectId: String(projectId),
+      maxDays: 30,
+      maxRuns: process.env.T8_ATLAS_ONLY_RUNTIME === '1' ? 1000 : 5000,
+      maxAssetRefs: process.env.T8_ATLAS_ONLY_RUNTIME === '1' ? 20000 : 100000,
+      maxDbBytes: process.env.T8_ATLAS_ONLY_RUNTIME === '1' ? 512 * 1024 * 1024 : 2 * 1024 * 1024 * 1024,
+      keepReferenced: true,
+      updatedAt: 0,
+    };
   }
 
   setRunRetentionPolicy(projectId = DEFAULT_PROJECT_ID, patch = {}) {

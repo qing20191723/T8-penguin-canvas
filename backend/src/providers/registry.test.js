@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+process.env.T8_ATLAS_ONLY_RUNTIME = '1';
 const {
   DEFAULT_ADVANCED_PROVIDERS,
   SUPPORTED_PROTOCOLS,
