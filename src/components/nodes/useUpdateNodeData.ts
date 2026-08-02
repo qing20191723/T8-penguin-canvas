@@ -3,6 +3,13 @@ import { useCallback, useRef } from 'react';
 import * as api from '../../services/api';
 import { useCanvasStore } from '../../stores/canvas';
 import { isCanvasNodeDeleted } from '../../utils/deletedNodeRegistry';
+import { useCanvasMutationDispatcher } from '../../contexts/canvasMutation';
+import {
+  inputMutationProvenance,
+  isRuntimeOnlyNodePatch,
+  runtimeMutationProvenance,
+} from '../../utils/runInputMutation';
+import { getRunMutationIdentity } from '../../utils/runMutationIdentity';
 
 const offscreenPatchQueues = new Map<string, Promise<void>>();
 
@@ -68,6 +75,7 @@ function isCompletedCanvasPatch(patch: Record<string, any>) {
  */
 export function useUpdateNodeData(nodeId: string) {
   const { setNodes } = useReactFlow();
+  const mutationDispatcher = useCanvasMutationDispatcher();
   const originCanvasIdRef = useRef(useCanvasStore.getState().activeId);
 
   return useCallback(
@@ -80,6 +88,11 @@ export function useUpdateNodeData(nodeId: string) {
         enqueueOffscreenCanvasPatch(originCanvasId, nodeId, patch, activeCanvasId !== originCanvasId && isCompletedCanvasPatch(patch));
         if (activeCanvasId !== originCanvasId) return;
       }
+      const identity = getRunMutationIdentity(nodeId);
+      const provenance = identity && isRuntimeOnlyNodePatch(patch)
+        ? runtimeMutationProvenance(identity)
+        : inputMutationProvenance('useUpdateNodeData');
+      if (mutationDispatcher?.updateNodeData(nodeId, patch, provenance)) return;
       setNodes((nds) =>
         nds.map((n) =>
           n.id === nodeId
@@ -88,6 +101,6 @@ export function useUpdateNodeData(nodeId: string) {
         )
       );
     },
-    [nodeId, setNodes]
+    [mutationDispatcher, nodeId, setNodes]
   );
 }
