@@ -189,6 +189,7 @@ import {
 import { isAltModifierActive } from '../utils/canvasInteraction';
 import * as api from '../services/api';
 import { logBus } from '../stores/logs';
+import { CanvasMutationContext, type CanvasMutationDispatcher } from '../contexts/canvasMutation';
 import CanvasToolbar from './CanvasToolbar';
 import ProjectWorkbench from './ProjectWorkbench';
 import GenerationHistoryPanel from './GenerationHistoryPanel';
@@ -254,6 +255,20 @@ import {
   isSameRunPreflightExecutionSnapshot,
   type RunPreflightExecutionSnapshot,
 } from '../utils/runPreflightExecution';
+import {
+  advanceMutationEpochs,
+  createRunInputFingerprint,
+  inputMutationProvenance,
+  type MutationEpochs,
+  type MutationProvenance,
+} from '../utils/runInputMutation';
+import {
+  captureRuntimeOwnedFields,
+  clearRunMutationOwnership,
+  clearRuntimeOwnedInputFields,
+  isActiveRunMutationIdentity,
+  recordRuntimeOwnedPatch,
+} from '../utils/runMutationIdentity';
 import { createRunPreflightHostContextDigest } from '../utils/runPreflightHostContext';
 import {
   buildPossibleDerivedExecutionScope,
@@ -3522,6 +3537,10 @@ function requireVersionedCanvasPatchDocument(value: unknown, canvasId: string): 
   return document as VersionedCanvasData;
 }
 
+function runInputChangedError(message: string) {
+  return Object.assign(new Error(message), { code: 'RUN_INPUT_CHANGED' as const });
+}
+
 function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
   const { activeId, canvases, loadCanvases, setActive } = useCanvasStore();
   const { theme, style, templateId, customTemplates } = useThemeStore();
@@ -3557,24 +3576,52 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     [radialNodeOptions],
   );
   const graphMutationEpochRef = useRef(0);
+  const mutationEpochsRef = useRef<MutationEpochs>({ inputMutationEpoch: 0, runtimeMutationEpoch: 0 });
   const [nodes, rawSetNodes] = useState<Node[]>([]);
   const [edges, rawSetEdges] = useState<Edge[]>([]);
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
-  const setNodes = useCallback((action: SetStateAction<Node[]>) => {
+  const setNodesWithProvenance = useCallback((action: SetStateAction<Node[]>, provenance: MutationProvenance) => {
     const next = advanceCanvasPatchMutation({ value: nodesRef.current, epoch: graphMutationEpochRef.current }, action);
     const identified = ensureCanvasEntityUids(next.value, 'node');
     nodesRef.current = identified;
     graphMutationEpochRef.current = next.epoch;
+    mutationEpochsRef.current = advanceMutationEpochs(mutationEpochsRef.current, provenance);
     rawSetNodes(identified);
   }, []);
+  const setNodes = useCallback((action: SetStateAction<Node[]>) => {
+    setNodesWithProvenance(action, inputMutationProvenance('Canvas.setNodes'));
+  }, [setNodesWithProvenance]);
   const setEdges = useCallback((action: SetStateAction<Edge[]>) => {
     const next = advanceCanvasPatchMutation({ value: edgesRef.current, epoch: graphMutationEpochRef.current }, action);
     const identified = ensureCanvasEntityUids(next.value, 'edge');
     edgesRef.current = identified;
     graphMutationEpochRef.current = next.epoch;
+    mutationEpochsRef.current = advanceMutationEpochs(
+      mutationEpochsRef.current,
+      inputMutationProvenance('Canvas.setEdges'),
+    );
     rawSetEdges(identified);
   }, []);
+  const canvasMutationDispatcher = useMemo<CanvasMutationDispatcher>(() => ({
+    updateNodeData(nodeId, patch, provenance) {
+      if (provenance.kind === 'runtime' && !isActiveRunMutationIdentity(provenance.identity)) {
+        return true;
+      }
+      setNodesWithProvenance((current) => current.map((node) => {
+        if (node.id !== nodeId) return node;
+        const previousData = (node.data || {}) as Record<string, unknown>;
+        if (provenance.kind === 'runtime') {
+          if (provenance.identity.nodeId !== nodeId
+            || !recordRuntimeOwnedPatch(provenance.identity, previousData, patch)) return node;
+        } else {
+          clearRuntimeOwnedInputFields(nodeId, Object.keys(patch));
+        }
+        return { ...node, data: { ...previousData, ...patch } };
+      }), provenance);
+      return true;
+    },
+  }), [setNodesWithProvenance]);
   const [runReplayRuntime, setRunReplayRuntime] = useState<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const runReplayRuntimeRef = useRef(runReplayRuntime);
   runReplayRuntimeRef.current = runReplayRuntime;
@@ -3603,12 +3650,20 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     const next = advanceCanvasPatchMutation({ value: creativeDeskRef.current, epoch: graphMutationEpochRef.current }, action);
     creativeDeskRef.current = next.value;
     graphMutationEpochRef.current = next.epoch;
+    mutationEpochsRef.current = advanceMutationEpochs(
+      mutationEpochsRef.current,
+      inputMutationProvenance('Canvas.setCreativeDesk'),
+    );
     rawSetCreativeDesk(next.value);
   }, []);
   const setFarmCanvas = useCallback((action: SetStateAction<FarmCanvasState>) => {
     const next = advanceCanvasPatchMutation({ value: farmCanvasRef.current, epoch: graphMutationEpochRef.current }, action);
     farmCanvasRef.current = next.value;
     graphMutationEpochRef.current = next.epoch;
+    mutationEpochsRef.current = advanceMutationEpochs(
+      mutationEpochsRef.current,
+      inputMutationProvenance('Canvas.setFarmCanvas'),
+    );
     rawSetFarmCanvas(next.value);
   }, []);
   const [farmCanvasEditing, setFarmCanvasEditing] = useState(false);
@@ -8556,22 +8611,40 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     setRunPreflightModal({ loading: false, preview });
   }), []);
 
-  const captureRunPreflightSnapshot = useCallback((): RunPreflightExecutionSnapshot | null => {
+  const captureRunPreflightSnapshot = useCallback((
+    targetNodeIds: string[],
+    snapshotNodes: Node[] = nodesRef.current,
+    snapshotEdges: Edge[] = edgesRef.current,
+  ): RunPreflightExecutionSnapshot | null => {
     const canvasId = useCanvasStore.getState().activeId;
     const projectId = activeProjectIdRef.current;
     if (!canvasId || !projectId || loadedCanvasIdRef.current !== canvasId || !loadedRef.current) return null;
+    const epochs = mutationEpochsRef.current;
     return {
       projectId,
       canvasId,
       revision: canvasRevisionsRef.current.get(canvasId) || 0,
-      graphMutationEpoch: graphMutationEpochRef.current,
+      ...epochs,
+      fingerprint: createRunInputFingerprint({
+        nodes: snapshotNodes,
+        edges: snapshotEdges,
+        targetNodeIds,
+        runtimeOwnedFields: snapshotNodes === nodesRef.current ? captureRuntimeOwnedFields() : undefined,
+      }),
     };
   }, []);
 
   const captureRunExecutionSnapshot = useCallback((
     runIntent: RunIntent | null | undefined,
+    targetNodeIds: string[],
+    immutableNodes?: Node[],
+    immutableEdges?: Edge[],
   ): RunPreflightExecutionSnapshot | null => {
-    const current = captureRunPreflightSnapshot();
+    const current = captureRunPreflightSnapshot(
+      targetNodeIds,
+      runIntent && immutableNodes ? immutableNodes : nodesRef.current,
+      runIntent && immutableEdges ? immutableEdges : edgesRef.current,
+    );
     if (!runIntent) return current;
     const revision = Number(runIntent.canvasRevision);
     if (!current
@@ -8586,7 +8659,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       projectId: runIntent.projectId,
       canvasId: runIntent.canvasId,
       revision,
-      graphMutationEpoch: 0,
+      inputMutationEpoch: 0,
+      runtimeMutationEpoch: 0,
+      fingerprint: current.fingerprint,
     };
   }, [captureRunPreflightSnapshot]);
 
@@ -8607,7 +8682,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
     selectedNodeIds: string[],
     options: RunNodesByOrderOptions,
   ): Promise<PossibleDerivedExecutionScope | null> => {
-    const captureExecutionSnapshot = () => captureRunExecutionSnapshot(options.runIntentSnapshot);
+    const captureExecutionSnapshot = () => captureRunExecutionSnapshot(
+      options.runIntentSnapshot,
+      selectedNodeIds,
+      preflightNodes,
+      preflightEdges,
+    );
     const snapshot = captureExecutionSnapshot();
     if (!snapshot) {
       logBus.warn('当前项目或画布身份尚未稳定，已停止运行', '运行');
@@ -8889,7 +8969,6 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         ...options,
         requestId: options.requestId || createCanvasNodeRunRequestId('canvas', options.actionKind || 'run'),
       };
-      const captureExecutionSnapshot = () => captureRunExecutionSnapshot(options.runIntentSnapshot);
       const plannedSubgraph = options.executionOrder
         ? { nodes: subNodes, edges: subEdges }
         : excludeRandomRouteBranchDescendants(subNodes, subEdges);
@@ -8902,6 +8981,12 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       }
       const order = requestedOrder || topologicalSort(plannedSubgraph.nodes, plannedSubgraph.edges, EXECUTABLE_NODE_TYPES);
       if (order.length === 0) return 0;
+      const captureExecutionSnapshot = () => captureRunExecutionSnapshot(
+        options.runIntentSnapshot,
+        order,
+        plannedSubgraph.nodes,
+        plannedSubgraph.edges,
+      );
       const reservedNodeIds = new Set(Array.from(activeRunPlansRef.current.values()).flatMap((ids) => [...ids]));
       const conflictingNodeIds = order.filter((nodeId) => reservedNodeIds.has(nodeId));
       if (conflictingNodeIds.length > 0) {
@@ -8948,7 +9033,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
       const persistenceSnapshot = captureExecutionSnapshot();
       if (!persistenceSnapshot) return -1;
       if (!isSameRunPreflightExecutionSnapshot(persistenceSnapshot, captureExecutionSnapshot())) {
-        throw new Error('确认后画布、revision 或执行图发生变化，已停止创建 Run');
+        throw runInputChangedError('确认后执行输入发生变化，已停止创建 Run');
       }
       const plannedNodeIds = new Set(order);
       const recordedNodeId = (nodeId: string) => options.originalNodeIdByRuntimeId?.[nodeId] || nodeId;
@@ -9125,7 +9210,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           runId = run.id;
           if (!isSameRunPreflightExecutionSnapshot(persistenceSnapshot, captureExecutionSnapshot())) {
             failedCount += 1;
-            throw new Error('创建 Run 期间画布或执行输入发生变化，已停止调用 Provider');
+            throw runInputChangedError('创建 Run 期间执行输入发生变化，已停止调用 Provider');
           }
           runContext = {
             contextId: `run-context-${run.id}`,
@@ -9157,7 +9242,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           });
           if (!isSameRunPreflightExecutionSnapshot(persistenceSnapshot, captureExecutionSnapshot())) {
             failedCount += 1;
-            throw new Error('启动 Run 期间画布或执行输入发生变化，已停止调用 Provider');
+            throw runInputChangedError('启动 Run 期间执行输入发生变化，已停止调用 Provider');
           }
         } catch (error) {
           // E4 的诊断与受控重试依赖持久化的 Run/NodeRun/Attempt 作为权威证据。
@@ -9176,7 +9261,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         }
         if (!isSameRunPreflightExecutionSnapshot(persistenceSnapshot, captureExecutionSnapshot())) {
           failedCount += 1;
-          throw new Error('准备运行期间画布或执行输入发生变化，已停止调用 Provider');
+          throw runInputChangedError('准备运行期间执行输入发生变化，已停止调用 Provider');
         }
         unregisterExecutionContexts = options.executionContexts
           ? registerRunNodeExecutionContexts(options.executionContexts)
@@ -9221,6 +9306,9 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         }
         for (let i = 0; i < order.length; i++) {
           if (runControl.cancelled) break;
+          if (!isSameRunPreflightExecutionSnapshot(persistenceSnapshot, captureExecutionSnapshot())) {
+            throw runInputChangedError('节点执行前输入发生变化，已停止后续 Provider 调用');
+          }
           const id = order[i];
           const doneResult = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
             let done = false;
@@ -9317,6 +9405,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         if (executionStarted) {
           if (runId) clearActiveRunContext(runId);
         }
+        if (runId) clearRunMutationOwnership(runId);
         if (finalizationError) {
           throw new Error(
             `运行终态证据持久化失败：${finalizationError instanceof Error ? finalizationError.message : String(finalizationError)}`,
@@ -13350,6 +13439,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
         onChange={handleImportFile}
       />
       <WorkflowDoctorHighlightContext.Provider value={workflowDoctorHighlightMap}>
+        <CanvasMutationContext.Provider value={canvasMutationDispatcher}>
         <ReactFlow
           nodes={renderedNodes}
           edges={renderedEdges}
@@ -13624,6 +13714,7 @@ function CanvasInner({ onAddNodeRef, onInsertWorkflowRef }: CanvasInnerProps) {
           onStopRun={handleCancelRun}
         />
         </ReactFlow>
+        </CanvasMutationContext.Provider>
       {creativeDeskEditing && (
         <CreativeDeskLayer
           creativeDesk={creativeDesk}

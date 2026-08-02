@@ -5,10 +5,19 @@ import {
   advanceMutationEpochs,
   compareRunInputSnapshots,
   createRunInputFingerprint,
+  isRuntimeOnlyNodePatch,
   runtimeMutationProvenance,
   type MutationEpochs,
   type RunInputSnapshot,
 } from '../src/utils/runInputMutation.ts';
+import {
+  captureRuntimeOwnedFields,
+  clearRunMutationOwnership,
+  clearRuntimeOwnedInputFields,
+  recordRuntimeOwnedPatch,
+  registerRunMutationIdentity,
+  resetRunMutationIdentityForTests,
+} from '../src/utils/runMutationIdentity.ts';
 
 const nodes = [
   { id: 'upstream', type: 'image', position: { x: 0, y: 0 }, data: { prompt: 'cat', imageUrls: ['/cat.png'], status: 'idle' } },
@@ -32,6 +41,16 @@ test('mutation epochs default closed to input and explicit runtime requires full
     () => runtimeMutationProvenance({ runId: 'run-1', nodeId: 'target', attemptId: '', executionToken: 'token-1' }),
     /attempt/i,
   );
+  assert.equal(isRuntimeOnlyNodePatch({ status: 'success', videoUrl: '/out.mp4', lastPrompt: 'frozen' }), true);
+  assert.equal(isRuntimeOnlyNodePatch({ prompt: 'user edit' }), false);
+  assert.equal(isRuntimeOnlyNodePatch({ status: 'idle', model: 'changed-by-user' }), false);
+});
+
+test('runtime classification fails closed when a status patch also changes execution input', () => {
+  assert.equal(isRuntimeOnlyNodePatch({ status: 'running', progress: 20 }), true);
+  assert.equal(isRuntimeOnlyNodePatch({ status: 'running', prompt: 'new prompt' }), false);
+  assert.equal(isRuntimeOnlyNodePatch({ taskStatus: 'running', providerModel: 'other-model' }), false);
+  assert.equal(isRuntimeOnlyNodePatch({ status: 'running', unknownConfiguration: true }), false);
 });
 
 test('fingerprint covers the target dependency slice but ignores unrelated and runtime-only fields', () => {
@@ -66,4 +85,64 @@ test('snapshot comparison fast-passes runtime changes and authorizes unrelated i
   });
   assert.deepEqual(changed, { sameInput: false, code: 'RUN_INPUT_CHANGED' });
   assert.equal(compareRunInputSnapshots(expected, { ...expected, canvasId: 'canvas-2' }).sameInput, false);
+});
+
+test('runtime ownership is attempt isolated and input writes revoke field exemptions', () => {
+  resetRunMutationIdentityForTests();
+  const first = { runId: 'run-1', nodeId: 'target', attemptId: 'attempt-1', executionToken: 'token-1' };
+  const releaseFirst = registerRunMutationIdentity(first);
+  assert.equal(recordRuntimeOwnedPatch(first, { videoUrl: '/old.mp4' }, { videoUrl: '/new.mp4', status: 'success' }), true);
+  assert.deepEqual(captureRuntimeOwnedFields().target.videoUrl, { present: true, value: '/old.mp4' });
+
+  const second = { ...first, attemptId: 'attempt-2', executionToken: 'token-2' };
+  const releaseSecond = registerRunMutationIdentity(second);
+  assert.equal(recordRuntimeOwnedPatch(first, { videoUrl: '/new.mp4' }, { videoUrl: '/late.mp4' }), false);
+  assert.equal(recordRuntimeOwnedPatch(second, { videoUrl: '/new.mp4' }, { videoUrl: '/second.mp4' }), true);
+  releaseFirst();
+  assert.deepEqual(captureRuntimeOwnedFields().target.videoUrl, { present: true, value: '/new.mp4' });
+  const beforeOutput = nodes.map((node) => node.id === 'target'
+    ? { ...node, data: { ...node.data, videoUrl: '/new.mp4' } }
+    : node);
+  const afterOutput = beforeOutput.map((node) => node.id === 'target'
+    ? { ...node, data: { ...node.data, videoUrl: '/second.mp4', status: 'success' } }
+    : node);
+  assert.equal(
+    createRunInputFingerprint({ nodes: beforeOutput, edges, targetNodeIds: ['target'] }),
+    createRunInputFingerprint({
+      nodes: afterOutput,
+      edges,
+      targetNodeIds: ['target'],
+      runtimeOwnedFields: captureRuntimeOwnedFields(),
+    }),
+  );
+  clearRuntimeOwnedInputFields('target', ['videoUrl']);
+  assert.equal(captureRuntimeOwnedFields().target, undefined);
+  assert.notEqual(fingerprint(beforeOutput), fingerprint(afterOutput));
+  releaseSecond();
+  const nodeA = { runId: 'run-a', nodeId: 'node-a', attemptId: 'attempt-a', executionToken: 'token-a' };
+  const nodeB = { runId: 'run-b', nodeId: 'node-b', attemptId: 'attempt-b', executionToken: 'token-b' };
+  registerRunMutationIdentity(nodeA);
+  registerRunMutationIdentity(nodeB);
+  recordRuntimeOwnedPatch(nodeA, {}, { output: 'a' });
+  recordRuntimeOwnedPatch(nodeB, {}, { output: 'b' });
+  clearRunMutationOwnership('run-a');
+  assert.equal(captureRuntimeOwnedFields()['node-a'], undefined);
+  assert.deepEqual(captureRuntimeOwnedFields()['node-b'].output, { present: false });
+  resetRunMutationIdentityForTests();
+});
+
+test('runtime-only originals stay excluded after ownership restoration', () => {
+  const runtimeNodes = nodes.map((node) => node.id === 'target'
+    ? { ...node, data: { ...node.data, status: 'idle' } }
+    : node);
+  const baseline = fingerprint(runtimeNodes);
+  const runtimeFingerprint = createRunInputFingerprint({
+    nodes: runtimeNodes.map((node) => node.id === 'target'
+      ? { ...node, data: { ...node.data, status: 'running' } }
+      : node),
+    edges,
+    targetNodeIds: ['target'],
+    runtimeOwnedFields: { target: { status: { present: true, value: 'idle' } } },
+  });
+  assert.equal(runtimeFingerprint, baseline);
 });
