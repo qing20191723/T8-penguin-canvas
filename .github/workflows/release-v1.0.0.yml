@@ -54,7 +54,8 @@ jobs:
       - name: Verify release-critical contracts
         run: |
           node --test backend/src/providers/atlas.test.js backend/src/providers/atlasSchema.test.js backend/src/providers/registry.test.js
-          node --test tests/desktopAtlasPackaging.test.cjs tests/electronUpdater.test.ts
+          node --test tests/desktopAtlasPackaging.test.cjs
+          npm run test:electron:ts -- tests/electronUpdater.test.ts
           npm run type-check
           npm run feature-sync:check
 
