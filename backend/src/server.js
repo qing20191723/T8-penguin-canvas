@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const ATLAS_ONLY_RUNTIME = String(process.env.T8_ATLAS_ONLY_RUNTIME || '') === '1';
-const startFigmaBridgeOnAppStart = ATLAS_ONLY_RUNTIME
+const DESKTOP_ATLAS_RUNTIME = String(process.env.T8_DESKTOP_ATLAS_RUNTIME || '') === '1';
+const ATLAS_LIGHTWEIGHT_RUNTIME = ATLAS_ONLY_RUNTIME || DESKTOP_ATLAS_RUNTIME;
+const startFigmaBridgeOnAppStart = ATLAS_LIGHTWEIGHT_RUNTIME
   ? () => undefined
   : require('./utils/figmaBridge').startFigmaBridgeOnAppStart;
 const { getRunRecoveryManager } = require('./services/runRecovery');
@@ -21,7 +23,7 @@ const {
   queueSummary,
   storageStatus,
 } = require('./services/memoryDiagnostics');
-const registerAgentControlInstance = ATLAS_ONLY_RUNTIME
+const registerAgentControlInstance = ATLAS_LIGHTWEIGHT_RUNTIME
   ? () => null
   : require('./services/agentControlRegistry').registerAgentControlInstance;
 
@@ -32,28 +34,30 @@ const memoryInternalToken = boundedToken(process.env.T8_MEMORY_INTERNAL_TOKEN);
 delete process.env.T8_MEMORY_INTERNAL_TOKEN;
 app.use(backendMemoryActivity.middleware);
 
-function atlasOnlyDisabledRouter(feature) {
+function atlasRuntimeDisabledRouter(feature) {
   const router = express.Router();
   router.use((_req, res) => res.status(404).json({
     success: false,
-    code: 'atlas_only_runtime_disabled',
+    code: DESKTOP_ATLAS_RUNTIME ? 'desktop_atlas_runtime_disabled' : 'atlas_only_runtime_disabled',
     feature,
-    error: '该桌面能力未在 Atlas Web 轻量运行时启用',
+    error: DESKTOP_ATLAS_RUNTIME
+      ? '该历史能力未在 Atlas 桌面版本启用'
+      : '该桌面能力未在 Atlas Web 轻量运行时启用',
   }));
   return router;
 }
 
-const agentControlRouter = ATLAS_ONLY_RUNTIME
-  ? Object.assign(atlasOnlyDisabledRouter('agent-control'), {
+const agentControlRouter = ATLAS_LIGHTWEIGHT_RUNTIME
+  ? Object.assign(atlasRuntimeDisabledRouter('agent-control'), {
     AGENT_CONTROL_REQUEST_LIMIT: 64 * 1024,
     AGENT_CONTROL_HTTP_SCHEMA: 't8-agent-control-http-v1',
   })
   : require('./routes/agentControl');
-const canvasAgentToolsRouter = ATLAS_ONLY_RUNTIME
-  ? atlasOnlyDisabledRouter('canvas-agent')
+const canvasAgentToolsRouter = ATLAS_LIGHTWEIGHT_RUNTIME
+  ? atlasRuntimeDisabledRouter('canvas-agent')
   : require('./routes/canvasAgentTools');
-const creatorAgentRouter = ATLAS_ONLY_RUNTIME
-  ? Object.assign(atlasOnlyDisabledRouter('creator-agent'), {
+const creatorAgentRouter = ATLAS_LIGHTWEIGHT_RUNTIME
+  ? Object.assign(atlasRuntimeDisabledRouter('creator-agent'), {
     CREATOR_AGENT_REQUEST_LIMIT: 1024 * 1024,
     CREATOR_AGENT_HTTP_SCHEMA: 't8-creator-agent-http-v1',
   })
@@ -551,9 +555,11 @@ app.get('/api/status', (_req, res) => {
     version: config.APP_VERSION,
     port: config.PORT,
     instanceId: config.BACKEND_INSTANCE_ID,
-    runtime: ATLAS_ONLY_RUNTIME ? 'atlas-only' : 'desktop',
+    runtime: DESKTOP_ATLAS_RUNTIME ? 'desktop-atlas' : (ATLAS_ONLY_RUNTIME ? 'atlas-only' : 'desktop'),
     storage: {
-      persistence: process.env.T8_PERSISTENT_DISK_CONFIGURED === '1' ? 'configured' : 'unknown',
+      persistence: DESKTOP_ATLAS_RUNTIME
+        ? 'local-user-data'
+        : (process.env.T8_PERSISTENT_DISK_CONFIGURED === '1' ? 'configured' : 'unknown'),
     },
     time: new Date().toISOString(),
   });
@@ -569,14 +575,30 @@ const themesRouter = require('./routes/themes');
 const externalProvidersRouter = require('./routes/externalProviders');
 const achievementsRouter = require('./routes/achievements');
 const webAssetsRouter = require('./routes/webAssets');
-const collaborationRouter = require('./routes/collaboration');
-const { getCollaborationGateway } = require('./collaboration/gateway');
+const collaborationRouter = DESKTOP_ATLAS_RUNTIME
+  ? atlasRuntimeDisabledRouter('collaboration')
+  : require('./routes/collaboration');
+const getCollaborationGateway = DESKTOP_ATLAS_RUNTIME
+  ? () => ({
+    shutdown: async () => ({ stopped: true, applicationRequests: { drained: true } }),
+    stop: async () => ({ stopped: true, applicationRequests: { drained: true } }),
+    waitForApplicationRequests: async () => ({ drained: true }),
+  })
+  : require('./collaboration/gateway').getCollaborationGateway;
 const projectRunsRouter = require('./routes/projectRuns');
 const projectAssetsRouter = require('./routes/projectAssets');
 const subflowsRouter = require('./routes/subflows');
-const legacyRouter = (feature, modulePath) => ATLAS_ONLY_RUNTIME
-  ? atlasOnlyDisabledRouter(feature)
-  : require(modulePath);
+const DESKTOP_LOCAL_FEATURES = new Set([
+  'image-operations',
+  'video-operations',
+  'anime-tags',
+  'batch-tags',
+]);
+const legacyRouter = (feature, modulePath) => (
+  ATLAS_ONLY_RUNTIME || (DESKTOP_ATLAS_RUNTIME && !DESKTOP_LOCAL_FEATURES.has(feature))
+    ? atlasRuntimeDisabledRouter(feature)
+    : require(modulePath)
+);
 const proxyRouter = legacyRouter('legacy-provider-proxy', './routes/proxy');
 const imageOpsRouter = legacyRouter('image-operations', './routes/imageOps');
 const eagleRouter = legacyRouter('eagle', './routes/eagle');
@@ -689,7 +711,7 @@ app.use('/api/collaboration', collaborationRouter);
 app.use('/api/project-runs', projectRunsRouter);
 app.use('/api/project-assets', projectAssetsRouter);
 app.use('/api/subflows', subflowsRouter);
-if (!ATLAS_ONLY_RUNTIME) {
+if (!ATLAS_LIGHTWEIGHT_RUNTIME) {
   const { registerLocalExtensions } = require('./extensions/localExtensions');
   const localHooks = require('./extensions/runtimeHooks');
   registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
@@ -768,7 +790,7 @@ const server = app.listen(PORT, HOST, () => {
   console.log('--------------------------------------------------');
   backendMemoryActivity.log('backend.listening', { phase: 'http-ready' });
   startFigmaBridgeOnAppStart(console);
-  if (!ATLAS_ONLY_RUNTIME) setImmediate(() => {
+  if (!ATLAS_LIGHTWEIGHT_RUNTIME) setImmediate(() => {
     if (shutdownStarted) return;
     startupSemanticModelRefreshPromise = Promise.resolve()
       .then(() => projectAssetsRouter.semanticPipeline.refreshModelStates())
@@ -1121,6 +1143,10 @@ module.exports = {
   applicationRequestStatus,
   waitForApplicationRequests,
   waitForRuntimeStorageCloseLifecycle,
-  agentControlAuthService: require('./services/agentControlAuth').agentControlAuthService,
-  agentControlApprovalService: require('./services/agentControlApprovals').agentControlApprovalService,
+  agentControlAuthService: ATLAS_LIGHTWEIGHT_RUNTIME
+    ? null
+    : require('./services/agentControlAuth').agentControlAuthService,
+  agentControlApprovalService: ATLAS_LIGHTWEIGHT_RUNTIME
+    ? null
+    : require('./services/agentControlApprovals').agentControlApprovalService,
 };

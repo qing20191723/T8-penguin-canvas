@@ -10,7 +10,14 @@ const { redactAndScanRunValue } = require('../services/runRedaction');
 const { normalizeRunError } = require('../services/runErrors');
 const { explicitRunCost } = require('../services/runUsage');
 const { getRunRecoveryManager } = require('../services/runRecovery');
-const { getCollaborationGateway } = require('../collaboration/gateway');
+const getCollaborationGateway = config.DESKTOP_ATLAS_RUNTIME
+  ? () => ({
+    broadcastHostRunIntent() {},
+    broadcastHostRunState() {},
+    broadcastHostNodeRunState() {},
+    broadcastHostRunOutput() {},
+  })
+  : require('../collaboration/gateway').getCollaborationGateway;
 const { ExecutionPolicyError, HostExecutionPolicy } = require('../collaboration/executionPolicy');
 const {
   normalizeRunStatus,
@@ -58,7 +65,7 @@ const runExecutionPolicy = new HostExecutionPolicy(database);
 const recoveryManager = getRunRecoveryManager({
   database,
   baseUrl: `http://127.0.0.1:${config.PORT}`,
-  ...(process.env.T8_ATLAS_ONLY_RUNTIME === '1'
+  ...((process.env.T8_ATLAS_ONLY_RUNTIME === '1' || process.env.T8_DESKTOP_ATLAS_RUNTIME === '1')
     ? { allowedRecoveryKinds: ['atlas', 'custom'], concurrency: 1 }
     : {}),
   broadcast: {

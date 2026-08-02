@@ -10,8 +10,6 @@ import { useShortcutStore } from './stores/shortcuts';
 import Sidebar from './components/Sidebar';
 import type { AddNodeFn, InsertWorkflowFn } from './components/Canvas';
 import AppUpdaterButton from './components/AppUpdaterButton';
-import AgentControlPairingModal from './components/AgentControlPairingModal';
-import AgentControlApprovalModal from './components/AgentControlApprovalModal';
 import MaterialContextMenu from './components/MaterialContextMenu';
 import ErrorBoundary from './components/ErrorBoundary';
 import AchievementButton from './components/AchievementButton';
@@ -31,11 +29,14 @@ import { matchesAnyShortcut } from './utils/keyboardShortcuts';
 import { portraitResourceToNodeData } from './utils/portraitResource';
 import { applyUiFontPreference } from './utils/uiFont';
 import { LocalModalSlot, LocalTopbarSlot } from 'virtual:t8-local-extensions';
+import { DESKTOP_ATLAS_RUNTIME } from './config/atlasOnlyRuntime';
 
 const Canvas = lazy(() => import('./components/Canvas'));
 const ApiSettingsModal = lazy(() => import('./components/ApiSettings'));
 const ResourceLibraryDrawer = lazy(() => import('./components/ResourceLibraryDrawer'));
 const ThemeTemplateManager = lazy(() => import('./components/ThemeTemplateManager'));
+const AgentControlPairingModal = lazy(() => import('./components/AgentControlPairingModal'));
+const AgentControlApprovalModal = lazy(() => import('./components/AgentControlApprovalModal'));
 
 // vite.config 注入的编译期常量（与 package.json 同步），勿硬编码 v1.x.x
 declare const __APP_VERSION__: string;
@@ -296,7 +297,7 @@ function App() {
     toggleTheme,
     loadCustomTemplates,
   } = useThemeStore();
-  const { load: loadSettings, settings: apiSettings } = useApiKeysStore();
+  const { load: loadSettings, settings: apiSettings, loaded: settingsLoaded } = useApiKeysStore();
   const activeCanvasId = useCanvasStore((state) => state.activeId);
   const canvasCount = useCanvasStore((state) => state.canvases.length);
   const createCanvas = useCanvasStore((state) => state.createCanvas);
@@ -753,6 +754,13 @@ function App() {
     ) || null,
     [apiSettings.advancedProviders],
   );
+  const desktopOnboardingCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (!DESKTOP_ATLAS_RUNTIME || !settingsLoaded || desktopOnboardingCheckedRef.current) return;
+    desktopOnboardingCheckedRef.current = true;
+    if (!atlasProvider?.hasApiKey && !atlasProvider?.apiKey) setSettingsOpen(true);
+  }, [atlasProvider, settingsLoaded]);
 
   const buildSidebarNodeOptions = useCallback((type: NodeType): Parameters<AddNodeFn>[1] | undefined => {
     if (!atlasProvider || !['image', 'video', 'seedance', 'llm'].includes(type)) return undefined;
@@ -2261,8 +2269,8 @@ function App() {
       <AchievementDrawer />
       <AchievementCeremonyLayer />
       <AchievementToast />
-      <AgentControlPairingModal />
-      <AgentControlApprovalModal />
+      {!DESKTOP_ATLAS_RUNTIME && <AgentControlPairingModal />}
+      {!DESKTOP_ATLAS_RUNTIME && <AgentControlApprovalModal />}
     </div>
     </RHToolsProvider>
   );

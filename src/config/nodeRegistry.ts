@@ -1,6 +1,11 @@
 import schemaManifest from '../../backend/src/shared/canvasNodeSchema.json' with { type: 'json' };
 import type { NodeMeta } from '../types/canvas';
-import { ATLAS_ONLY_HIDDEN_NODE_TYPES, ATLAS_ONLY_RUNTIME } from './atlasOnlyRuntime';
+import {
+  ATLAS_LIGHTWEIGHT_RUNTIME,
+  DESKTOP_ATLAS_HIDDEN_NODE_TYPES,
+  DESKTOP_ATLAS_RUNTIME,
+  RUNTIME_HIDDEN_NODE_TYPES,
+} from './atlasOnlyRuntime';
 
 interface CanvasNodeSchemaManifest {
   schema: 't8-canvas-node-schema-v1';
@@ -28,12 +33,24 @@ interface CanvasNodeSchemaManifest {
 
 export const CANVAS_NODE_SCHEMA_MANIFEST = schemaManifest as unknown as CanvasNodeSchemaManifest;
 
-const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_ONLY_RUNTIME ? [
+const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_LIGHTWEIGHT_RUNTIME ? [
   { type: 'rh-toolbox-maker', label: 'RH工具箱制作器', category: 'rh', description: '维护者专用：在画布内制作 RH工具箱 manifest 模板，开发环境可见，用户包不打入', icon: 'FileJson', color: 'emerald' },
   { type: 'fal-toolbox-maker', label: 'FAL应用制作工具', category: 'fal', description: '维护者专用：从 fal.ai API 文档生成 Fal超市 manifest 草稿，开发环境可见，用户包不打入', icon: 'FileJson', color: 'violet' },
 ] : [];
 
 const nodeDisplayOverride = (item: CanvasNodeSchemaManifest['types'][number]): Pick<NodeMeta, 'label' | 'description'> => {
+  if (DESKTOP_ATLAS_RUNTIME && DESKTOP_ATLAS_HIDDEN_NODE_TYPES.has(item.type)) {
+    return {
+      label: item.label,
+      description: '历史画布兼容节点；当前 Atlas 桌面版本未启用，不能新建或执行旧平台请求。',
+    };
+  }
+  if (DESKTOP_ATLAS_RUNTIME && item.type === 'video') {
+    return {
+      label: '视频',
+      description: 'Atlas Cloud 通用视频节点：文生视频、图生视频、参考生视频与视频编辑。',
+    };
+  }
   if (item.type === 'seedance') {
     return {
       label: '视频',
@@ -52,7 +69,7 @@ const manifestRegistry: NodeMeta[] = CANVAS_NODE_SCHEMA_MANIFEST.types.map((item
   category: item.category,
   icon: item.icon,
   color: item.color,
-  ...(item.hidden === true || (ATLAS_ONLY_RUNTIME && ATLAS_ONLY_HIDDEN_NODE_TYPES.has(item.type))
+  ...(item.hidden === true || (ATLAS_LIGHTWEIGHT_RUNTIME && RUNTIME_HIDDEN_NODE_TYPES.has(item.type))
     ? { hidden: true }
     : {}),
 }));

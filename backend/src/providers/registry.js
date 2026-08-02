@@ -130,7 +130,9 @@ const DEFAULT_JIMENG_VIDEO_MODELS = [
 ];
 
 const ATLAS_ONLY_RUNTIME = process.env.T8_ATLAS_ONLY_RUNTIME === '1';
-const SUPPORTED_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+const DESKTOP_ATLAS_RUNTIME = process.env.T8_DESKTOP_ATLAS_RUNTIME === '1';
+const ATLAS_LIGHTWEIGHT_RUNTIME = ATLAS_ONLY_RUNTIME || DESKTOP_ATLAS_RUNTIME;
+const SUPPORTED_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
   ? ['openai-compatible', 'atlas']
   : ['openai-compatible', 'atlas', 'modelscope', 'volcengine', 'agnes', 'jimeng-cli', 'comfyui']);
 
@@ -247,7 +249,7 @@ const DESKTOP_DEFAULT_ADVANCED_PROVIDERS = [
     },
   },
 ];
-const DEFAULT_ADVANCED_PROVIDERS = ATLAS_ONLY_RUNTIME
+const DEFAULT_ADVANCED_PROVIDERS = ATLAS_LIGHTWEIGHT_RUNTIME
   ? ATLAS_ONLY_DEFAULT_ADVANCED_PROVIDERS
   : DESKTOP_DEFAULT_ADVANCED_PROVIDERS;
 
@@ -600,7 +602,7 @@ function normalizeProvider(raw, previous = null) {
 }
 
 function normalizeAdvancedProviders(rawProviders, currentProviders = []) {
-  if (!ATLAS_ONLY_RUNTIME) {
+  if (!ATLAS_LIGHTWEIGHT_RUNTIME) {
     const previousById = new Map(
       (Array.isArray(currentProviders) ? currentProviders : [])
         .filter((item) => item && typeof item === 'object')

@@ -187,3 +187,79 @@ test('web settings expose only configured or masked credential state and hide ra
   assert.equal(frontendApi.includes('/settings/raw'), false);
   assert.equal(frontendApi.includes('getRawSettings'), false);
 });
+
+test('desktop Atlas settings migrate plaintext provider keys into safeStorage and close raw settings', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 't8-desktop-atlas-settings-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  const config = require('../backend/src/config.js');
+  const secretStore = require('../backend/src/services/desktopSecretStore.js');
+  const previous = {
+    SETTINGS_FILE: config.SETTINGS_FILE,
+    DESKTOP_SECRET_FILE: config.DESKTOP_SECRET_FILE,
+    DESKTOP_ATLAS_RUNTIME: config.DESKTOP_ATLAS_RUNTIME,
+    WEB_DEPLOYMENT: config.WEB_DEPLOYMENT,
+  };
+  t.after(() => {
+    secretStore.configureSafeStorageForTests(undefined);
+    Object.assign(config, previous);
+  });
+  config.SETTINGS_FILE = path.join(tmpDir, 'settings.json');
+  config.DESKTOP_SECRET_FILE = path.join(tmpDir, 'desktop-provider-secrets.enc.json');
+  config.DESKTOP_ATLAS_RUNTIME = true;
+  config.WEB_DEPLOYMENT = false;
+
+  secretStore.configureSafeStorageForTests({
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(`protected:${value}`, 'utf8'),
+    decryptString: (value: Buffer) => Buffer.from(value).toString('utf8').slice('protected:'.length),
+  });
+
+  const atlasSecret = 'atlas-plaintext-migration-123456';
+  const customSecret = 'custom-plaintext-migration-654321';
+  fs.writeFileSync(config.SETTINGS_FILE, JSON.stringify({
+    advancedProviders: [
+      { id: 'atlas', protocol: 'atlas', enabled: true, apiKey: atlasSecret },
+      { id: 'custom-api', protocol: 'openai-compatible', enabled: true, apiKey: customSecret },
+    ],
+  }));
+
+  const express = require('express');
+  const settingsRouter = require('../backend/src/routes/settings.js');
+  const app = express();
+  app.use(express.json({ limit: '1mb' }));
+  app.use('/api/settings', settingsRouter);
+  const server = await new Promise<any>((resolve) => {
+    const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+  });
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}/api/settings`;
+
+  const response = await fetch(base);
+  assert.equal(response.status, 200);
+  const publicBody = await response.text();
+  assert.equal(publicBody.includes(atlasSecret), false);
+  assert.equal(publicBody.includes(customSecret), false);
+  const persistedSettings = fs.readFileSync(config.SETTINGS_FILE, 'utf8');
+  const encryptedSecrets = fs.readFileSync(config.DESKTOP_SECRET_FILE, 'utf8');
+  for (const secret of [atlasSecret, customSecret]) {
+    assert.equal(persistedSettings.includes(secret), false);
+    assert.equal(encryptedSecrets.includes(secret), false);
+  }
+  assert.equal((await fetch(`${base}/raw`)).status, 404);
+
+  const preserve = await fetch(base, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      advancedProviders: [
+        { id: 'atlas', protocol: 'atlas', enabled: true, apiKey: '****3456' },
+        { id: 'custom-api', protocol: 'openai-compatible', enabled: true, apiKey: '****4321' },
+      ],
+    }),
+  });
+  assert.equal(preserve.status, 200);
+  const decrypted = secretStore.readSecrets(config.DESKTOP_SECRET_FILE);
+  assert.equal(decrypted.providers.atlas.apiKey, atlasSecret);
+  assert.equal(decrypted.providers['custom-api'].apiKey, customSecret);
+});

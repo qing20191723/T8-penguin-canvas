@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 declare const __T8_ATLAS_ONLY_RUNTIME__: boolean;
+declare const __T8_DESKTOP_ATLAS_RUNTIME__: boolean;
 
 declare module 'virtual:t8-local-extensions' {
   import type { FC } from 'react';

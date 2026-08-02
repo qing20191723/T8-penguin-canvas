@@ -4,7 +4,9 @@ const path = require('path');
 const multer = require('multer');
 const config = require('../config');
 const { getProjectDatabase, SubflowRevisionConflictError } = require('../services/projectDatabase');
-const { getCollaborationGateway } = require('../collaboration/gateway');
+const getCollaborationGateway = config.DESKTOP_ATLAS_RUNTIME
+  ? () => ({ broadcastSubflowPublication() {} })
+  : require('../collaboration/gateway').getCollaborationGateway;
 const {
   DEFAULT_LIMITS,
   containsPlaintextSecret,
