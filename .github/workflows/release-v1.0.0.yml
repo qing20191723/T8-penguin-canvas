@@ -1,6 +1,7 @@
 name: Release v1.0.0
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -41,7 +42,7 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Preflight Render and Atlas configuration without generation
+      - name: Preflight Render and Atlas connection without generation
         shell: pwsh
         run: |
           $status = Invoke-RestMethod -Method Get -Uri "$env:ATLAS_RENDER_BASE_URL/api/status" -TimeoutSec 180
@@ -50,10 +51,10 @@ jobs:
           }
           $body = @{ providerId = 'atlas'; dryRun = $true; timeoutMs = 60000 } | ConvertTo-Json
           $provider = Invoke-RestMethod -Method Post -Uri "$env:ATLAS_RENDER_BASE_URL/api/proxy/external/test-provider" -ContentType 'application/json' -Body $body -TimeoutSec 180
-          if ($provider.success -ne $true -or $provider.data.configured -ne $true -or $provider.data.dryRun -ne $true) {
-            throw 'Render Atlas provider dry-run failed. No paid request was submitted.'
+          if ($provider.success -ne $true -or $provider.data.ok -ne $true -or $provider.data.protocol -ne 'atlas') {
+            throw 'Render Atlas connection check failed. No paid request was submitted.'
           }
-          Write-Host 'Render Atlas provider preflight passed without generation.'
+          Write-Host "Render Atlas connection passed; model count: $($provider.data.modelCount)."
 
       - name: Install dependencies
         run: npm ci --include=dev
