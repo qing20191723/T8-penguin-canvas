@@ -7,11 +7,25 @@ const { startFigmaBridgeOnAppStart } = require('./utils/figmaBridge');
 const { getRunRecoveryManager } = require('./services/runRecovery');
 const { closeProjectDatabase } = require('./services/projectDatabase');
 const { registerAgentControlInstance } = require('./services/agentControlRegistry');
+const {
+  SCHEMA: MEMORY_SCHEMA,
+  authorizeBearer,
+  boundedToken,
+  createActivityTracker,
+  processMemorySnapshot,
+  queueSummary,
+  storageStatus,
+} = require('./services/memoryDiagnostics');
 const agentControlRouter = require('./routes/agentControl');
 const canvasAgentToolsRouter = require('./routes/canvasAgentTools');
 const creatorAgentRouter = require('./routes/creatorAgent');
 
 const app = express();
+const backendMemoryActivity = createActivityTracker('backend');
+const memoryDebugToken = boundedToken(process.env.T8_MEMORY_DEBUG_TOKEN);
+const memoryInternalToken = boundedToken(process.env.T8_MEMORY_INTERNAL_TOKEN);
+delete process.env.T8_MEMORY_INTERNAL_TOKEN;
+app.use(backendMemoryActivity.middleware);
 
 // Node's http.Server considers a request closed as soon as its socket is
 // destroyed, but an async Express handler can keep running afterwards. Track
@@ -513,6 +527,71 @@ const { registerLocalExtensions } = require('./extensions/localExtensions');
 const localHooks = require('./extensions/runtimeHooks');
 const collaborationGateway = getCollaborationGateway(config);
 
+function isLoopbackMemoryRequest(req) {
+  const address = String(req.socket?.remoteAddress || '').toLowerCase();
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function activeRunCount() {
+  try {
+    const database = projectAssetsRouter.semanticPipeline?.database;
+    if (!database?.listRuns) return 0;
+    return ['queued', 'running', 'polling']
+      .reduce((total, status) => total + database.listRuns({ status, limit: 10_000 }).length, 0);
+  } catch (_) {
+    return 0;
+  }
+}
+
+function backendMemoryPayload() {
+  const activity = backendMemoryActivity.snapshot();
+  const queues = queueSummary({
+    previewPipeline: projectAssetsRouter.previewPipeline,
+    semanticPipeline: projectAssetsRouter.semanticPipeline,
+    runRecoveryManager,
+  });
+  return {
+    schema: MEMORY_SCHEMA,
+    commit: String(process.env.RENDER_GIT_COMMIT || '').trim() || undefined,
+    phase: 'ready',
+    capturedAt: new Date().toISOString(),
+    process: processMemorySnapshot('backend'),
+    activity: {
+      requests: activity.activeRequests,
+      runs: activeRunCount(),
+      uploads: activity.activeUploads,
+      downloads: activity.activeDownloads + queues.semantic.downloads,
+    },
+    queues,
+    storage: storageStatus(config.DATA_DIR),
+  };
+}
+
+app.get('/api/debug/memory/internal', (req, res) => {
+  if (!memoryInternalToken || !isLoopbackMemoryRequest(req)) return res.status(404).end();
+  if (!authorizeBearer(req, memoryInternalToken)) return res.status(401).end();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(backendMemoryPayload());
+});
+
+// Direct single-process diagnostics for local/desktop investigations. Render's
+// public bootstrap owns the same external route and composes both processes.
+app.get('/api/debug/memory', (req, res) => {
+  if (!memoryDebugToken) return res.status(404).end();
+  if (!authorizeBearer(req, memoryDebugToken)) return res.status(401).end();
+  const backend = backendMemoryPayload();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    schema: MEMORY_SCHEMA,
+    commit: backend.commit,
+    phase: backend.phase,
+    capturedAt: backend.capturedAt,
+    bootstrap: null,
+    backend,
+    totalRss: backend.process.rss,
+  });
+});
+
 app.use('/api/canvas', canvasRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/proxy', proxyRouter);
@@ -614,6 +693,7 @@ const server = app.listen(PORT, HOST, () => {
   console.log('   Figma Bridge: 自动启动中（如需禁用可设置 T8_FIGMA_BRIDGE_AUTOSTART=0）');
   console.log('   按 Ctrl+C 停止服务器...');
   console.log('--------------------------------------------------');
+  backendMemoryActivity.log('backend.listening', { phase: 'http-ready' });
   startFigmaBridgeOnAppStart(console);
   setImmediate(() => {
     if (shutdownStarted) return;
@@ -625,11 +705,16 @@ const server = app.listen(PORT, HOST, () => {
   });
   setImmediate(() => {
     if (shutdownStarted) return;
+    backendMemoryActivity.log('run-recovery.start', { phase: 'run-recovery' });
     startupRunRecoveryPromise = runRecoveryManager.recoverPendingRuns()
       .then((result) => {
         if (result.recovered || result.failed || result.interrupted) console.log('[run-recovery] startup result', result);
+        backendMemoryActivity.log('run-recovery.end', { phase: 'ready' });
       })
-      .catch((error) => console.warn('[run-recovery] startup failed:', error?.message || error));
+      .catch((error) => {
+        backendMemoryActivity.log('run-recovery.error', { phase: 'ready', errorCode: String(error?.code || 'run_recovery_failed').slice(0, 80) });
+        console.warn('[run-recovery] startup failed:', error?.message || error);
+      });
   });
 });
 server.once('error', (error) => {
@@ -920,6 +1005,7 @@ process.once('SIGINT', () => handleShutdownSignal('SIGINT'));
 process.once('SIGTERM', () => handleShutdownSignal('SIGTERM'));
 process.once('exit', closeSemanticPipeline);
 process.once('exit', () => {
+  backendMemoryActivity.close();
   try { agentControlRegistration?.stop?.(); } catch (_) {}
 });
 

@@ -72,6 +72,7 @@ jobs:
           fi
           cat /tmp/bootstrap-status.json
           grep -q '"success":true' /tmp/bootstrap-status.json
+          test "$(curl -sS -o /tmp/memory-disabled.json -w '%{http_code}' --max-time 3 http://127.0.0.1:10000/api/debug/memory)" = '404'
           grep -q '\[render\] public bootstrap listening on http://0.0.0.0:10000' /tmp/render-server.log
 
           backend_ready=0

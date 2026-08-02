@@ -14,6 +14,8 @@ services:
     envVars:
       - key: ATLASCLOUD_API_KEY
         sync: false
+      - key: T8_MEMORY_DEBUG_TOKEN
+        sync: false
       - key: HOST
         value: 0.0.0.0
       - key: PORT

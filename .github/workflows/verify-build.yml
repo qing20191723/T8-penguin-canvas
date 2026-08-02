@@ -36,6 +36,9 @@ jobs:
       - name: Verify Web credential boundary
         run: npm run test:electron:ts -- tests/advancedProviderSettingsRoute.test.ts
 
+      - name: Verify protected memory diagnostics
+        run: node --test tests/memoryDiagnostics.test.cjs tests/renderMemoryDiagnostics.test.cjs
+
       - name: Verify generated feature artifacts
         run: npm run feature-sync:check
 
