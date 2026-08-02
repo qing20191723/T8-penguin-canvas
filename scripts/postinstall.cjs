@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const isRender = String(process.env.RENDER || '').toLowerCase() === 'true';
@@ -11,10 +12,18 @@ if (isWebDeploy) {
   process.exit(0);
 }
 
-const command = process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder';
-const result = spawnSync(command, ['install-app-deps'], {
+let cliPath;
+try {
+  cliPath = path.join(path.dirname(require.resolve('electron-builder/package.json')), 'cli.js');
+} catch (error) {
+  console.error('[postinstall] Unable to resolve the local electron-builder CLI:', error);
+  process.exit(1);
+}
+
+const result = spawnSync(process.execPath, [cliPath, 'install-app-deps'], {
   stdio: 'inherit',
   env: process.env,
+  windowsHide: true,
 });
 
 if (result.error) {
