@@ -14,8 +14,10 @@ const {
 const { resolveMediaRef } = require('../providers/mediaResolver');
 const { isLoopbackAddress, safeRemoteMediaDownload } = require('../utils/safeRemoteMediaFetch');
 const { validateSavedMedia } = require('./files')._test;
+const { providerSubmissionContextMiddleware } = require('../services/providerSubmissionContext');
 
 const router = express.Router();
+router.use(providerSubmissionContextMiddleware);
 const EXTERNAL_GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
 const WEB_IMAGE_FETCH_TIMEOUT_MS = 30 * 1000;
 const WEB_IMAGE_FETCH_MAX_BYTES = 20 * 1024 * 1024;

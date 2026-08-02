@@ -4,7 +4,6 @@ button[title*='VibeX'],
 button[title*='Photoshop'],
 button[title*='RunningHub'],
 button[title*='ComfyUI'],
-button[title*='Grok'],
 button[title*='Codex'] {
   display: none !important;
 }
