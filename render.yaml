@@ -24,6 +24,12 @@ services:
         value: production
       - key: T8_WEB_RUNTIME
         value: 1
+      # All mutable Web state lives under one future disk mount. On the Free
+      # plan this path is still ephemeral; attach a paid Render disk at
+      # /var/data and set T8_PERSISTENT_DISK_CONFIGURED=1 before claiming
+      # restart/deploy durability.
+      - key: T8PC_DEV_DATA_ROOT
+        value: /var/data/t8
       - key: T8PC_FRONTEND_DIST
         value: ../dist
       - key: T8_FIGMA_BRIDGE_AUTOSTART
