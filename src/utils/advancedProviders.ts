@@ -14,6 +14,7 @@ export interface ModelscopeLoraOption {
 export const MAX_MODELSCOPE_NODE_LORAS = 5;
 export const MODELSCOPE_LORA_TOTAL_WEIGHT = 1;
 const MODELSCOPE_LORA_WEIGHT_DECIMALS = 4;
+const ATLAS_PREFERRED_VIDEO_MODEL = 'atlascloud/wan-2.7-spicy/reference-to-video';
 
 export interface ModelscopeSelectedLora {
   id: string;
@@ -233,12 +234,12 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
   },
   video: {
     atlas: [
-      'kwaivgi/kling-v3.0-std/text-to-video',
-      'kwaivgi/kling-v3.0-std/image-to-video',
+      ATLAS_PREFERRED_VIDEO_MODEL,
       'atlascloud/wan-2.7-spicy/image-to-video',
-      'atlascloud/wan-2.7-spicy/reference-to-video',
       'alibaba/wan-2.7/reference-to-video',
       'alibaba/wan-2.7/video-edit',
+      'kwaivgi/kling-v3.0-std/text-to-video',
+      'kwaivgi/kling-v3.0-std/image-to-video',
     ],
     'openai-compatible': [],
   },
@@ -267,7 +268,13 @@ function listForKind(provider: AdvancedProviderConfig, kind: AdvancedProviderNod
 function defaultModelForKind(provider: AdvancedProviderConfig, kind: AdvancedProviderNodeKind): string {
   const defaults = provider.defaults || {};
   const key = kind === 'llm' ? 'chatModel' : `${kind}Model`;
-  return String(defaults[key] || defaults.model || '').trim();
+  const configured = String(defaults[key] || defaults.model || '').trim();
+  if (kind === 'video' && provider.protocol === 'atlas') {
+    return !configured || configured === 'kwaivgi/kling-v3.0-std/text-to-video'
+      ? ATLAS_PREFERRED_VIDEO_MODEL
+      : configured;
+  }
+  return configured;
 }
 
 function supportsNodeKind(provider: AdvancedProviderConfig, kind: AdvancedProviderNodeKind): boolean {
