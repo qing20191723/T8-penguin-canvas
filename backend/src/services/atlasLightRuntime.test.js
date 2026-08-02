@@ -91,6 +91,7 @@ test('Render wiring enables Atlas-only runtime, keeps unified external gateway, 
   const externalProviders = fs.readFileSync(path.join(root, 'backend/src/routes/externalProviders.js'), 'utf8');
   const atlasOnlyCss = fs.readFileSync(path.join(root, 'src/styles/atlasOnly.css'), 'utf8');
   assert.match(render, /key: T8_ATLAS_ONLY_RUNTIME[\s\S]*?value: 1/);
+  assert.match(render, /key: T8PC_DEV_DATA_ROOT[\s\S]*?value: \/var\/data\/t8/);
   assert.match(render, /key: T8PC_ASSET_PREVIEW_CONCURRENCY[\s\S]*?value: 1/);
   assert.match(renderServer, /process\.env\.T8_ATLAS_ONLY_RUNTIME = '1'/);
   assert.match(renderServer, /T8_ATLAS_ONLY_RUNTIME: '1'/);
