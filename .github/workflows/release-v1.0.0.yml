@@ -1,0 +1,83 @@
+name: Release v1.0.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1.0.0.yml'
+      - 'scripts/atlas-release-smoke.cjs'
+      - 'release-notes/v1.0.0.md'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.0.0
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'qing20191723/T8-penguin-canvas'
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      CI: 'true'
+      GH_TOKEN: ${{ github.token }}
+      ATLASCLOUD_API_KEY: ${{ secrets.ATLASCLOUD_API_KEY }}
+      T8_RELEASE_APPROVAL: release-1.0.0
+      T8_RELEASE_TARGET: ${{ github.sha }}
+      T8_RELEASE_REPO: ${{ github.repository }}
+      T8_RELEASE_TAG: v1.0.0
+
+    steps:
+      - name: Checkout fixed main SHA
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Require Atlas release secret
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ATLASCLOUD_API_KEY)) {
+            throw 'Repository secret ATLASCLOUD_API_KEY is missing. No paid request was submitted and no release was built.'
+          }
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Verify release-critical contracts
+        run: |
+          node --test backend/src/providers/atlas.test.js backend/src/providers/atlasSchema.test.js backend/src/providers/registry.test.js
+          node --test tests/desktopAtlasPackaging.test.cjs
+          npm run test:electron:ts -- tests/electronUpdater.test.ts
+          npm run type-check
+          npm run feature-sync:check
+
+      - name: Run one paid Kimi and Wan smoke each
+        run: node scripts/atlas-release-smoke.cjs
+
+      - name: Preserve paid smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-paid-smoke-v1.0.0-${{ github.sha }}
+          path: artifacts/atlas-paid-smoke
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Build, seal, publish and verify Windows release
+        run: npm run dist:release
+
+      - name: Re-download and verify published release
+        run: npm run release:verify
+
+      - name: Report published assets
+        shell: pwsh
+        run: |
+          gh release view v1.0.0 --repo $env:GITHUB_REPOSITORY --json tagName,url,targetCommitish,isDraft,isPrerelease,assets
