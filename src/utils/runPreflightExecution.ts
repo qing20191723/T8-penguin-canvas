@@ -15,14 +15,11 @@ export function isSameRunPreflightExecutionSnapshot(
   expected: RunPreflightExecutionSnapshot,
   current: RunPreflightExecutionSnapshot | null,
 ) {
-  // The persisted canvas revision is the durable execution contract. The local
-  // graphMutationEpoch also advances for volatile node status/progress writes
-  // made while a Run is being created, so requiring it to stay identical can
-  // incorrectly block the next provider call after a timeout or failed node.
   return Boolean(current
     && current.projectId === expected.projectId
     && current.canvasId === expected.canvasId
-    && current.revision === expected.revision);
+    && current.revision === expected.revision
+    && current.graphMutationEpoch === expected.graphMutationEpoch);
 }
 
 /**
