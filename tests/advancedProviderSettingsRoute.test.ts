@@ -86,7 +86,8 @@ test('settings route persists advancedProviders with masking and secret preserva
   assert.equal(custom.hasApiKey, true);
   assert.equal(masked.data.advancedProviderSummary.enabledCount, 2);
   assert.equal(masked.data.advancedProviderSummary.configuredKeyCount, 2);
-  assert.equal(masked.data.advancedProviders.length, 2);
+  assert.equal(masked.data.advancedProviders.length, 7);
+  assert.equal(masked.data.advancedProviders.find((p: any) => p.id === 'modelscope')?.enabled, false);
   assert.equal(JSON.stringify(masked.data).includes('atlas-secret-123456'), false);
   assert.equal(JSON.stringify(masked.data).includes('custom-secret-654321'), false);
 
