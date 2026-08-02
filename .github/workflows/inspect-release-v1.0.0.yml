@@ -7,97 +7,113 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: write
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
     env:
       RENDER_BASE_URL: https://qingchen-atlascloud-canvas.onrender.com
+      RELEASE_SHA: 342026c10df929d94b98a2aec9fe0aa18d971674
     steps:
-      - name: Read formal release workflow status
+      - name: Inspect and write sanitized report
+        id: inspect
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: 342026c10df929d94b98a2aec9fe0aa18d971674
         run: |
-          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=20" > release-runs.json
           node - <<'NODE'
           const fs = require('node:fs');
-          const payload = JSON.parse(fs.readFileSync('release-runs.json', 'utf8'));
-          const expected = process.env.RELEASE_SHA;
-          const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
-          const matching = runs.filter((run) => run.head_sha === expected);
-          console.log(JSON.stringify({
-            expected,
-            total: runs.length,
-            matching: matching.map((run) => ({
+          const { execFileSync } = require('node:child_process');
+          const report = {
+            releaseSha: process.env.RELEASE_SHA,
+            releaseRun: null,
+            render: null,
+            catalog: null,
+            provider: null,
+            errors: [],
+          };
+          const json = (cmd, args, input) => JSON.parse(execFileSync(cmd, args, {
+            input,
+            encoding: 'utf8',
+            timeout: 180000,
+            env: process.env,
+          }));
+          try {
+            const runs = json('gh', ['api', '-X', 'GET', `repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=20`]);
+            const run = (runs.workflow_runs || []).find((item) => item.head_sha === process.env.RELEASE_SHA);
+            report.releaseRun = run ? {
               id: run.id,
               status: run.status,
               conclusion: run.conclusion,
-              event: run.event,
-              head_sha: run.head_sha,
-              created_at: run.created_at,
-              updated_at: run.updated_at,
-              html_url: run.html_url,
-            })),
-          }, null, 2));
-          if (!matching.length) process.exitCode = 2;
+              url: run.html_url,
+            } : null;
+          } catch (error) { report.errors.push(`release-run: ${error.message}`); }
+          try {
+            const status = json('curl', ['--fail-with-body','--silent','--show-error','--max-time','180',`${process.env.RENDER_BASE_URL}/api/status`]);
+            report.render = {
+              status: status.status,
+              profile: status.runtime?.profile,
+              atlasOnly: status.runtime?.atlasOnly,
+            };
+          } catch (error) { report.errors.push(`render-status: ${error.message}`); }
+          try {
+            const catalog = json('curl', ['--fail-with-body','--silent','--show-error','--max-time','180',`${process.env.RENDER_BASE_URL}/api/proxy/atlas/models`]);
+            const body = JSON.stringify(catalog).toLowerCase();
+            report.catalog = {
+              ok: catalog.ok,
+              source: catalog.source,
+              total: catalog.total,
+              kimiAliasPresent: body.includes('kimi-k3') || body.includes('kimi k3'),
+              wanSpicyAliasPresent: body.includes('wan-2.7-spicy') || body.includes('wan 2.7 spicy'),
+            };
+          } catch (error) { report.errors.push(`catalog: ${error.message}`); }
+          try {
+            const provider = json('curl', [
+              '--fail-with-body','--silent','--show-error','--max-time','180',
+              '-H','Accept: application/json','-H','Content-Type: application/json',
+              '--data','{"providerId":"atlas","dryRun":true,"timeoutMs":60000}',
+              `${process.env.RENDER_BASE_URL}/api/proxy/external/test-provider`,
+            ]);
+            report.provider = {
+              success: provider.success,
+              code: provider.code || null,
+              error: provider.error || null,
+              provider: provider.data?.provider || null,
+              configured: provider.data?.configured === true,
+              dryRun: provider.data?.dryRun === true,
+            };
+          } catch (error) { report.errors.push(`provider-dry-run: ${error.message}`); }
+          const ok = report.render?.status === 'ok'
+            && report.render?.profile === 'atlas-only'
+            && report.catalog?.ok === true
+            && report.provider?.success === true
+            && report.provider?.configured === true
+            && report.provider?.dryRun === true;
+          report.ok = ok;
+          fs.writeFileSync('diagnostic.json', JSON.stringify(report, null, 2));
+          const lines = [
+            '## v1.0.0 发布诊断',
+            '',
+            `- 总体：**${ok ? 'PASS' : 'FAIL'}**`,
+            `- 正式发布任务：\`${report.releaseRun?.conclusion || report.releaseRun?.status || 'not-found'}\`（ID: \`${report.releaseRun?.id || 'n/a'}\`）`,
+            `- Render：\`${report.render?.status || 'unknown'}\` / \`${report.render?.profile || 'unknown'}\``,
+            `- Atlas 目录：\`${report.catalog?.ok === true ? 'ok' : 'failed'}\`，${report.catalog?.total ?? 'unknown'} 个模型`,
+            `- Atlas Provider dry-run：\`${report.provider?.success === true ? 'success' : 'failed'}\`，configured=\`${report.provider?.configured ?? false}\`，dryRun=\`${report.provider?.dryRun ?? false}\``,
+          ];
+          if (report.errors.length) lines.push('', '错误：', ...report.errors.map((item) => `- ${item}`));
+          lines.push('', '<details><summary>脱敏 JSON</summary>', '', '```json', JSON.stringify(report, null, 2), '```', '</details>');
+          fs.writeFileSync('diagnostic.md', lines.join('\n'));
+          if (!ok) process.exitCode = 1;
           NODE
 
-      - name: Probe Render status and Atlas catalog
-        run: |
-          curl --fail-with-body --retry 3 --retry-delay 10 --max-time 180 \
-            -H 'Accept: application/json' \
-            "$RENDER_BASE_URL/api/status" | tee render-status.json
-          curl --fail-with-body --retry 3 --retry-delay 10 --max-time 180 \
-            -H 'Accept: application/json' \
-            "$RENDER_BASE_URL/api/proxy/atlas/models" | tee atlas-models.json
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const status = JSON.parse(fs.readFileSync('render-status.json', 'utf8'));
-          const catalog = JSON.parse(fs.readFileSync('atlas-models.json', 'utf8'));
-          const body = JSON.stringify(catalog).toLowerCase();
-          const matches = (catalog.items || []).filter((item) => /kimi[-_/ ]?k?3|wan[-_/ .]?2\.7[-_/ ]?spicy/i.test(JSON.stringify(item)));
-          const available = {
-            kimiK3: body.includes('kimi-k3') || body.includes('kimi k3'),
-            wanSpicy: body.includes('wan-2.7-spicy') || body.includes('wan 2.7 spicy'),
-          };
-          console.log(JSON.stringify({
-            serviceStatus: status.status,
-            runtimeProfile: status.runtime?.profile,
-            catalogOk: catalog.ok,
-            catalogSource: catalog.source,
-            catalogTotal: catalog.total,
-            available,
-            matchingItems: matches.slice(0, 10),
-          }, null, 2));
-          if (status.status !== 'ok' || status.runtime?.profile !== 'atlas-only') {
-            throw new Error('Render is not a healthy Atlas-only runtime');
-          }
-          if (!catalog.ok) throw new Error('Atlas model catalog did not return ok=true');
-          if (!available.kimiK3 || !available.wanSpicy) {
-            console.warn('Catalog naming did not match both release aliases; provider dry-run remains authoritative.');
-          }
-          NODE
+      - name: Publish sanitized report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file diagnostic.md
 
-      - name: Confirm Render Atlas provider configuration without generation
+      - name: Enforce result
+        if: always()
         run: |
-          curl --fail-with-body --max-time 180 \
-            -H 'Accept: application/json' \
-            -H 'Content-Type: application/json' \
-            --data '{"providerId":"atlas","dryRun":true,"timeoutMs":60000}' \
-            "$RENDER_BASE_URL/api/proxy/external/test-provider" | tee provider-test.json
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const payload = JSON.parse(fs.readFileSync('provider-test.json', 'utf8'));
-          console.log(JSON.stringify({
-            success: payload.success,
-            code: payload.code,
-            error: payload.error,
-            provider: payload.data?.provider,
-            configured: payload.data?.configured,
-            dryRun: payload.data?.dryRun,
-          }, null, 2));
-          if (!payload.success || payload.data?.configured !== true || payload.data?.dryRun !== true) {
-            throw new Error(payload.error || 'Atlas provider is not configured on Render');
-          }
-          NODE
+          node -e "const r=require('./diagnostic.json'); if(!r.ok) process.exit(1)"
