@@ -61,18 +61,16 @@ test('Seedream v5 Pro text-to-image uses the Pro schema', async () => {
   assert.equal(result.ok, true);
 });
 
-test('Seedream v5 Pro switches to edit for references', async () => {
+test('Seedream v5 Pro never silently switches a selected paid model', async () => {
   const result = await atlas.generateImage(provider, {
     model: 'bytedance/seedream-v5.0-pro/text-to-image',
     prompt: 'turn it blue',
     images: ['https://example.com/input.png'],
-  }, {
-    fetchImpl: generationFetch((_url, body) => {
-      assert.equal(body.model, 'bytedance/seedream-v5.0-pro/edit');
-      assert.deepEqual(body.images, ['https://example.com/input.png']);
-    }, 'https://example.com/edited.png'),
-  });
-  assert.equal(result.ok, true);
+  }, { fetchImpl: async () => { throw new Error('must not submit'); } });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_model_parameters');
+  assert.match(result.error, /不会自动更换收费模型/);
+  assert.match(result.error, /seedream-v5\.0-pro\/edit/);
 });
 
 test('Kling v3 image-to-video preserves the official model and maps start/end frames', async () => {
@@ -116,7 +114,7 @@ test('Atlas accepts code zero and a top-level upload url', async () => {
   const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   let uploadSeen = false;
   const result = await atlas.generateImage(provider, {
-    model: 'bytedance/seedream-v5.0-pro/text-to-image',
+    model: 'bytedance/seedream-v5.0-pro/edit',
     prompt: 'edit the uploaded pixel',
     images: [tinyPng],
   }, {

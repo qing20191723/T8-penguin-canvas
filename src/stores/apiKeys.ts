@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AdvancedProviderConfig, ApiSettings } from '../types/canvas';
+import type { AdvancedProviderConfig, ApiSettings, AtlasCatalogMetadata } from '../types/canvas';
 import * as api from '../services/api';
 import { ATLAS_RUNTIME_CREDENTIAL_MARKER } from '../config/atlasOnlyRuntime';
 
@@ -22,15 +22,18 @@ const ATLAS_FALLBACK_IMAGE_MODELS = [
 ];
 const ATLAS_FALLBACK_CHAT_MODELS = ['moonshotai/kimi-k3'];
 const ATLAS_FALLBACK_VIDEO_MODELS = [
-  'kwaivgi/kling-v3.0-std/text-to-video',
-  'kwaivgi/kling-v3.0-std/image-to-video',
+  'alibaba/wan-2.7/text-to-video',
+  'alibaba/wan-2.7/image-to-video',
+  'alibaba/wan-2.7/reference-to-video',
   'atlascloud/wan-2.7-spicy/image-to-video',
   'atlascloud/wan-2.7-spicy/reference-to-video',
-  'alibaba/wan-2.7/reference-to-video',
-  'alibaba/wan-2.7/video-edit',
+  'bytedance/seedance-2.0/text-to-video',
+  'bytedance/seedance-2.0/image-to-video',
+  'bytedance/seedance-2.0/reference-to-video',
 ];
+const ATLAS_FALLBACK_AUDIO_MODELS = ['bytedance/seed-audio-1.0', 'bytedance/seed-asr-2.0'];
 
-type AtlasCatalogKind = 'image' | 'video' | 'chat' | 'other';
+type AtlasCatalogKind = 'image' | 'video' | 'chat' | 'audio' | 'other';
 
 function uniqueModelIds(values: unknown[]): string[] {
   const out: string[] = [];
@@ -53,6 +56,7 @@ function atlasCatalogKind(model: any): AtlasCatalogKind {
   if (type === 'image') return 'image';
   if (type === 'video') return 'video';
   if (type === 'text') return 'chat';
+  if (type === 'audio') return 'audio';
 
   const categories = Array.isArray(model?.categories) ? model.categories : [];
   const tags = Array.isArray(model?.tags) ? model.tags : [];
@@ -62,6 +66,7 @@ function atlasCatalogKind(model: any): AtlasCatalogKind {
   if (/image|text-to-image|image-to-image|inpaint|outpaint/.test(text)) return 'image';
   if (/video|text-to-video|image-to-video|video-to-video|reference-to-video/.test(text)) return 'video';
   if (/\b(text|llm|chat|language|embedding)\b|text-to-text|vision-language/.test(text)) return 'chat';
+  if (/audio|speech|music|tts|asr|transcri/.test(text)) return 'audio';
   return 'other';
 }
 
@@ -89,10 +94,14 @@ function ensureAtlasAndCustomProviders(settings: { advancedProviders?: AdvancedP
     chatModels: Array.isArray(atlasSource?.chatModels) && atlasSource.chatModels.length
       ? atlasSource.chatModels
       : ATLAS_FALLBACK_CHAT_MODELS,
+    audioModels: Array.isArray(atlasSource?.audioModels) && atlasSource.audioModels.length
+      ? atlasSource.audioModels
+      : ATLAS_FALLBACK_AUDIO_MODELS,
     defaults: {
       imageModel: ATLAS_FALLBACK_IMAGE_MODELS[0],
       videoModel: ATLAS_FALLBACK_VIDEO_MODELS[0],
       chatModel: ATLAS_FALLBACK_CHAT_MODELS[0],
+      audioModel: ATLAS_FALLBACK_AUDIO_MODELS[0],
       pollIntervalMs: 3000,
       ...(atlasSource?.defaults || {}),
     },
@@ -108,6 +117,7 @@ function ensureAtlasAndCustomProviders(settings: { advancedProviders?: AdvancedP
     imageModels: Array.isArray(customSource?.imageModels) ? customSource.imageModels : [],
     videoModels: Array.isArray(customSource?.videoModels) ? customSource.videoModels : [],
     chatModels: Array.isArray(customSource?.chatModels) ? customSource.chatModels : [],
+    audioModels: Array.isArray(customSource?.audioModels) ? customSource.audioModels : [],
     defaults: { ...(customSource?.defaults || {}) },
   };
 
@@ -136,7 +146,7 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
       : Object.values(payload?.models || {}).flatMap((value) => (Array.isArray(value) ? value : []));
     if (!items.length) throw new Error('Atlas 模型目录为空');
 
-    const byKind = { image: [] as any[], video: [] as any[], chat: [] as any[] };
+    const byKind = { image: [] as any[], video: [] as any[], chat: [] as any[], audio: [] as any[] };
     for (const model of items) {
       const kind = atlasCatalogKind(model);
       if (kind !== 'other') byKind[kind].push(model);
@@ -146,7 +156,8 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     const imageModels = uniqueModelIds(byKind.image);
     const videoModels = uniqueModelIds(byKind.video);
     const chatModels = uniqueModelIds(byKind.chat);
-    if (!imageModels.length && !videoModels.length && !chatModels.length) {
+    const audioModels = uniqueModelIds(byKind.audio);
+    if (!imageModels.length && !videoModels.length && !chatModels.length && !audioModels.length) {
       throw new Error('Atlas 模型目录没有可识别模型');
     }
 
@@ -154,6 +165,17 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     defaults.imageModel = selectDefault(imageModels, ATLAS_FALLBACK_IMAGE_MODELS, defaults.imageModel);
     defaults.videoModel = selectDefault(videoModels, ATLAS_FALLBACK_VIDEO_MODELS, defaults.videoModel);
     defaults.chatModel = selectDefault(chatModels, ATLAS_FALLBACK_CHAT_MODELS, defaults.chatModel);
+    defaults.audioModel = selectDefault(audioModels, ATLAS_FALLBACK_AUDIO_MODELS, defaults.audioModel);
+
+    const atlasCatalog: AtlasCatalogMetadata = {
+      schema: 't8-atlas-model-catalog-v1',
+      version: Number(payload?.version) || 1,
+      catalogDigest: String(payload?.catalogDigest || ''),
+      fetchedAt: String(payload?.fetchedAt || ''),
+      source: ['live', 'cache', 'fallback'].includes(payload?.source) ? payload.source : 'fallback',
+      total: Number(payload?.total) || items.length,
+      items,
+    };
 
     providers[atlasIndex] = {
       ...current,
@@ -165,6 +187,8 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
       imageModels,
       videoModels,
       chatModels,
+      audioModels,
+      atlasCatalog,
       defaults,
     };
     return { ...settings, advancedProviders: providers };
@@ -174,16 +198,28 @@ async function hydrateAtlasCatalog(settings: ApiSettings): Promise<ApiSettings> 
     const imageModels = uniqueModelIds(ATLAS_FALLBACK_IMAGE_MODELS);
     const videoModels = uniqueModelIds(ATLAS_FALLBACK_VIDEO_MODELS);
     const chatModels = uniqueModelIds(ATLAS_FALLBACK_CHAT_MODELS);
+    const audioModels = uniqueModelIds(ATLAS_FALLBACK_AUDIO_MODELS);
     providers[atlasIndex] = {
       ...current,
       imageModels,
       videoModels,
       chatModels,
+      audioModels,
+      atlasCatalog: {
+        schema: 't8-atlas-model-catalog-v1',
+        version: 1,
+        catalogDigest: '',
+        fetchedAt: '',
+        source: 'fallback',
+        total: imageModels.length + videoModels.length + chatModels.length + audioModels.length,
+        items: [],
+      },
       defaults: {
         ...(current.defaults || {}),
         imageModel: selectDefault(imageModels, ATLAS_FALLBACK_IMAGE_MODELS, current.defaults?.imageModel),
         videoModel: selectDefault(videoModels, ATLAS_FALLBACK_VIDEO_MODELS, current.defaults?.videoModel),
         chatModel: selectDefault(chatModels, ATLAS_FALLBACK_CHAT_MODELS, current.defaults?.chatModel),
+        audioModel: selectDefault(audioModels, ATLAS_FALLBACK_AUDIO_MODELS, current.defaults?.audioModel),
       },
     };
     return { ...settings, advancedProviders: providers };

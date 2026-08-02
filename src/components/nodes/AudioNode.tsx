@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { AlertCircle, Loader2, Music, Sparkles, Square, Upload, X } from 'lucide-react';
 import {
   submitAudio,
+  generateExternalAudio,
   queryAudio,
   submitSunoNz,
   querySunoNz,
@@ -51,6 +52,11 @@ import {
   normalizeExcludedMaterialIds,
 } from '../../utils/materialExclusion';
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
+import { useApiKeysStore } from '../../stores/apiKeys';
+import { resolveAdvancedProviderSelection } from '../../utils/advancedProviders';
+import AtlasCapabilityFields from './AtlasCapabilityFields';
+import AtlasModelPicker from '../AtlasModelPicker';
+import { DESKTOP_ATLAS_RUNTIME } from '../../config/atlasOnlyRuntime';
 
 /**
  * AudioNode - Suno (generate / cover / extend) — 完全对齐 gpt-image-2-web
@@ -105,12 +111,22 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
 
   const d = data as any;
   const providerParams = (d?.providerParams && typeof d.providerParams === 'object') ? d.providerParams : {};
-  const audioProviderMode: AudioProviderMode = ['seed-audio', 'whisper'].includes(d?.audioProviderMode)
+  const audioProviderMode: AudioProviderMode = ['atlas', 'seed-audio', 'whisper'].includes(d?.audioProviderMode)
     ? d.audioProviderMode
     : 'suno';
+  const advancedProviders = useApiKeysStore((state) => state.settings.advancedProviders);
+  const atlasSelection = useMemo(() => resolveAdvancedProviderSelection(advancedProviders, 'audio', {
+    providerSource: d?.providerSource || 'atlas',
+    providerId: d?.providerId || 'atlas',
+    providerModel: d?.providerModel,
+  }), [advancedProviders, d?.providerId, d?.providerModel, d?.providerSource]);
+  const atlasModel = atlasSelection.providerModel || atlasSelection.provider?.defaults?.audioModel || 'bytedance/seed-audio-1.0';
+  const isAtlasAudio = audioProviderMode === 'atlas';
+  const isAtlasAsr = isAtlasAudio && /\basr\b|speech-to-text|transcri/i.test(atlasModel);
   const isSeedAudio = audioProviderMode === 'seed-audio';
   const isWhisper = audioProviderMode === 'whisper';
   const isSuno = audioProviderMode === 'suno';
+  const desktopLegacyAudioDisabled = DESKTOP_ATLAS_RUNTIME && !isAtlasAudio;
   const sunoPlatform: SunoPlatform = d?.sunoPlatform === 'seedance-nz' ? 'seedance-nz' : 'zhenzhen';
   const isSunoNz = isSuno && sunoPlatform === 'seedance-nz';
   const sunoNzOperation: SunoNzOperation = getSunoNzActionDef(d?.sunoNzOperation || DEFAULT_SUNO_NZ_OPERATION).value;
@@ -228,24 +244,24 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     [localRefAudio, id],
   );
   const mentionMaterials = useMemo(
-    () => isSeedAudio
+    () => isSeedAudio || (isAtlasAudio && !isAtlasAsr)
       ? [...orderedImages.slice(0, 1), ...orderedAudios.slice(0, 3), ...localRefAudioMaterials]
       : [...orderedAudios, ...localRefAudioMaterials],
-    [isSeedAudio, orderedImages, orderedAudios, localRefAudioMaterials],
+    [isSeedAudio, isAtlasAudio, isAtlasAsr, orderedImages, orderedAudios, localRefAudioMaterials],
   );
   
   // 分组动态跟随模式: generate 只要文本, cover/extend 需要参考音频
   const previewGroups = useMemo<ReadonlyArray<'text' | 'image' | 'video' | 'audio'>>(
-    () => isSeedAudio
+    () => isSeedAudio || (isAtlasAudio && !isAtlasAsr)
       ? ['text', 'image', 'audio']
-      : isWhisper ? ['video', 'audio'] : isSunoNz ? ['text', 'audio'] : (mode === 'generate' ? ['text'] : ['text', 'audio']),
-    [isSeedAudio, isWhisper, isSunoNz, mode],
+      : isWhisper || isAtlasAsr ? ['video', 'audio'] : isSunoNz ? ['text', 'audio'] : (mode === 'generate' ? ['text'] : ['text', 'audio']),
+    [isSeedAudio, isAtlasAudio, isAtlasAsr, isWhisper, isSunoNz, mode],
   );
   
   // Whisper 可直接转写 MP4；其余音频能力仍只消费音频素材。
   const collectUpstream = (): { prompt: string; audioUrl: string; imageUrls: string[]; audioUrls: string[] } => {
     const prompt = orderedTexts.map((t) => t.url).filter((s) => !!s).join('\n').trim();
-    const audioUrl = orderedAudios[0]?.url || (isWhisper ? orderedVideos[0]?.url : '') || localRefAudio || '';
+    const audioUrl = orderedAudios[0]?.url || (isWhisper || isAtlasAsr ? orderedVideos[0]?.url : '') || localRefAudio || '';
     const imageUrls = [...orderedImages.map((item) => item.url), localRefImage].filter(Boolean).slice(0, 1);
     const maxAudios = isSunoNz ? 4 : 3;
     const audioUrls = [...orderedAudios.map((item) => item.url), localRefAudio].filter((value, index, values) => !!value && values.indexOf(value) === index).slice(0, maxAudios);
@@ -281,11 +297,11 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     if (!f) return;
     setError(null);
     try {
-      if (isSeedAudio || isWhisper || isSunoNz) {
+      if (isAtlasAudio || isSeedAudio || isWhisper || isSunoNz) {
         setUploading(true);
         const uploaded = await uploadLocalFile(f);
         update({ localRefAudio: uploaded.url, uploadedClipId: '', uploadedFilename: f.name });
-        const targetLabel = isWhisper ? 'Whisper 待转写素材' : isSeedAudio ? 'Seed Audio 参考音频' : 'Suno 参考音频';
+        const targetLabel = isAtlasAudio ? 'Atlas 音频参考素材' : isWhisper ? 'Whisper 待转写素材' : isSeedAudio ? 'Seed Audio 参考音频' : 'Suno 参考音频';
         logBus.success(`${targetLabel}已加入: ${f.name}`, src);
       } else {
         await uploadFile(f);
@@ -625,24 +641,28 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
 
   const handleGenerate = async (reporter?: RunNodeLifecycleReporter) => {
     setError(null);
+    if (desktopLegacyAudioDisabled) {
+      setError('这是旧画布中的历史音频 Provider，当前桌面版本未启用。请选择 Atlas 后再执行。');
+      return;
+    }
     const upstream = collectUpstream();
     const resolvedLocalPrompt = resolveMediaMentions(localPrompt, promptMentions, mentionMaterials);
     const finalPrompt = (upstream.prompt || resolvedLocalPrompt || '').trim();
     const sunoNzNeedsPrompt = sunoNzAction.requiredFields.includes('prompt');
-    if (!isWhisper && !isSunoNz && !finalPrompt) {
-      setError(isSeedAudio ? '请填写音频提示词' : '请填写歌词 / 提示词');
+    if (!isWhisper && !isAtlasAsr && !isSunoNz && !finalPrompt) {
+      setError(isAtlasAudio || isSeedAudio ? '请填写音频提示词' : '请填写歌词 / 提示词');
       return;
     }
     if (isSunoNz && sunoNzNeedsPrompt && !finalPrompt) {
       setError(`${sunoNzOperation} 需要填写提示词`);
       return;
     }
-    if (isSeedAudio && (finalPrompt.length < 5 || finalPrompt.length > 2048)) {
+    if ((isSeedAudio || atlasModel === 'bytedance/seed-audio-1.0') && (finalPrompt.length < 5 || finalPrompt.length > 2048)) {
       setError('Seed Audio 提示词长度必须为 5-2048 字符');
       return;
     }
-    const traceProvider = isSeedAudio || isWhisper || isSunoNz ? 'seedance-nz' : 'suno';
-    const traceModel = isWhisper ? 'whisper-1' : isSeedAudio ? 'doubao-seed-audio-1.0' : isSunoNz ? sunoNzOperation : version;
+    const traceProvider = isAtlasAudio ? 'atlas' : isSeedAudio || isWhisper || isSunoNz ? 'seedance-nz' : 'suno';
+    const traceModel = isAtlasAudio ? atlasModel : isWhisper ? 'whisper-1' : isSeedAudio ? 'doubao-seed-audio-1.0' : isSunoNz ? sunoNzOperation : version;
     await reporter?.providerRequest({ provider: traceProvider, model: traceModel });
     taskCompletionSound.primeAudio();
     update({
@@ -656,7 +676,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
       fileUrls: [],
       sunoVideoUrls: [],
       sunoFileUrls: [],
-      ...(isWhisper || isSunoNz ? { transcript: '', sunoResultText: '', text: '', texts: [] } : {}),
+      ...(isAtlasAudio || isWhisper || isSunoNz ? { transcript: '', sunoResultText: '', text: '', texts: [] } : {}),
       ...(isWhisper ? {
         transcriptEvidenceText: '',
         transcriptSegments: [],
@@ -664,6 +684,89 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
       } : {}),
     });
     try {
+      if (isAtlasAudio) {
+        if (!atlasSelection.provider || !atlasModel) throw new Error('Atlas 音频模型不可用，请先加载官方模型目录。');
+        if (!atlasSelection.modelAvailable) {
+          throw new Error(`所选模型 ${atlasModel} 已不在当前 Atlas 官方目录中，请重新选择；系统不会自动改用其他收费模型。`);
+        }
+        if (isAtlasAsr && !upstream.audioUrl) {
+          throw new Error('该 Atlas 语音识别模型需要连接、拖入或上传一个音频/视频素材。');
+        }
+        const referenceKinds = [
+          seedAudioSpeaker.trim() ? 'speaker' : '',
+          upstream.imageUrls.length ? 'image' : '',
+          upstream.audioUrls.length ? 'audio' : '',
+        ].filter(Boolean);
+        if (atlasModel === 'bytedance/seed-audio-1.0' && referenceKinds.length > 1) {
+          throw new Error('Seed Audio 的音色 ID、参考图和参考音频只能选择一种；请移除冲突素材后再提交。');
+        }
+        const references = [
+          ...(seedAudioSpeaker.trim() ? [{ speaker: seedAudioSpeaker.trim() }] : []),
+          ...upstream.imageUrls.slice(0, 1).map((image_url) => ({ image_url })),
+          ...upstream.audioUrls.slice(0, 3).map((audio_url) => ({ audio_url })),
+        ];
+        const result = await generateExternalAudio({
+          providerId: atlasSelection.provider.id,
+          providerModel: atlasModel,
+          model: atlasModel,
+          prompt: finalPrompt,
+          text: finalPrompt,
+          audio: isAtlasAsr ? upstream.audioUrl : undefined,
+          providerParams: {
+            ...providerParams,
+            ...(!isAtlasAsr ? {
+              format: providerParams.format || seedAudioFormat,
+              sample_rate: providerParams.sample_rate || Number(seedAudioSampleRate),
+              speech_rate: providerParams.speech_rate ?? seedAudioSpeechRate,
+              loudness_rate: providerParams.loudness_rate ?? seedAudioLoudnessRate,
+              pitch_rate: providerParams.pitch_rate ?? seedAudioPitchRate,
+              ...(references.length ? { references: references.slice(0, 3) } : {}),
+            } : {}),
+          },
+        }, { submissionKey: reporter?.providerSubmissionKey });
+        if (result.taskId) {
+          await reporter?.providerSubmitted({
+            provider: traceProvider,
+            model: traceModel,
+            upstreamTaskId: result.taskId,
+            requestId: result.requestId,
+            transportHttpStatus: result.transportHttpStatus,
+            upstreamHttpStatus: result.upstreamHttpStatus,
+            httpStatusSource: 'local-backend',
+          });
+        }
+        await reporter?.providerResponse({
+          provider: traceProvider,
+          model: traceModel,
+          requestId: result.requestId,
+          transportHttpStatus: result.transportHttpStatus,
+          upstreamHttpStatus: result.upstreamHttpStatus,
+          status: 'succeeded',
+          httpStatusSource: 'local-backend',
+        });
+        const audioUrls = result.audioUrls || [];
+        const resultText = String(result.text || '').trim();
+        update({
+          status: 'success',
+          progress: '100%',
+          taskId: result.taskId,
+          audioUrl: audioUrls[0],
+          audioUrl_1: audioUrls[1],
+          audioUrls,
+          tracks: audioUrls.map((audioUrl, index) => ({ id: `${result.taskId || 'atlas'}:${index}`, audioUrl, title: atlasModel })),
+          transcript: resultText,
+          text: resultText,
+          texts: resultText ? [resultText] : [],
+          lastPrompt: finalPrompt,
+          provider: 'atlas',
+          apiModel: atlasModel,
+          requestId: result.requestId,
+          transportHttpStatus: result.transportHttpStatus,
+          upstreamHttpStatus: result.upstreamHttpStatus,
+        });
+        taskCompletionSound.notifyComplete(id, 'audio');
+        return;
+      }
       if (isWhisper) {
         if (!upstream.audioUrl) {
           throw new Error('Whisper 必须连接、拖入或上传 1 个音频/视频素材');
@@ -880,7 +983,12 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
       });
       setError(msg);
       logBus.error(msg, src);
-      update({ status: 'error', error: msg });
+      update({
+        status: 'error',
+        error: msg,
+        ...(e?.taskId ? { taskId: e.taskId } : {}),
+        ...(Array.isArray(e?.remoteAudioUrls) ? { remoteAudioUrls: e.remoteAudioUrls } : {}),
+      });
     }
   };
 
@@ -895,7 +1003,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     await handleGenerate(reporter);
   }, 'audio', {
     lifecycleAware: true,
-    shouldReuseResult: (nodeData) => isWhisper
+    shouldReuseResult: (nodeData) => isWhisper || isAtlasAsr
       ? nodeData?.reuseResult === true && typeof nodeData?.transcript === 'string' && nodeData.transcript.trim().length > 0
       : isSunoNz
         ? nodeData?.reuseResult === true && (
@@ -921,10 +1029,10 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
     if (payload.kind === 'audio' && payload.url) {
       update({ localRefAudio: payload.url, uploadedClipId: '', uploadedFilename: payload.name || '' });
       logBus.info('已接受拖入参考音频, 生成时将自动上传', src);
-    } else if (isWhisper && payload.kind === 'video' && payload.url) {
+    } else if ((isWhisper || isAtlasAsr) && payload.kind === 'video' && payload.url) {
       update({ localRefAudio: payload.url, uploadedClipId: '', uploadedFilename: payload.name || '' });
       logBus.info('已接受拖入 MP4 视频，Whisper 将直接转写其中的语音', src);
-    } else if (isSeedAudio && payload.kind === 'image' && payload.url) {
+    } else if ((isSeedAudio || (isAtlasAudio && !isAtlasAsr)) && payload.kind === 'image' && payload.url) {
       update({ localRefImage: payload.url });
       logBus.info('已接受 Seed Audio 参考图', src);
     } else if (payload.kind === 'text' && typeof payload.text === 'string') {
@@ -933,9 +1041,9 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
   };
   const { dropProps, isAccepting } = useMaterialDropTarget({
     id,
-    accepts: isSeedAudio
+    accepts: isSeedAudio || (isAtlasAudio && !isAtlasAsr)
       ? ['image', 'audio', 'text']
-      : isWhisper
+      : isWhisper || isAtlasAsr
         ? ['video', 'audio', 'text']
         : ['audio', 'text'],
     onDrop: handleDrop,
@@ -961,7 +1069,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
       }}
     >
       <Handle type="target" position={Position.Left} style={{ background: audioColor, border: 0 }} />
-      {isWhisper || (isSunoNz && sunoNzAction.resultFamily === 'text') ? (
+      {isWhisper || isAtlasAsr || (isSunoNz && sunoNzAction.resultFamily === 'text') ? (
         <Handle type="source" id="text" position={Position.Right} style={{ background: textColor, border: 0 }} />
       ) : isSunoNz && sunoNzAction.resultFamily === 'video' ? (
         <Handle type="source" id="video" position={Position.Right} style={{ background: videoColor, border: 0 }} />
@@ -983,9 +1091,11 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
           <Music size={13} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-white">音频 · {isWhisper ? 'Whisper' : isSeedAudio ? 'Seed Audio' : 'Suno'}</div>
+          <div className="text-sm font-semibold text-white">音频 · {isAtlasAudio ? 'Atlas' : isWhisper ? 'Whisper' : isSeedAudio ? 'Seed Audio' : 'Suno'}</div>
           <div className="text-[10px] text-white/40 truncate">
-            {isWhisper
+            {isAtlasAudio
+              ? `${atlasModel} · Atlas Cloud`
+              : isWhisper
               ? 'whisper-1 · Atlas Cloud'
               : isSeedAudio
                 ? 'doubao-seed-audio-1.0 · Atlas Cloud'
@@ -997,12 +1107,13 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
       </div>
 
       <div className="p-2.5 space-y-2" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="grid grid-cols-3 gap-1 rounded border border-white/10 bg-black/15 p-1">
+        <div className={`grid ${DESKTOP_ATLAS_RUNTIME ? 'grid-cols-1' : 'grid-cols-4'} gap-1 rounded border border-white/10 bg-black/15 p-1`}>
           {([
+            { value: 'atlas', label: 'Atlas' },
             { value: 'suno', label: 'Suno' },
             { value: 'seed-audio', label: 'Seed Audio' },
             { value: 'whisper', label: 'Whisper' },
-          ] as const).map((item) => (
+          ] as const).filter((item) => !DESKTOP_ATLAS_RUNTIME || item.value === 'atlas').map((item) => (
             <button
               key={item.value}
               type="button"
@@ -1013,6 +1124,40 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             </button>
           ))}
         </div>
+
+        {desktopLegacyAudioDisabled && (
+          <div className="rounded border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-100">
+            这是旧画布中的历史音频 Provider，当前桌面版本未启用。点击上方 Atlas 可迁移本节点，原节点数据不会被删除。
+          </div>
+        )}
+
+        {isAtlasAudio && atlasSelection.provider && (
+          <div className="rounded border border-cyan-300/20 bg-cyan-400/[0.05] p-2 space-y-2">
+            <div>
+              <label className="text-[10px] text-white/50 block mb-1">Atlas 音频模型</label>
+              <AtlasModelPicker
+                provider={atlasSelection.provider}
+                kind="audio"
+                mode={/music|song/i.test(atlasModel) ? 'music' : 'speech'}
+                value={atlasModel}
+                onChange={(providerModel) => update({
+                  providerSource: 'atlas',
+                  providerId: 'atlas',
+                  providerModel,
+                  providerParams: {},
+                  status: 'idle',
+                  error: null,
+                })}
+              />
+            </div>
+            <AtlasCapabilityFields
+              model={atlasModel}
+              kind="audio"
+              params={providerParams}
+              onChange={(patch) => update({ providerParams: { ...providerParams, ...patch } })}
+            />
+          </div>
+        )}
 
         {isSuno && (
           <div className="rounded border border-violet-300/20 bg-violet-400/[0.05] p-2">
@@ -1117,10 +1262,10 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
           data={d}
           update={update}
           context={{
-            providerSource: isSeedAudio || isWhisper || isSunoNz ? 'seedance-nz' : 'zhenzhen',
-            model: isWhisper ? 'whisper-1' : isSeedAudio ? 'doubao-seed-audio-1.0' : isSunoNz ? sunoNzOperation : version,
-            apiModel: isWhisper ? 'whisper-1' : isSeedAudio ? 'doubao-seed-audio-1.0' : isSunoNz ? sunoNzOperation : `suno-${version}`,
-            providerKind: isWhisper ? 'whisper' : isSeedAudio ? 'seed-audio' : 'suno',
+            providerSource: isAtlasAudio ? 'atlas' : isSeedAudio || isWhisper || isSunoNz ? 'seedance-nz' : 'zhenzhen',
+            model: isAtlasAudio ? atlasModel : isWhisper ? 'whisper-1' : isSeedAudio ? 'doubao-seed-audio-1.0' : isSunoNz ? sunoNzOperation : version,
+            apiModel: isAtlasAudio ? atlasModel : isWhisper ? 'whisper-1' : isSeedAudio ? 'doubao-seed-audio-1.0' : isSunoNz ? sunoNzOperation : `suno-${version}`,
+            providerKind: isAtlasAudio ? 'atlas-audio' : isWhisper ? 'whisper' : isSeedAudio ? 'seed-audio' : 'suno',
           }}
         />
 
@@ -1184,7 +1329,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             <input value={tags} onChange={(e) => update({ tags: e.target.value })} placeholder="pop, cinematic, energetic" className="w-full rounded bg-white/5 border border-white/10 px-2 py-1 text-xs text-white outline-none" />
           </div>
         )}
-        {!isWhisper && (!isSunoNz || sunoNzAction.requiredFields.includes('prompt')) && (
+        {!isWhisper && !isAtlasAsr && (!isSunoNz || sunoNzAction.requiredFields.includes('prompt')) && (
         <div>
           <label className="text-[10px] text-white/50 block mb-1">{isSeedAudio ? '音频提示词' : sunoNzOperation === 'suno-lyrics' ? '歌词主题 / 要求' : '歌词 / 提示词'}</label>
           <MentionPromptInput
@@ -1361,7 +1506,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
                 : mode === 'generate' ? '上游素材 · 歌词提示' : '上游素材 · 参考音频'}
         />
 
-        {(isSeedAudio || isWhisper || showSunoNzAudioImport) && (localRefImage || localRefAudio) && (
+        {(isAtlasAudio || isSeedAudio || isWhisper || showSunoNzAudioImport) && (localRefImage || localRefAudio) && (
           <div className="rounded border border-cyan-300/20 bg-cyan-400/[0.05] p-2 space-y-1">
             <div className="flex items-center justify-between gap-2 text-[10px] text-cyan-100/75">
               <span>本地参考素材</span>
@@ -1372,23 +1517,23 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
           </div>
         )}
 
-        {(isSeedAudio || isWhisper || showSunoNzAudioImport) && (
+        {(isAtlasAudio || isSeedAudio || isWhisper || showSunoNzAudioImport) && (
           <div className="flex gap-1.5">
             <input
               ref={fileInputRef}
               type="file"
-              accept={isWhisper ? 'audio/*,video/mp4,.mp3,.wav,.flac,.m4a,.mp4,.ogg,.opus,.aac,.aiff,.aif' : 'audio/*,.mp3,.wav,.flac,.ogg'}
+              accept={isWhisper || isAtlasAsr ? 'audio/*,video/mp4,.mp3,.wav,.flac,.m4a,.mp4,.ogg,.opus,.aac,.aiff,.aif' : 'audio/*,.mp3,.wav,.flac,.ogg'}
               className="hidden"
               onChange={onSelectFile}
             />
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="flex-1 flex items-center justify-center gap-1 rounded bg-white/5 py-1 text-[10px] text-cyan-100 hover:bg-white/10 disabled:opacity-50">
               {uploading ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
-              {uploading ? '导入中…' : isWhisper ? '导入待转写音频 / MP4' : isSunoNz ? '导入 Suno 参考音频（至少 6 秒）' : '导入参考音频'}
+              {uploading ? '导入中…' : isWhisper || isAtlasAsr ? '导入待转写音频 / MP4' : isSunoNz ? '导入 Suno 参考音频（至少 6 秒）' : '导入参考音频'}
             </button>
           </div>
         )}
 
-        {isWhisper && (
+        {(isWhisper || isAtlasAsr) && (
           <div className="rounded border border-cyan-300/20 bg-cyan-400/[0.05] p-2 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div>
@@ -1473,7 +1618,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
 
         <ReuseResultToggle
           checked={d?.reuseResult === true}
-          hasResult={isWhisper
+          hasResult={isWhisper || isAtlasAsr
             ? transcript.trim().length > 0
             : isSunoNz
               ? hasReusableGenerationResult('audio', d) || !!sunoResultText || sunoVideoUrls.length > 0 || sunoFileUrls.length > 0
@@ -1487,7 +1632,7 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
             onClick={() => requestCanvasNodeRun(id)}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-violet-500/20 hover:bg-violet-500/30 text-violet-200 text-xs font-medium transition-colors"
           >
-            <Sparkles size={12} /> {isWhisper ? '开始转写' : isSunoNz ? `执行 ${sunoNzAction.label}` : '生成音频'}
+            <Sparkles size={12} /> {isWhisper || isAtlasAsr ? '开始转写' : isSunoNz ? `执行 ${sunoNzAction.label}` : '生成音频'}
           </button>
         ) : (
           <button
@@ -1501,12 +1646,12 @@ const AudioNode = ({ id, data, selected }: NodeProps) => {
         {isBusy && (
           <div className="flex items-center gap-1 text-[10px] text-violet-200/80">
             <Loader2 size={11} className="animate-spin" />
-            {isWhisper ? '正在转写...' : status === 'submitting' ? '提交任务...' : pollProgress.includes('正在下载') ? pollProgress : `轮询中 ${pollProgress}`}
+            {isWhisper || isAtlasAsr ? '正在转写...' : status === 'submitting' ? '提交任务...' : pollProgress.includes('正在下载') ? pollProgress : `轮询中 ${pollProgress}`}
             {taskId && <span className="ml-auto text-white/30">{taskId.slice(0, 10)}…</span>}
           </div>
         )}
 
-        {isWhisper && transcript && (
+        {(isWhisper || isAtlasAsr) && transcript && (
           <div className="rounded border border-cyan-300/20 bg-cyan-400/[0.05] px-2 py-1.5">
             <div className="mb-1 text-[10px] font-semibold text-cyan-100/80">转写结果</div>
             <div className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-white/75">{transcript}</div>

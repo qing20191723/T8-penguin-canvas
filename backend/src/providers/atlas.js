@@ -150,6 +150,22 @@ function uniqueUrls(payload) {
   return [...new Set(collectOutputUrls(taskData(payload)))];
 }
 
+function outputText(payload) {
+  const data = taskData(payload);
+  for (const value of [
+    data?.text,
+    data?.transcript,
+    data?.transcription,
+    data?.output_text,
+    data?.outputText,
+    typeof data?.result === 'string' ? data.result : '',
+    data?.result?.text,
+  ]) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
 function safeParams(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const copy = { ...value };
@@ -736,7 +752,14 @@ async function submit(provider, endpoint, model, params, options = {}) {
         ...trace,
       };
     }
-    return { ok: true, payload, taskId: taskId(payload), urls: uniqueUrls(payload), ...trace };
+    return {
+      ok: true,
+      payload,
+      taskId: taskId(payload),
+      urls: uniqueUrls(payload),
+      text: outputText(payload),
+      ...trace,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -768,6 +791,7 @@ async function poll(provider, id, options = {}) {
       const payload = await responsePayload(response);
       const status = taskStatus(payload);
       const urls = uniqueUrls(payload);
+      const text = outputText(payload);
       const trace = {
         requestId: requestId(response, payload) || undefined,
         upstreamHttpStatus: response.status,
@@ -795,8 +819,8 @@ async function poll(provider, id, options = {}) {
           ...trace,
         };
       }
-      if (urls.length || SUCCESS_STATUSES.has(status)) {
-        if (!urls.length) {
+      if (urls.length || text || SUCCESS_STATUSES.has(status)) {
+        if (!urls.length && !text) {
           return {
             ok: false,
             code: 'missing_output',
@@ -807,7 +831,7 @@ async function poll(provider, id, options = {}) {
             ...trace,
           };
         }
-        return { ok: true, urls, raw: payload, ...trace };
+        return { ok: true, urls, text, raw: payload, ...trace };
       }
     } catch (error) {
       if (error?.name === 'AbortError') continue;
@@ -836,8 +860,16 @@ async function runGeneration(provider, input, options, kind) {
   try {
     model = selectedModel(
       input.providerModel || input.model,
-      kind === 'image' ? provider.imageModels : provider.videoModels,
-      kind === 'image' ? provider.defaults?.imageModel : provider.defaults?.videoModel,
+      kind === 'image'
+        ? provider.imageModels
+        : kind === 'video'
+          ? provider.videoModels
+          : provider.audioModels,
+      kind === 'image'
+        ? provider.defaults?.imageModel
+        : kind === 'video'
+          ? provider.defaults?.videoModel
+          : provider.defaults?.audioModel,
     );
   } catch (error) {
     return {
@@ -894,11 +926,40 @@ async function runGeneration(provider, input, options, kind) {
     };
   }
 
-  if (kind === 'image' && refs.length && model === SEEDREAM_V5_T2I_MODEL) model = SEEDREAM_V5_EDIT_MODEL;
-  if (kind === 'video' && refs.length && model === KLING_V3_T2V_MODEL) model = KLING_V3_I2V_MODEL;
-  if (kind === 'video' && refs.length > 1 && model === WAN_27_SPICY_I2V_MODEL) model = WAN_27_SPICY_REFERENCE_MODEL;
+  if (kind === 'audio' && Array.isArray(params.references)) {
+    try {
+      const references = [];
+      for (const raw of params.references.slice(0, 20)) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const reference = { ...raw };
+        for (const key of ['audio_url', 'image_url']) {
+          if (reference[key]) reference[key] = await resolveAtlasMedia(provider, reference[key], options);
+        }
+        references.push(reference);
+      }
+      params.references = references;
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'invalid_reference',
+        providerId: provider.id,
+        protocol: provider.protocol,
+        model,
+        error: error?.message || 'Atlas 音频参考素材解析失败。',
+      };
+    }
+  }
 
   try {
+    if (model === SEEDREAM_V5_T2I_MODEL && refs.length) {
+      throw new Error(`Atlas 模型 ${model} 是文生图模式，不能接收参考图。请主动切换到 ${SEEDREAM_V5_EDIT_MODEL}；系统不会自动更换收费模型。`);
+    }
+    if (model === KLING_V3_T2V_MODEL && refs.length) {
+      throw new Error(`Atlas 模型 ${model} 是文生视频模式，不能接收首帧图。请主动切换到 ${KLING_V3_I2V_MODEL}；系统不会自动更换收费模型。`);
+    }
+    if (model === WAN_27_SPICY_I2V_MODEL && refs.length > 1) {
+      throw new Error(`Atlas 模型 ${model} 只接收一张首帧图。多张参考图请主动切换到 ${WAN_27_SPICY_REFERENCE_MODEL}；系统不会自动更换收费模型。`);
+    }
     if (model === SEEDREAM_V5_T2I_MODEL || model === SEEDREAM_V5_EDIT_MODEL) {
       params = normalizeSeedreamV5Params(params, input, refs, model);
     } else if (model === KLING_V3_T2V_MODEL || model === KLING_V3_I2V_MODEL) {
@@ -934,17 +995,25 @@ async function runGeneration(provider, input, options, kind) {
     };
   }
 
-  const endpoint = kind === 'image' ? '/model/generateImage' : '/model/generateVideo';
+  const endpoint = kind === 'image'
+    ? '/model/generateImage'
+    : kind === 'video'
+      ? '/model/generateVideo'
+      : '/model/generateAudio';
   const submitted = await submit(provider, endpoint, model, params, options);
   if (!submitted.ok) return submitted;
-  if (submitted.urls.length) {
+  if (submitted.urls.length || submitted.text) {
     return {
       ok: true,
       providerId: provider.id,
       protocol: provider.protocol,
       model,
       taskId: submitted.taskId || undefined,
-      ...(kind === 'image' ? { imageUrls: submitted.urls } : { videoUrls: submitted.urls }),
+      ...(kind === 'image'
+        ? { imageUrls: submitted.urls }
+        : kind === 'video'
+          ? { videoUrls: submitted.urls }
+          : { audioUrls: submitted.urls, text: submitted.text || '' }),
       raw: submitted.payload,
       requestId: submitted.requestId,
       upstreamHttpStatus: submitted.upstreamHttpStatus,
@@ -974,7 +1043,11 @@ async function runGeneration(provider, input, options, kind) {
     protocol: provider.protocol,
     model,
     taskId: submitted.taskId,
-    ...(kind === 'image' ? { imageUrls: polled.urls } : { videoUrls: polled.urls }),
+    ...(kind === 'image'
+      ? { imageUrls: polled.urls }
+      : kind === 'video'
+        ? { videoUrls: polled.urls }
+        : { audioUrls: polled.urls, text: polled.text || '' }),
     raw: polled.raw,
     requestId: polled.requestId || submitted.requestId,
     upstreamHttpStatus: polled.upstreamHttpStatus,
@@ -1039,5 +1112,6 @@ module.exports = {
   generateChat,
   generateImage: (provider, input, options) => runGeneration(provider, input, options, 'image'),
   generateVideo: (provider, input, options) => runGeneration(provider, input, options, 'video'),
+  generateAudio: (provider, input, options) => runGeneration(provider, input, options, 'audio'),
   testProvider,
 };

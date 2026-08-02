@@ -64,6 +64,7 @@ import {
   SEEDANCE_NZ_LLM_MODELS,
   resolveSeedanceNzLlmModel,
 } from '../../config/llm';
+import AtlasModelPicker from '../AtlasModelPicker';
 
 /**
  * LLM / Vision 节点 —— 完全对齐 gpt-image-2-web Chat (index.html L1600 / L8128~L8400)
@@ -462,6 +463,9 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
     const nextHistory: ChatTurn[] = [...history, userTurn];
 
     try {
+      if (isExternalSelected && providerSelection.provider?.protocol === 'atlas' && !providerSelection.modelAvailable) {
+        throw new Error(`所选模型 ${externalProviderModel} 已不在当前 Atlas 官方目录中，请重新选择；系统不会自动改用其他收费模型。`);
+      }
       if (!isExternalSelected && useStream && !isImgOut && userVideos.length === 0) {
         // ====== 流式 ======
         const ctrl = new AbortController();
@@ -864,7 +868,15 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                 {isExternalSelected && providerSelection.provider && (
                   <div>
                     <label className="text-[10px] text-white/50 block mb-1">{providerSelection.provider?.protocol === 'atlas' ? 'Atlas 模型' : '自定义模型'}</label>
-                    <select
+                    {providerSelection.provider.protocol === 'atlas' ? (
+                      <AtlasModelPicker
+                        provider={providerSelection.provider}
+                        kind="llm"
+                        mode="llm"
+                        value={externalProviderModel}
+                        onChange={(nextModel) => update({ providerModel: nextModel })}
+                      />
+                    ) : (<select
                       value={externalProviderModel}
                       onChange={(e) => update({ providerModel: e.target.value })}
                       style={{ background: '#18181b', color: '#ffffff' }}
@@ -873,7 +885,7 @@ const LLMNode = ({ id, data, selected }: NodeProps) => {
                       {externalModelOptions.map((m) => (
                         <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
                       ))}
-                    </select>
+                    </select>)}
                   </div>
                 )}
                 {isSeedanceNzSelected && (

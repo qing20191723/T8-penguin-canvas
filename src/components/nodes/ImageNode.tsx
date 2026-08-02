@@ -107,6 +107,7 @@ import {
 } from '../../data/imagePromptAdjustments';
 import MidjourneyNzPanel from './MidjourneyNzPanel';
 import AtlasCapabilityFields from './AtlasCapabilityFields';
+import AtlasModelPicker from '../AtlasModelPicker';
 import {
   buildMidjourneyNzRequest,
   midjourneyNzRequiresPrompt,
@@ -949,6 +950,9 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
 
       if (isExternalSelected && providerSelection.provider) {
         const providerModel = externalProviderModel;
+        if (providerSelection.provider.protocol === 'atlas' && !providerSelection.modelAvailable) {
+          throw new Error(`所选模型 ${providerModel} 已不在当前 Atlas 官方目录中，请重新选择；系统不会自动改用其他收费模型。`);
+        }
         if (!providerModel) throw new Error('扩展平台未配置可用图像模型');
         let size = externalImageSizeFor(aspectRatio, sizeLevel);
         if (isJimengCliImageSelected && jimengCliCustomSizeEnabled) {
@@ -2003,7 +2007,15 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                 {isExternalSelected && providerSelection.provider && (
                   <div>
                     <label className="text-[10px] text-white/50 block mb-1">{providerSelection.provider?.protocol === 'atlas' ? 'Atlas 模型' : '自定义模型'}</label>
-                    <select
+                    {providerSelection.provider.protocol === 'atlas' ? (
+                      <AtlasModelPicker
+                        provider={providerSelection.provider}
+                        kind="image"
+                        mode={/\/edit$|image-to-image|inpaint|outpaint/i.test(externalProviderModel) ? 'image-edit' : 'image'}
+                        value={externalProviderModel}
+                        onChange={(nextModel) => update({ providerModel: nextModel, providerParams: {} })}
+                      />
+                    ) : (<select
                       value={externalProviderModel}
                       onChange={(e) => {
                         const nextModel = e.target.value;
@@ -2026,7 +2038,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                       {externalModelOptions.map((m) => (
                         <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
                       ))}
-                    </select>
+                    </select>)}
                   </div>
                 )}
                 {isExternalSelected && providerSelection.provider?.protocol === 'atlas' && (

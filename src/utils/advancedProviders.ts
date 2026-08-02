@@ -209,7 +209,7 @@ export function advancedProviderSummary(providers?: AdvancedProviderConfig[]): A
   });
 }
 
-export type AdvancedProviderNodeKind = 'image' | 'video' | 'llm';
+export type AdvancedProviderNodeKind = 'image' | 'video' | 'llm' | 'audio';
 
 export interface AdvancedProviderSelection {
   providerSource: CanvasProviderSource;
@@ -217,6 +217,7 @@ export interface AdvancedProviderSelection {
   providerModel: string;
   provider: AdvancedProviderConfig | null;
   available: boolean;
+  modelAvailable: boolean;
 }
 
 const IMAGE_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
@@ -228,6 +229,7 @@ const VIDEO_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
 const LLM_PROTOCOLS = new Set(ATLAS_LIGHTWEIGHT_RUNTIME
   ? ['openai-compatible', 'atlas']
   : ['openai-compatible', 'atlas', 'modelscope', 'volcengine']);
+const AUDIO_PROTOCOLS = new Set(['atlas']);
 
 // Atlas 的完整模型列表由 /api/proxy/atlas/models 动态加载。
 // 这里仅在模型目录暂时不可达时提供官方已核对模型的最小回退。
@@ -254,6 +256,10 @@ const FALLBACK_MODELS: Record<AdvancedProviderNodeKind, Partial<Record<string, s
     atlas: ['moonshotai/kimi-k3'],
     'openai-compatible': [],
   },
+  audio: {
+    atlas: ['bytedance/seed-audio-1.0', 'bytedance/seed-asr-2.0'],
+    'openai-compatible': [],
+  },
 };
 
 function uniqueCompact(values: unknown[]): string[] {
@@ -269,6 +275,7 @@ function uniqueCompact(values: unknown[]): string[] {
 function listForKind(provider: AdvancedProviderConfig, kind: AdvancedProviderNodeKind): string[] {
   if (kind === 'image') return Array.isArray(provider.imageModels) ? provider.imageModels : [];
   if (kind === 'video') return Array.isArray(provider.videoModels) ? provider.videoModels : [];
+  if (kind === 'audio') return Array.isArray(provider.audioModels) ? provider.audioModels : [];
   return Array.isArray(provider.chatModels) ? provider.chatModels : [];
 }
 
@@ -290,6 +297,7 @@ function supportsNodeKind(provider: AdvancedProviderConfig, kind: AdvancedProvid
   if (kind === 'image' && !IMAGE_PROTOCOLS.has(protocol)) return false;
   if (kind === 'video' && !VIDEO_PROTOCOLS.has(protocol)) return false;
   if (kind === 'llm' && !LLM_PROTOCOLS.has(protocol)) return false;
+  if (kind === 'audio' && !AUDIO_PROTOCOLS.has(protocol)) return false;
   if (protocol === 'comfyui') {
     return kind === 'image' && !!provider.comfyuiConfig?.workflows?.length;
   }
@@ -344,9 +352,10 @@ export function resolveAdvancedProviderSelection(
       return {
         providerSource: provider.protocol,
         providerId: provider.id,
-        providerModel: requested && models.includes(requested) ? requested : (models[0] || ''),
+        providerModel: requested || (models[0] || ''),
         provider,
         available: true,
+        modelAvailable: !requested || models.includes(requested),
       };
     }
   }
@@ -357,9 +366,10 @@ export function resolveAdvancedProviderSelection(
     return {
       providerSource: atlasProvider.protocol,
       providerId: atlasProvider.id,
-      providerModel: requested && models.includes(requested) ? requested : (models[0] || ''),
+      providerModel: requested || (models[0] || ''),
       provider: atlasProvider,
       available: true,
+      modelAvailable: !requested || models.includes(requested),
     };
   }
   return {
@@ -368,6 +378,7 @@ export function resolveAdvancedProviderSelection(
     providerModel: '',
     provider: null,
     available: false,
+    modelAvailable: false,
   };
 }
 

@@ -78,6 +78,11 @@ function providerResponseError(response: Response, data: any, fallback?: string)
   if (trace.requestId) error.requestId = trace.requestId;
   if (trace.upstreamHttpStatus) error.upstreamHttpStatus = trace.upstreamHttpStatus;
   if (trace.usage) error.usage = trace.usage;
+  const taskId = String(data?.data?.taskId || data?.data?.upstreamTaskId || '').trim();
+  if (taskId) error.taskId = taskId;
+  if (Array.isArray(data?.data?.remoteAudioUrls)) error.remoteAudioUrls = data.data.remoteAudioUrls;
+  if (Array.isArray(data?.data?.remoteImageUrls)) error.remoteImageUrls = data.data.remoteImageUrls;
+  if (Array.isArray(data?.data?.remoteVideoUrls)) error.remoteVideoUrls = data.data.remoteVideoUrls;
   return error;
 }
 
@@ -250,6 +255,51 @@ export async function generateExternalVideo(
   return {
     videoUrls: Array.isArray(payload.videoUrls) ? payload.videoUrls : [],
     remoteVideoUrls: Array.isArray(payload.remoteVideoUrls) ? payload.remoteVideoUrls : undefined,
+    taskId: payload.taskId,
+    raw: payload.raw,
+    provider: payload.provider,
+    ...providerTransportTrace(payload, r),
+  };
+}
+
+export interface GenerateExternalAudioRequest {
+  providerId: string;
+  providerModel: string;
+  model?: string;
+  prompt?: string;
+  text?: string;
+  images?: string[];
+  audios?: string[];
+  audio?: string;
+  audio_url?: string;
+  providerParams?: Record<string, any>;
+}
+
+export interface GenerateExternalAudioResult extends ProviderTransportTrace {
+  audioUrls: string[];
+  remoteAudioUrls?: string[];
+  text?: string;
+  taskId?: string;
+  raw?: any;
+  provider?: any;
+}
+
+export async function generateExternalAudio(
+  req: GenerateExternalAudioRequest,
+  transport: ProviderSubmissionTransport = {},
+): Promise<GenerateExternalAudioResult> {
+  const r = await fetch('/api/proxy/external/audio', {
+    method: 'POST',
+    headers: providerSubmissionHeaders(transport),
+    body: JSON.stringify(req),
+  });
+  const data = await r.json();
+  if (!r.ok || !data.success) throw providerResponseError(r, data);
+  const payload = data.data || {};
+  return {
+    audioUrls: Array.isArray(payload.audioUrls) ? payload.audioUrls : [],
+    remoteAudioUrls: Array.isArray(payload.remoteAudioUrls) ? payload.remoteAudioUrls : undefined,
+    text: typeof payload.text === 'string' ? payload.text : undefined,
     taskId: payload.taskId,
     raw: payload.raw,
     provider: payload.provider,
@@ -1428,7 +1478,7 @@ export async function querySeedance(
 // 完全对齐主项目 gpt-image-2-web 的 runSuno / runSunoCover / runSunoExtend
 // ========================================================================
 export type AudioMode = 'generate' | 'cover' | 'extend';
-export type AudioProviderMode = 'suno' | 'seed-audio' | 'whisper';
+export type AudioProviderMode = 'atlas' | 'suno' | 'seed-audio' | 'whisper';
 export type SunoPlatform = 'zhenzhen' | 'seedance-nz';
 export type WhisperResponseFormat = 'json' | 'verbose_json' | 'srt' | 'text' | 'vtt';
 

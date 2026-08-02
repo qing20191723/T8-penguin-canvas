@@ -247,6 +247,7 @@ const config = {
   CANVAS_FILE: path.join(DATA_ROOT, 'data', 'canvas_list.json'),
   SETTINGS_FILE: path.join(DATA_ROOT, 'data', 'settings.json'),
   DESKTOP_SECRET_FILE: path.join(DATA_ROOT, 'data', 'desktop-provider-secrets.enc.json'),
+  ATLAS_CATALOG_CACHE_FILE: path.join(DATA_ROOT, 'data', 'atlas-model-catalog-v1.json'),
   FEISHU_BITABLE_PRIVATE_FILE: path.join(DATA_ROOT, 'data', 'feishu_bitable.private.json'),
   ACHIEVEMENTS_FILE: path.join(DATA_ROOT, 'data', 'achievements.json'),
   RH_APPS_FILE: path.join(DATA_ROOT, 'data', 'rh_apps.json'),

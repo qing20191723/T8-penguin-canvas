@@ -6,6 +6,7 @@
  *   GET  /api/proxy/atlas/schema?model=...
  *   POST /api/proxy/atlas/image
  *   POST /api/proxy/atlas/video
+ *   POST /api/proxy/atlas/audio
  *   GET  /api/proxy/atlas/poll/:predictionId
  *
  * The Atlas API key is injected by the backend through ATLASCLOUD_API_KEY and
@@ -14,7 +15,10 @@
 
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
+const crypto = require('node:crypto');
 const config = require('../config');
+const settingsRouter = require('./settings');
 const { normalizeAdvancedProviders } = require('../providers/registry');
 const { getAtlasModelCapability } = require('../providers/atlasSchema');
 
@@ -52,8 +56,7 @@ function getAtlasApiKey() {
   const envKey = String(process.env.ATLASCLOUD_API_KEY || '').trim();
   if (envKey) return envKey;
   try {
-    if (!fs.existsSync(config.SETTINGS_FILE)) return '';
-    const settings = JSON.parse(fs.readFileSync(config.SETTINGS_FILE, 'utf-8'));
+    const settings = settingsRouter.loadSettings({ persistMigrations: false });
     const atlas = normalizeAdvancedProviders(settings?.advancedProviders)
       .find((provider) => provider.id === 'atlas' && provider.protocol === 'atlas');
     const savedKey = String(atlas?.apiKey || '').trim();
@@ -234,6 +237,7 @@ function normalizeOutputs(data) {
     data?.outputs, data?.output, data?.urls, data?.url,
     data?.image_urls, data?.image_url, data?.imageUrls, data?.imageUrl,
     data?.video_urls, data?.video_url, data?.videoUrls, data?.videoUrl,
+    data?.audio_urls, data?.audio_url, data?.audioUrls, data?.audioUrl,
     data?.download_url, data?.downloadUrl,
   ];
   const outputs = [];
@@ -264,6 +268,104 @@ function normalizeModel(model) {
   };
 }
 
+const CATALOG_SCHEMA = 't8-atlas-model-catalog-v1';
+const CATALOG_FALLBACK_MODELS = [
+  ['bytedance/seedream-v5.0-pro/text-to-image', 'Seedream v5.0 Pro Text-to-Image', 'Image', 'BYTEDANCE'],
+  ['bytedance/seedream-v5.0-pro/edit', 'Seedream v5.0 Pro Edit', 'Image', 'BYTEDANCE'],
+  ['google/nano-banana-pro/text-to-image', 'Nano Banana Pro Text-to-Image', 'Image', 'GOOGLE'],
+  ['google/nano-banana-pro/edit', 'Nano Banana Pro Edit', 'Image', 'GOOGLE'],
+  ['openai/gpt-image-2/text-to-image', 'GPT Image 2 Text-to-Image', 'Image', 'OPENAI'],
+  ['openai/gpt-image-2/edit', 'GPT Image 2 Edit', 'Image', 'OPENAI'],
+  ['alibaba/wan-2.7/text-to-video', 'Wan 2.7 Text-to-Video', 'Video', 'ALIBABA'],
+  ['alibaba/wan-2.7/image-to-video', 'Wan 2.7 Image-to-Video', 'Video', 'ALIBABA'],
+  ['atlascloud/wan-2.7-spicy/reference-to-video', 'Wan 2.7 Spicy Reference-to-Video', 'Video', 'ATLASCLOUD'],
+  ['bytedance/seedance-2.0/image-to-video', 'Seedance 2.0 Image-to-Video', 'Video', 'BYTEDANCE'],
+  ['moonshotai/kimi-k3', 'Kimi K3', 'Text', 'MOONSHOTAI'],
+  ['bytedance/seed-audio-1.0', 'Seed Audio 1.0', 'Audio', 'BYTEDANCE'],
+  ['bytedance/seed-asr-2.0', 'Seed ASR 2.0', 'Audio', 'BYTEDANCE'],
+].map(([id, name, type, provider]) => ({
+  id,
+  model: id,
+  name,
+  displayName: name,
+  type,
+  provider,
+  description: '',
+  pricing: null,
+  tags: [],
+  categories: [],
+  schema: `https://static.atlascloud.ai/model/schema/${id.replaceAll('/', '-')}.json`,
+  readme: null,
+}));
+
+function isOfficialAtlasSchema(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.origin === 'https://static.atlascloud.ai'
+      && url.pathname.startsWith('/model/schema/')
+      && url.pathname.endsWith('.json');
+  } catch {
+    return false;
+  }
+}
+
+function catalogDigest(items) {
+  const canonical = items
+    .map((item) => ({ id: item.id, type: item.type, schema: item.schema }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return `sha256:${crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex')}`;
+}
+
+function catalogEnvelope(items, source, fetchedAt = new Date().toISOString()) {
+  const accepted = items.filter((item) => item.id && isOfficialAtlasSchema(item.schema));
+  const grouped = { Image: [], Video: [], Audio: [], Text: [], Other: [] };
+  for (const model of accepted) {
+    if (Object.prototype.hasOwnProperty.call(grouped, model.type)) grouped[model.type].push(model);
+    else grouped.Other.push(model);
+  }
+  return {
+    success: true,
+    schema: CATALOG_SCHEMA,
+    version: 1,
+    catalogDigest: catalogDigest(accepted),
+    fetchedAt,
+    source,
+    models: grouped,
+    items: accepted,
+    total: accepted.length,
+  };
+}
+
+function writeCatalogCache(envelope) {
+  const file = config.ATLAS_CATALOG_CACHE_FILE;
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const temporary = path.join(dir, `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  try {
+    const handle = fs.openSync(temporary, 'wx', 0o600);
+    try {
+      fs.writeFileSync(handle, `${JSON.stringify(envelope)}\n`, { encoding: 'utf8' });
+      fs.fsyncSync(handle);
+    } finally {
+      fs.closeSync(handle);
+    }
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    try { fs.rmSync(temporary, { force: true }); } catch (_) {}
+    throw error;
+  }
+}
+
+function readCatalogCache() {
+  try {
+    const cached = JSON.parse(fs.readFileSync(config.ATLAS_CATALOG_CACHE_FILE, 'utf8'));
+    if (cached?.schema !== CATALOG_SCHEMA || !Array.isArray(cached?.items) || !cached.items.length) return null;
+    return catalogEnvelope(cached.items, 'cache', cached.fetchedAt);
+  } catch {
+    return null;
+  }
+}
+
 router.get('/models', async (_req, res) => {
   try {
     const payload = await atlasRequest('/models', { requireAuth: false });
@@ -271,24 +373,19 @@ router.get('/models', async (_req, res) => {
       ? payload.data
       : (Array.isArray(payload) ? payload : []);
     const models = rawModels
-      .filter((model) => model?.display_console !== false)
+      .filter((model) => model?.display_console !== false && isOfficialAtlasSchema(model?.schema))
       .map(normalizeModel)
-      .filter((model) => model.id);
-
-    const grouped = { Image: [], Video: [], Audio: [], Text: [], Other: [] };
-    for (const model of models) {
-      if (Object.prototype.hasOwnProperty.call(grouped, model.type)) grouped[model.type].push(model);
-      else grouped.Other.push(model);
+      .filter((model) => model.id && model.schema);
+    if (!models.length) throw new AtlasHttpError('Atlas 官方模型目录没有可用 Schema', 502);
+    const envelope = catalogEnvelope(models, 'live');
+    try { writeCatalogCache(envelope); } catch (_) {
+      console.warn('[atlas/models] catalog cache write failed');
     }
-
-    return res.json({
-      success: true,
-      models: grouped,
-      items: models,
-      total: models.length,
-    });
+    return res.json(envelope);
   } catch (error) {
-    return sendAtlasError(res, error, '获取 Atlas 模型列表失败');
+    const cached = readCatalogCache();
+    if (cached) return res.json(cached);
+    return res.json(catalogEnvelope(CATALOG_FALLBACK_MODELS, 'fallback'));
   }
 });
 
@@ -348,6 +445,7 @@ async function submitGeneration(req, res, endpoint, label) {
 
 router.post('/image', (req, res) => submitGeneration(req, res, '/model/generateImage', 'image'));
 router.post('/video', (req, res) => submitGeneration(req, res, '/model/generateVideo', 'video'));
+router.post('/audio', (req, res) => submitGeneration(req, res, '/model/generateAudio', 'audio'));
 
 router.get('/poll/:predictionId', async (req, res) => {
   const predictionId = String(req.params.predictionId || '').trim();
@@ -388,3 +486,14 @@ router.get('/poll/:predictionId', async (req, res) => {
 });
 
 module.exports = router;
+module.exports._test = {
+  CATALOG_FALLBACK_MODELS,
+  CATALOG_SCHEMA,
+  catalogDigest,
+  catalogEnvelope,
+  getAtlasApiKey,
+  isOfficialAtlasSchema,
+  normalizeOutputs,
+  readCatalogCache,
+  writeCatalogCache,
+};

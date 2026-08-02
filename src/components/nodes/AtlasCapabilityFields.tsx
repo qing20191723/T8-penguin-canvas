@@ -20,7 +20,7 @@ export default function AtlasCapabilityFields({
   onChange,
 }: {
   model: string;
-  kind: 'image' | 'video';
+  kind: 'image' | 'video' | 'audio' | 'text';
   params: Record<string, any>;
   onChange: (patch: Record<string, any>) => void;
 }) {

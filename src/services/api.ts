@@ -140,6 +140,8 @@ export interface AtlasModelCapability {
   schema: 't8-atlas-model-capability-v1';
   model: string;
   kind: 'image' | 'video' | 'audio' | 'text' | 'other';
+  operation?: string;
+  modes?: Array<{ id: string; title: string; required: string[] }>;
   schemaDigest: string;
   fields: AtlasCapabilityField[];
 }

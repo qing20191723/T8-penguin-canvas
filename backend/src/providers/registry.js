@@ -86,11 +86,13 @@ const DEFAULT_ATLAS_IMAGE_MODELS = [
 ];
 
 const DEFAULT_ATLAS_VIDEO_MODELS = [
+  'alibaba/wan-2.7/text-to-video',
+  'alibaba/wan-2.7/image-to-video',
+  'alibaba/wan-2.7/reference-to-video',
   'atlascloud/wan-2.7-spicy/reference-to-video',
   'atlascloud/wan-2.7-spicy/image-to-video',
   'kwaivgi/kling-v3.0-std/text-to-video',
   'kwaivgi/kling-v3.0-std/image-to-video',
-  'alibaba/wan-2.7/reference-to-video',
   'alibaba/wan-2.7/video-edit',
   'bytedance/seedance-2.0/text-to-video',
   'bytedance/seedance-2.0/image-to-video',
@@ -98,6 +100,10 @@ const DEFAULT_ATLAS_VIDEO_MODELS = [
 ];
 
 const DEFAULT_ATLAS_CHAT_MODELS = ['moonshotai/kimi-k3'];
+const DEFAULT_ATLAS_AUDIO_MODELS = [
+  'bytedance/seed-audio-1.0',
+  'bytedance/seed-asr-2.0',
+];
 
 const LEGACY_ATLAS_MODEL_IDS = new Map([
   ['seedream/seedream-v5.0-lite-text-to-image', 'bytedance/seedream-v5.0-pro/text-to-image'],
@@ -149,9 +155,12 @@ const ATLAS_ONLY_DEFAULT_ADVANCED_PROVIDERS = [
     imageModels: DEFAULT_ATLAS_IMAGE_MODELS,
     videoModels: DEFAULT_ATLAS_VIDEO_MODELS,
     chatModels: DEFAULT_ATLAS_CHAT_MODELS,
+    audioModels: DEFAULT_ATLAS_AUDIO_MODELS,
     defaults: {
       imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],
       videoModel: DEFAULT_ATLAS_VIDEO_MODELS[0],
+      chatModel: DEFAULT_ATLAS_CHAT_MODELS[0],
+      audioModel: DEFAULT_ATLAS_AUDIO_MODELS[0],
       pollIntervalMs: 3000,
     },
   },
@@ -164,6 +173,7 @@ const ATLAS_ONLY_DEFAULT_ADVANCED_PROVIDERS = [
     imageModels: [],
     videoModels: [],
     chatModels: [],
+    audioModels: [],
     defaults: {},
   },
 ];
@@ -524,6 +534,7 @@ function normalizeProvider(raw, previous = null) {
     imageModels: normalizeModelList(raw.imageModels || raw.image_models),
     videoModels: normalizeModelList(raw.videoModels || raw.video_models),
     chatModels: normalizeModelList(raw.chatModels || raw.chat_models),
+    audioModels: normalizeModelList(raw.audioModels || raw.audio_models),
     defaults: normalizePlainObject(raw.defaults),
   };
 
@@ -589,11 +600,13 @@ function normalizeProvider(raw, previous = null) {
     provider.imageModels = [...DEFAULT_ATLAS_IMAGE_MODELS];
     provider.videoModels = [...DEFAULT_ATLAS_VIDEO_MODELS];
     provider.chatModels = [...DEFAULT_ATLAS_CHAT_MODELS];
+    provider.audioModels = [...DEFAULT_ATLAS_AUDIO_MODELS];
     const atlasDefaults = provider.defaults || {};
     provider.defaults = {
       imageModel: DEFAULT_ATLAS_IMAGE_MODELS[0],
       videoModel: DEFAULT_ATLAS_VIDEO_MODELS[0],
       chatModel: DEFAULT_ATLAS_CHAT_MODELS[0],
+      audioModel: DEFAULT_ATLAS_AUDIO_MODELS[0],
       pollIntervalMs: normalizeNumber(atlasDefaults.pollIntervalMs, 3000, 1000, 30000),
     };
   }

@@ -152,6 +152,29 @@ function atlasKind(value) {
   return 'other';
 }
 
+function atlasOperation(model, kind) {
+  const id = String(model || '').toLowerCase();
+  const suffix = id.split('/').pop() || '';
+  if (kind === 'audio') {
+    if (/\basr\b|speech-to-text|transcri/.test(id)) return 'speech-to-text';
+    if (/music|song/.test(id)) return 'text-to-music';
+    return 'text-to-speech';
+  }
+  if (kind === 'text') return 'chat';
+  if (kind === 'image' && /edit|image-to-image|inpaint|outpaint/.test(id)) return 'image-edit';
+  if (kind === 'image') return 'text-to-image';
+  if (kind === 'video' && suffix) return suffix;
+  return kind;
+}
+
+function sanitizeModes(input) {
+  return (Array.isArray(input?.oneOf) ? input.oneOf : []).slice(0, 30).map((branch, index) => ({
+    id: `mode-${index + 1}`,
+    title: String(branch?.title || branch?.description || `模式 ${index + 1}`).slice(0, 200),
+    required: (Array.isArray(branch?.required) ? branch.required : []).map(String).slice(0, 100),
+  }));
+}
+
 function sanitizeAtlasModelCapability(schema) {
   const input = schema?.input && typeof schema.input === 'object' && !Array.isArray(schema.input)
     ? schema.input
@@ -160,10 +183,13 @@ function sanitizeAtlasModelCapability(schema) {
   const properties = input.properties && typeof input.properties === 'object' && !Array.isArray(input.properties)
     ? input.properties
     : {};
+  const kind = atlasKind(schema?.type);
   const capability = {
     schema: 't8-atlas-model-capability-v1',
     model: cleanModelId(schema?.model),
-    kind: atlasKind(schema?.type),
+    kind,
+    operation: atlasOperation(schema?.model, kind),
+    modes: sanitizeModes(input),
     fields: Object.entries(properties).slice(0, 200)
       .map(([name, rule]) => sanitizeField(name, rule, required.has(name))),
   };
