@@ -88,6 +88,8 @@ test('Render wiring enables Atlas-only runtime, keeps unified external gateway, 
   const maintenance = fs.readFileSync(path.join(root, 'backend/src/services/runRetentionMaintenance.js'), 'utf8');
   const projectDatabase = fs.readFileSync(path.join(root, 'backend/src/services/projectDatabase.js'), 'utf8');
   const settingsUi = fs.readFileSync(path.join(root, 'src/components/ApiSettings.tsx'), 'utf8');
+  const externalProviders = fs.readFileSync(path.join(root, 'backend/src/routes/externalProviders.js'), 'utf8');
+  const atlasOnlyCss = fs.readFileSync(path.join(root, 'src/styles/atlasOnly.css'), 'utf8');
   assert.match(render, /key: T8_ATLAS_ONLY_RUNTIME[\s\S]*?value: 1/);
   assert.match(render, /key: T8PC_ASSET_PREVIEW_CONCURRENCY[\s\S]*?value: 1/);
   assert.match(renderServer, /process\.env\.T8_ATLAS_ONLY_RUNTIME = '1'/);
@@ -96,6 +98,8 @@ test('Render wiring enables Atlas-only runtime, keeps unified external gateway, 
   assert.match(vite, /process\.env\.RENDER[\s\S]*?=== 'true'/);
   assert.match(vite, /__T8_ATLAS_ONLY_RUNTIME__/);
   assert.match(server, /app\.use\('\/api\/proxy\/external', externalProvidersRouter\)/);
+  assert.match(externalProviders, /router\.use\(providerSubmissionContextMiddleware\)/);
+  assert.doesNotMatch(atlasOnlyCss, /button\[title\*=['"]Grok['"]\]/);
   assert.match(server, /atlas_only_runtime_disabled/);
   assert.match(server, /persistence: process\.env\.T8_PERSISTENT_DISK_CONFIGURED === '1' \? 'configured' : 'unknown'/);
   assert.match(projectDatabase, /T8_ATLAS_ONLY_RUNTIME === '1' \? 1000 : 5000/);
