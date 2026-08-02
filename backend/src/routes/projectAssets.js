@@ -3,15 +3,13 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const { DEFAULT_PROJECT_ID, isUuid } = require('../collaboration/protocol');
-const { getProjectDatabase } = require('../services/projectDatabase');
-const { getBackgroundAssetIndexer, hashFile } = require('../services/assetIndexer');
-const { getAssetPreviewPipeline } = require('../services/assetPreviewPipeline');
+const { createLazyProjectDatabase } = require('../services/lazyProjectDatabase');
 const { getAssetBlobStore } = require('../services/assetBlobStore');
 const {
   openVerifiedAssetMedia,
   reconcileAssetAvailabilitySnapshots,
 } = require('../services/assetAvailability');
-const { getAssetSemanticPipeline, normalizeSemanticText } = require('../services/assetSemanticPipeline');
+const { createLazyAssetRuntime } = require('../services/lazyAssetRuntime');
 const { getPublicSemanticModel } = require('../services/assetSemanticModels');
 const {
   mapProjectDatabaseStorageCapacityPublicError,
@@ -26,10 +24,10 @@ const {
 } = require('../services/assetPublicView');
 
 const router = express.Router();
-const database = getProjectDatabase(config);
-const previewPipeline = getAssetPreviewPipeline(config, database);
-const indexer = getBackgroundAssetIndexer(config, database, previewPipeline);
-const semanticPipeline = getAssetSemanticPipeline(config, database);
+const database = createLazyProjectDatabase(config);
+const { previewPipeline, indexer, semanticPipeline } = createLazyAssetRuntime(config, database);
+const hashFile = (...args) => require('../services/assetIndexer').hashFile(...args);
+const normalizeSemanticText = (...args) => require('../services/assetSemanticPipeline').normalizeSemanticText(...args);
 const blobStore = getAssetBlobStore(config);
 
 function isLoopbackRequest(req) {

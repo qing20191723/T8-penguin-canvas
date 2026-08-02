@@ -122,15 +122,15 @@ const DEFAULT_JIMENG_VIDEO_MODELS = [
   'jimeng-video-1080p',
 ];
 
-const SUPPORTED_PROTOCOLS = new Set([
-  'openai-compatible',
-  'atlas',
-]);
+const ATLAS_ONLY_RUNTIME = process.env.T8_ATLAS_ONLY_RUNTIME === '1';
+const SUPPORTED_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+  ? ['openai-compatible', 'atlas']
+  : ['openai-compatible', 'atlas', 'modelscope', 'volcengine', 'agnes', 'jimeng-cli', 'comfyui']);
 
 const PROVIDER_ID_RE = /^[a-z0-9][a-z0-9_-]{1,47}$/;
 const CONTROL_CHAR_RE = /[\x00-\x1f\x7f]/;
 
-const DEFAULT_ADVANCED_PROVIDERS = [
+const ATLAS_ONLY_DEFAULT_ADVANCED_PROVIDERS = [
   {
     id: 'atlas',
     label: 'Atlas Cloud',
@@ -158,6 +158,91 @@ const DEFAULT_ADVANCED_PROVIDERS = [
     defaults: {},
   },
 ];
+const DESKTOP_DEFAULT_ADVANCED_PROVIDERS = [
+  ...ATLAS_ONLY_DEFAULT_ADVANCED_PROVIDERS,
+  {
+    id: 'modelscope',
+    label: 'ModelScope',
+    protocol: 'modelscope',
+    baseUrl: DEFAULT_MODELSCOPE_BASE_URL,
+    enabled: false,
+    imageModels: DEFAULT_MODELSCOPE_IMAGE_MODELS,
+    videoModels: [],
+    chatModels: DEFAULT_MODELSCOPE_CHAT_MODELS,
+    defaults: {
+      imageModel: DEFAULT_MODELSCOPE_IMAGE_MODELS[0],
+      chatModel: DEFAULT_MODELSCOPE_CHAT_MODELS[0],
+    },
+    modelscopeConfig: {
+      defaultsVersion: DEFAULT_MODELSCOPE_LORAS_VERSION,
+      loras: DEFAULT_MODELSCOPE_LORAS,
+    },
+  },
+  {
+    id: 'volcengine',
+    label: '火山引擎',
+    protocol: 'volcengine',
+    baseUrl: DEFAULT_VOLCENGINE_BASE_URL,
+    enabled: false,
+    imageModels: DEFAULT_VOLCENGINE_IMAGE_MODELS,
+    videoModels: DEFAULT_VOLCENGINE_VIDEO_MODELS,
+    chatModels: DEFAULT_VOLCENGINE_CHAT_MODELS,
+    defaults: {
+      imageModel: DEFAULT_VOLCENGINE_IMAGE_MODELS[0],
+      videoModel: DEFAULT_VOLCENGINE_VIDEO_MODELS[1],
+      chatModel: DEFAULT_VOLCENGINE_CHAT_MODELS[0],
+    },
+    volcengineConfig: { project: 'default', region: 'cn-beijing' },
+  },
+  {
+    id: 'agnes',
+    label: 'Agnes AI',
+    protocol: 'agnes',
+    baseUrl: DEFAULT_AGNES_BASE_URL,
+    enabled: false,
+    imageModels: DEFAULT_AGNES_IMAGE_MODELS,
+    videoModels: DEFAULT_AGNES_VIDEO_MODELS,
+    chatModels: DEFAULT_AGNES_CHAT_MODELS,
+    defaults: {
+      imageModel: DEFAULT_AGNES_IMAGE_MODELS[0],
+      videoModel: DEFAULT_AGNES_VIDEO_MODELS[0],
+      chatModel: DEFAULT_AGNES_CHAT_MODELS[0],
+      responseFormat: 'url',
+    },
+  },
+  {
+    id: 'comfyui',
+    label: 'ComfyUI',
+    protocol: 'comfyui',
+    baseUrl: 'http://127.0.0.1:8188',
+    enabled: false,
+    imageModels: [],
+    videoModels: [],
+    chatModels: [],
+    defaults: {},
+    comfyuiConfig: { instances: ['http://127.0.0.1:8188'], workflows: [] },
+  },
+  {
+    id: 'jimeng-cli',
+    label: '即梦 CLI',
+    protocol: 'jimeng-cli',
+    baseUrl: '',
+    enabled: false,
+    imageModels: DEFAULT_JIMENG_IMAGE_MODELS,
+    videoModels: DEFAULT_JIMENG_VIDEO_MODELS,
+    chatModels: [],
+    defaults: {},
+    jimengConfig: {
+      executablePath: '',
+      useWsl: false,
+      wslDistro: '',
+      pollSeconds: 3600,
+    },
+  },
+];
+const DEFAULT_ADVANCED_PROVIDERS = ATLAS_ONLY_RUNTIME
+  ? ATLAS_ONLY_DEFAULT_ADVANCED_PROVIDERS
+  : DESKTOP_DEFAULT_ADVANCED_PROVIDERS;
 
 const DEFAULT_ADVANCED_PROVIDER_IDS = DEFAULT_ADVANCED_PROVIDERS.map((provider) => provider.id);
 
@@ -508,6 +593,28 @@ function normalizeProvider(raw, previous = null) {
 }
 
 function normalizeAdvancedProviders(rawProviders, currentProviders = []) {
+  if (!ATLAS_ONLY_RUNTIME) {
+    const previousById = new Map(
+      (Array.isArray(currentProviders) ? currentProviders : [])
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => [cleanId(item.id), item])
+        .filter(([id]) => !!id),
+    );
+    const byId = new Map();
+    for (const template of DEFAULT_ADVANCED_PROVIDERS) {
+      const previous = previousById.get(template.id);
+      const provider = normalizeProvider({ ...clone(template), ...(previous || {}) }, previous);
+      if (provider) byId.set(provider.id, provider);
+    }
+    for (const raw of Array.isArray(rawProviders) ? rawProviders : []) {
+      const id = cleanId(raw?.id);
+      const previous = previousById.get(id) || byId.get(id) || null;
+      const provider = normalizeProvider(raw, previous);
+      if (provider) byId.set(provider.id, provider);
+    }
+    return [...byId.values()];
+  }
+
   const source = Array.isArray(rawProviders) ? rawProviders : [];
   const previous = Array.isArray(currentProviders) ? currentProviders : [];
   const all = [...previous, ...source].filter((item) => item && typeof item === 'object');

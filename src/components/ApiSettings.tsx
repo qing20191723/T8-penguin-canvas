@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, KeyRound, Loader2, Save, Server, X } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2, Save, Server, X } from 'lucide-react';
 import { useApiKeysStore, ATLAS_CHAT_BASE_URL, ATLAS_GENERATION_BASE_URL } from '../stores/apiKeys';
 import type { AdvancedProviderConfig, ApiSettings } from '../types/canvas';
 import { parseAdvancedProviderModelText, stringifyAdvancedProviderModels } from '../utils/advancedProviders';
@@ -68,6 +68,7 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
   const [canvasAutoSavePath, setCanvasAutoSavePath] = useState('');
   const [resourceLibraryPath, setResourceLibraryPath] = useState('');
   const [themeTemplatePath, setThemeTemplatePath] = useState('');
+  const [webStoragePersistence, setWebStoragePersistence] = useState<'configured' | 'unknown' | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -84,6 +85,19 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
     setResourceLibraryPath(settings.resourceLibraryPath || '');
     setThemeTemplatePath(settings.themeTemplatePath || '');
   }, [custom, open, settings]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const controller = new AbortController();
+    fetch('/api/status', { signal: controller.signal, credentials: 'same-origin' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((status) => {
+        if (status?.runtime !== 'atlas-only') return;
+        setWebStoragePersistence(status?.storage?.persistence === 'configured' ? 'configured' : 'unknown');
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [open]);
 
   if (!open) return null;
 
@@ -134,6 +148,12 @@ export default function ApiSettingsModal({ open, onClose }: ApiSettingsModalProp
         </header>
 
         <div className="space-y-5 overflow-y-auto p-6">
+          {webStoragePersistence === 'unknown' && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+              <div><strong>持久化存储状态：未知。</strong> 当前部署未声明已配置 Persistent Disk，不能承诺上传文件在服务重启后仍然存在。</div>
+            </div>
+          )}
           <section className="rounded-2xl border border-teal-300 bg-teal-50/70 p-5 dark:border-teal-700 dark:bg-teal-950/25">
             <div className="flex items-start gap-3">
               <Server className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-300" size={20} />

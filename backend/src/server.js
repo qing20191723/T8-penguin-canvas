@@ -3,10 +3,15 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { startFigmaBridgeOnAppStart } = require('./utils/figmaBridge');
+const ATLAS_ONLY_RUNTIME = String(process.env.T8_ATLAS_ONLY_RUNTIME || '') === '1';
+const startFigmaBridgeOnAppStart = ATLAS_ONLY_RUNTIME
+  ? () => undefined
+  : require('./utils/figmaBridge').startFigmaBridgeOnAppStart;
 const { getRunRecoveryManager } = require('./services/runRecovery');
-const { closeProjectDatabase } = require('./services/projectDatabase');
-const { registerAgentControlInstance } = require('./services/agentControlRegistry');
+const { closeProjectDatabase, getProjectDatabase } = require('./services/projectDatabase');
+const { peekAssetRuntime } = require('./services/lazyAssetRuntime');
+const { maintainRunRetention } = require('./services/runRetentionMaintenance');
+const { DEFAULT_PROJECT_ID } = require('./collaboration/protocol');
 const {
   SCHEMA: MEMORY_SCHEMA,
   authorizeBearer,
@@ -16,9 +21,9 @@ const {
   queueSummary,
   storageStatus,
 } = require('./services/memoryDiagnostics');
-const agentControlRouter = require('./routes/agentControl');
-const canvasAgentToolsRouter = require('./routes/canvasAgentTools');
-const creatorAgentRouter = require('./routes/creatorAgent');
+const registerAgentControlInstance = ATLAS_ONLY_RUNTIME
+  ? () => null
+  : require('./services/agentControlRegistry').registerAgentControlInstance;
 
 const app = express();
 const backendMemoryActivity = createActivityTracker('backend');
@@ -26,6 +31,33 @@ const memoryDebugToken = boundedToken(process.env.T8_MEMORY_DEBUG_TOKEN);
 const memoryInternalToken = boundedToken(process.env.T8_MEMORY_INTERNAL_TOKEN);
 delete process.env.T8_MEMORY_INTERNAL_TOKEN;
 app.use(backendMemoryActivity.middleware);
+
+function atlasOnlyDisabledRouter(feature) {
+  const router = express.Router();
+  router.use((_req, res) => res.status(404).json({
+    success: false,
+    code: 'atlas_only_runtime_disabled',
+    feature,
+    error: '该桌面能力未在 Atlas Web 轻量运行时启用',
+  }));
+  return router;
+}
+
+const agentControlRouter = ATLAS_ONLY_RUNTIME
+  ? Object.assign(atlasOnlyDisabledRouter('agent-control'), {
+    AGENT_CONTROL_REQUEST_LIMIT: 64 * 1024,
+    AGENT_CONTROL_HTTP_SCHEMA: 't8-agent-control-http-v1',
+  })
+  : require('./routes/agentControl');
+const canvasAgentToolsRouter = ATLAS_ONLY_RUNTIME
+  ? atlasOnlyDisabledRouter('canvas-agent')
+  : require('./routes/canvasAgentTools');
+const creatorAgentRouter = ATLAS_ONLY_RUNTIME
+  ? Object.assign(atlasOnlyDisabledRouter('creator-agent'), {
+    CREATOR_AGENT_REQUEST_LIMIT: 1024 * 1024,
+    CREATOR_AGENT_HTTP_SCHEMA: 't8-creator-agent-http-v1',
+  })
+  : require('./routes/creatorAgent');
 
 // Node's http.Server considers a request closed as soon as its socket is
 // destroyed, but an async Express handler can keep running afterwards. Track
@@ -519,6 +551,10 @@ app.get('/api/status', (_req, res) => {
     version: config.APP_VERSION,
     port: config.PORT,
     instanceId: config.BACKEND_INSTANCE_ID,
+    runtime: ATLAS_ONLY_RUNTIME ? 'atlas-only' : 'desktop',
+    storage: {
+      persistence: process.env.T8_PERSISTENT_DISK_CONFIGURED === '1' ? 'configured' : 'unknown',
+    },
     time: new Date().toISOString(),
   });
 });
@@ -526,36 +562,37 @@ app.get('/api/status', (_req, res) => {
 // ========== 业务路由 ==========
 const canvasRouter = require('./routes/canvas');
 const settingsRouter = require('./routes/settings');
-const proxyRouter = require('./routes/proxy');
 const atlasProxyRouter = require('./routes/atlasProxy');
 const filesRouter = require('./routes/files');
-const imageOpsRouter = require('./routes/imageOps');
 const resourcesRouter = require('./routes/resources');
 const themesRouter = require('./routes/themes');
-const eagleRouter = require('./routes/eagle');
-const figmaRouter = require('./routes/figma');
 const externalProvidersRouter = require('./routes/externalProviders');
-const grokOAuthRouter = require('./routes/grokOAuth');
-const codexCliRouter = require('./routes/codexCli');
-const aiWatermarkRouter = require('./routes/aiWatermark');
-const cloudUploadsRouter = require('./routes/cloudUploads');
-const parseHubRouter = require('./routes/parseHub');
 const achievementsRouter = require('./routes/achievements');
-const topazRouter = require('./routes/topaz');
-const animeTagsRouter = require('./routes/animeTags');
-const vibexBridgeRouter = require('./routes/vibexBridge');
-const videoOpsRouter = require('./routes/videoOps');
-const batchTagsRouter = require('./routes/batchTags');
-const photoshopBridgeRouter = require('./routes/photoshopBridge');
-const feishuBitableRouter = require('./routes/feishuBitable');
 const webAssetsRouter = require('./routes/webAssets');
 const collaborationRouter = require('./routes/collaboration');
 const { getCollaborationGateway } = require('./collaboration/gateway');
 const projectRunsRouter = require('./routes/projectRuns');
 const projectAssetsRouter = require('./routes/projectAssets');
 const subflowsRouter = require('./routes/subflows');
-const { registerLocalExtensions } = require('./extensions/localExtensions');
-const localHooks = require('./extensions/runtimeHooks');
+const legacyRouter = (feature, modulePath) => ATLAS_ONLY_RUNTIME
+  ? atlasOnlyDisabledRouter(feature)
+  : require(modulePath);
+const proxyRouter = legacyRouter('legacy-provider-proxy', './routes/proxy');
+const imageOpsRouter = legacyRouter('image-operations', './routes/imageOps');
+const eagleRouter = legacyRouter('eagle', './routes/eagle');
+const figmaRouter = legacyRouter('figma', './routes/figma');
+const grokOAuthRouter = legacyRouter('grok-oauth', './routes/grokOAuth');
+const codexCliRouter = legacyRouter('codex-cli', './routes/codexCli');
+const aiWatermarkRouter = legacyRouter('ai-watermark', './routes/aiWatermark');
+const cloudUploadsRouter = legacyRouter('cloud-uploads', './routes/cloudUploads');
+const parseHubRouter = legacyRouter('parsehub', './routes/parseHub');
+const topazRouter = legacyRouter('topaz', './routes/topaz');
+const animeTagsRouter = legacyRouter('anime-tags', './routes/animeTags');
+const vibexBridgeRouter = legacyRouter('vibex-bridge', './routes/vibexBridge');
+const videoOpsRouter = legacyRouter('video-operations', './routes/videoOps');
+const batchTagsRouter = legacyRouter('batch-tags', './routes/batchTags');
+const photoshopBridgeRouter = legacyRouter('photoshop-bridge', './routes/photoshopBridge');
+const feishuBitableRouter = legacyRouter('feishu-bitable', './routes/feishuBitable');
 const collaborationGateway = getCollaborationGateway(config);
 
 function isLoopbackMemoryRequest(req) {
@@ -625,9 +662,9 @@ app.get('/api/debug/memory', (req, res) => {
 
 app.use('/api/canvas', canvasRouter);
 app.use('/api/settings', settingsRouter);
-app.use('/api/proxy', proxyRouter);
 app.use('/api/proxy/atlas', atlasProxyRouter);
 app.use('/api/proxy/external', externalProvidersRouter);
+app.use('/api/proxy', proxyRouter);
 app.use('/api/files', filesRouter);
 app.use('/api/image', imageOpsRouter);
 app.use('/api/resources', resourcesRouter);
@@ -652,7 +689,11 @@ app.use('/api/collaboration', collaborationRouter);
 app.use('/api/project-runs', projectRunsRouter);
 app.use('/api/project-assets', projectAssetsRouter);
 app.use('/api/subflows', subflowsRouter);
-registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
+if (!ATLAS_ONLY_RUNTIME) {
+  const { registerLocalExtensions } = require('./extensions/localExtensions');
+  const localHooks = require('./extensions/runtimeHooks');
+  registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
+}
 
 // ========== 前端静态资源(仅打包模式) ==========
 // 开发模式下不启用,避免与 Vite dev server 打架。
@@ -681,6 +722,7 @@ let httpServerClosePromise = null;
 let gracefulShutdownPromise = null;
 let startupRunRecoveryPromise = null;
 let startupSemanticModelRefreshPromise = null;
+let runRetentionMaintenanceTimer = null;
 let agentControlRegistration = null;
 let serverStartOutcome = null;
 let resolveServerStart;
@@ -726,7 +768,7 @@ const server = app.listen(PORT, HOST, () => {
   console.log('--------------------------------------------------');
   backendMemoryActivity.log('backend.listening', { phase: 'http-ready' });
   startFigmaBridgeOnAppStart(console);
-  setImmediate(() => {
+  if (!ATLAS_ONLY_RUNTIME) setImmediate(() => {
     if (shutdownStarted) return;
     startupSemanticModelRefreshPromise = Promise.resolve()
       .then(() => projectAssetsRouter.semanticPipeline.refreshModelStates())
@@ -740,6 +782,28 @@ const server = app.listen(PORT, HOST, () => {
     startupRunRecoveryPromise = runRecoveryManager.recoverPendingRuns()
       .then((result) => {
         if (result.recovered || result.failed || result.interrupted) console.log('[run-recovery] startup result', result);
+        try {
+          const maintenance = maintainRunRetention(getProjectDatabase(config), DEFAULT_PROJECT_ID, { force: true });
+          if (!maintenance.skipped && maintenance.result?.deletedRuns) {
+            console.log('[run-retention] startup prune', {
+              deletedRuns: maintenance.result.deletedRuns,
+              protectedRuns: maintenance.result.protectedRuns,
+            });
+          }
+        } catch (error) {
+          console.warn('[run-retention] startup prune failed:', error?.message || error);
+        }
+        if (!shutdownStarted && !runRetentionMaintenanceTimer) {
+          runRetentionMaintenanceTimer = setInterval(() => {
+            if (shutdownStarted) return;
+            try {
+              maintainRunRetention(getProjectDatabase(config), DEFAULT_PROJECT_ID);
+            } catch (error) {
+              console.warn('[run-retention] pressure maintenance failed:', error?.message || error);
+            }
+          }, 6 * 60 * 60 * 1000);
+          runRetentionMaintenanceTimer.unref?.();
+        }
         backendMemoryActivity.log('run-recovery.end', { phase: 'ready' });
       })
       .catch((error) => {
@@ -769,7 +833,7 @@ function closeSemanticPipeline() {
   if (semanticPipelineClosed) return;
   semanticPipelineClosed = true;
   try {
-    projectAssetsRouter.semanticPipeline?.close?.();
+    peekAssetRuntime().semanticPipeline?.close?.();
   } catch (error) {
     console.warn('[asset-semantic] shutdown failed:', error?.message || error);
   }
@@ -787,7 +851,7 @@ function closeProjectDatabaseLifecycle() {
 
 function shutdownPreviewPipelineLifecycle() {
   if (!previewPipelineShutdownPromise) {
-    const pipeline = projectAssetsRouter.previewPipeline;
+    const pipeline = peekAssetRuntime().previewPipeline;
     try {
       previewPipelineShutdownPromise = typeof pipeline?.shutdown === 'function'
         ? Promise.resolve(pipeline.shutdown())
@@ -956,6 +1020,10 @@ function waitForRuntimeStorageCloseLifecycle() {
 function gracefulShutdown(signal) {
   if (shutdownStarted) return gracefulShutdownPromise || projectDatabaseClosePromise || Promise.resolve();
   shutdownStarted = true;
+  if (runRetentionMaintenanceTimer) {
+    clearInterval(runRetentionMaintenanceTimer);
+    runRetentionMaintenanceTimer = null;
+  }
   try {
     agentControlRegistration?.stop?.();
   } catch (error) {
