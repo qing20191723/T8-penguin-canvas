@@ -45,16 +45,28 @@ jobs:
       - name: Preflight Render and Atlas connection without generation
         shell: pwsh
         run: |
-          $status = Invoke-RestMethod -Method Get -Uri "$env:ATLAS_RENDER_BASE_URL/api/status" -TimeoutSec 180
-          if ($status.status -ne 'ok' -or $status.runtime.profile -ne 'atlas-only') {
-            throw 'Render is not a healthy Atlas-only runtime. No paid request was submitted.'
+          $status = $null
+          for ($attempt = 1; $attempt -le 18; $attempt++) {
+            try {
+              $status = Invoke-RestMethod -Method Get -Uri "$env:ATLAS_RENDER_BASE_URL/api/status" -TimeoutSec 180
+              if ($status.success -eq $true -and $status.runtime -eq 'atlas-only' -and $status.phase -eq 'ready' -and $status.backendReady -eq $true) {
+                break
+              }
+              Write-Host "Render is not ready yet (attempt $attempt/18): phase=$($status.phase), backendReady=$($status.backendReady), runtime=$($status.runtime)"
+            } catch {
+              Write-Host "Render status request failed (attempt $attempt/18): $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 10
+          }
+          if ($null -eq $status -or $status.success -ne $true -or $status.runtime -ne 'atlas-only' -or $status.phase -ne 'ready' -or $status.backendReady -ne $true) {
+            throw "Render is not a healthy Atlas-only runtime. No paid request was submitted. phase=$($status.phase), backendReady=$($status.backendReady), runtime=$($status.runtime)"
           }
           $body = @{ providerId = 'atlas'; dryRun = $true; timeoutMs = 60000 } | ConvertTo-Json
           $provider = Invoke-RestMethod -Method Post -Uri "$env:ATLAS_RENDER_BASE_URL/api/proxy/external/test-provider" -ContentType 'application/json' -Body $body -TimeoutSec 180
           if ($provider.success -ne $true -or $provider.data.ok -ne $true -or $provider.data.protocol -ne 'atlas') {
-            throw 'Render Atlas connection check failed. No paid request was submitted.'
+            throw "Render Atlas connection check failed. No paid request was submitted. code=$($provider.code), error=$($provider.error)"
           }
-          Write-Host "Render Atlas connection passed; model count: $($provider.data.modelCount)."
+          Write-Host "Render Atlas connection passed without generation; model count: $($provider.data.modelCount)."
 
       - name: Install dependencies
         run: npm ci --include=dev
@@ -67,7 +79,7 @@ jobs:
           npm run type-check
           npm run feature-sync:check
 
-      - name: Run exactly one paid Kimi and Wan submission each
+      - name: Run paid Kimi test, then Wan only if Kimi passes
         run: node scripts/atlas-release-smoke.cjs
 
       - name: Preserve paid smoke evidence
