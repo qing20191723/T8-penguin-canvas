@@ -102,7 +102,10 @@ test('Render wiring enables Atlas-only runtime, keeps unified external gateway, 
   assert.match(externalProviders, /router\.use\(providerSubmissionContextMiddleware\)/);
   assert.doesNotMatch(atlasOnlyCss, /button\[title\*=['"]Grok['"]\]/);
   assert.match(server, /atlas_only_runtime_disabled/);
-  assert.match(server, /persistence: process\.env\.T8_PERSISTENT_DISK_CONFIGURED === '1' \? 'configured' : 'unknown'/);
+  assert.match(
+    server,
+    /persistence: DESKTOP_ATLAS_RUNTIME[\s\S]*?process\.env\.T8_PERSISTENT_DISK_CONFIGURED === '1'[\s\S]*?'configured' : 'unknown'/,
+  );
   assert.match(projectDatabase, /T8_ATLAS_ONLY_RUNTIME === '1' \? 1000 : 5000/);
   assert.match(projectDatabase, /T8_ATLAS_ONLY_RUNTIME === '1' \? 20000 : 100000/);
   assert.match(projectDatabase, /T8_ATLAS_ONLY_RUNTIME === '1' \? 512 \* 1024 \* 1024/);
