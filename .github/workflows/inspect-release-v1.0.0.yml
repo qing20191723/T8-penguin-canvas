@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RENDER_BASE_URL: https://qingchen-atlascloud-canvas.onrender.com
-      RELEASE_SHA: 342026c10df929d94b98a2aec9fe0aa18d971674
+      RELEASE_SHA: 8f9b36d2b8f1362ded105e3267990e562bd0a4ac
     steps:
       - name: Inspect and write sanitized report
         id: inspect
@@ -25,86 +25,32 @@ jobs:
           node - <<'NODE'
           const fs = require('node:fs');
           const { execFileSync } = require('node:child_process');
-          const report = {
-            releaseSha: process.env.RELEASE_SHA,
-            releaseRun: null,
-            render: null,
-            catalog: null,
-            provider: null,
-            errors: [],
-          };
-          const json = (cmd, args, input) => JSON.parse(execFileSync(cmd, args, {
-            input,
-            encoding: 'utf8',
-            timeout: 180000,
-            env: process.env,
-          }));
+          const report = { releaseSha: process.env.RELEASE_SHA, releaseRun: null, render: null, catalog: null, provider: null, errors: [] };
+          const json = (cmd, args) => JSON.parse(execFileSync(cmd, args, { encoding: 'utf8', timeout: 180000, env: process.env }));
           try {
             const runs = json('gh', ['api', '-X', 'GET', `repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=20`]);
             const run = (runs.workflow_runs || []).find((item) => item.head_sha === process.env.RELEASE_SHA);
-            report.releaseRun = run ? {
-              id: run.id,
-              status: run.status,
-              conclusion: run.conclusion,
-              url: run.html_url,
-            } : null;
+            report.releaseRun = run ? { id: run.id, status: run.status, conclusion: run.conclusion, url: run.html_url } : null;
           } catch (error) { report.errors.push(`release-run: ${error.message}`); }
           try {
             const status = json('curl', ['--fail-with-body','--silent','--show-error','--max-time','180',`${process.env.RENDER_BASE_URL}/api/status`]);
-            report.render = {
-              status: status.status,
-              profile: status.runtime?.profile,
-              atlasOnly: status.runtime?.atlasOnly,
-            };
+            report.render = { status: status.status, profile: status.runtime?.profile, atlasOnly: status.runtime?.atlasOnly };
           } catch (error) { report.errors.push(`render-status: ${error.message}`); }
           try {
             const catalog = json('curl', ['--fail-with-body','--silent','--show-error','--max-time','180',`${process.env.RENDER_BASE_URL}/api/proxy/atlas/models`]);
-            const body = JSON.stringify(catalog).toLowerCase();
-            report.catalog = {
-              ok: catalog.ok,
-              source: catalog.source,
-              total: catalog.total,
-              kimiAliasPresent: body.includes('kimi-k3') || body.includes('kimi k3'),
-              wanSpicyAliasPresent: body.includes('wan-2.7-spicy') || body.includes('wan 2.7 spicy'),
-            };
+            report.catalog = { ok: catalog.ok, source: catalog.source, total: catalog.total };
           } catch (error) { report.errors.push(`catalog: ${error.message}`); }
           try {
-            const provider = json('curl', [
-              '--fail-with-body','--silent','--show-error','--max-time','180',
-              '-H','Accept: application/json','-H','Content-Type: application/json',
-              '--data','{"providerId":"atlas","dryRun":true,"timeoutMs":60000}',
-              `${process.env.RENDER_BASE_URL}/api/proxy/external/test-provider`,
-            ]);
-            report.provider = {
-              success: provider.success,
-              code: provider.code || null,
-              error: provider.error || null,
-              provider: provider.data?.provider || null,
-              configured: provider.data?.configured === true,
-              dryRun: provider.data?.dryRun === true,
-            };
+            const provider = json('curl', ['--fail-with-body','--silent','--show-error','--max-time','180','-H','Accept: application/json','-H','Content-Type: application/json','--data','{"providerId":"atlas","dryRun":true,"timeoutMs":60000}',`${process.env.RENDER_BASE_URL}/api/proxy/external/test-provider`]);
+            report.provider = { success: provider.success, code: provider.code || null, error: provider.error || null, provider: provider.data?.provider || null, configured: provider.data?.configured === true, dryRun: provider.data?.dryRun === true };
           } catch (error) { report.errors.push(`provider-dry-run: ${error.message}`); }
-          const ok = report.render?.status === 'ok'
-            && report.render?.profile === 'atlas-only'
-            && report.catalog?.ok === true
-            && report.provider?.success === true
-            && report.provider?.configured === true
-            && report.provider?.dryRun === true;
-          report.ok = ok;
+          report.ok = report.render?.status === 'ok' && report.render?.profile === 'atlas-only' && report.catalog?.ok === true && report.provider?.success === true && report.provider?.configured === true && report.provider?.dryRun === true;
           fs.writeFileSync('diagnostic.json', JSON.stringify(report, null, 2));
-          const lines = [
-            '## v1.0.0 发布诊断',
-            '',
-            `- 总体：**${ok ? 'PASS' : 'FAIL'}**`,
-            `- 正式发布任务：\`${report.releaseRun?.conclusion || report.releaseRun?.status || 'not-found'}\`（ID: \`${report.releaseRun?.id || 'n/a'}\`）`,
-            `- Render：\`${report.render?.status || 'unknown'}\` / \`${report.render?.profile || 'unknown'}\``,
-            `- Atlas 目录：\`${report.catalog?.ok === true ? 'ok' : 'failed'}\`，${report.catalog?.total ?? 'unknown'} 个模型`,
-            `- Atlas Provider dry-run：\`${report.provider?.success === true ? 'success' : 'failed'}\`，configured=\`${report.provider?.configured ?? false}\`，dryRun=\`${report.provider?.dryRun ?? false}\``,
-          ];
+          const lines = ['## v1.0.0 发布诊断','',`- 总体：**${report.ok ? 'PASS' : 'FAIL'}**`,`- 正式发布任务：\`${report.releaseRun?.conclusion || report.releaseRun?.status || 'not-found'}\`（ID: \`${report.releaseRun?.id || 'n/a'}\`）`,`- Render：\`${report.render?.status || 'unknown'}\` / \`${report.render?.profile || 'unknown'}\``,`- Atlas 目录：\`${report.catalog?.ok === true ? 'ok' : 'failed'}\`，${report.catalog?.total ?? 'unknown'} 个模型`,`- Atlas Provider dry-run：\`${report.provider?.success === true ? 'success' : 'failed'}\`，configured=\`${report.provider?.configured ?? false}\`，dryRun=\`${report.provider?.dryRun ?? false}\``];
           if (report.errors.length) lines.push('', '错误：', ...report.errors.map((item) => `- ${item}`));
           lines.push('', '<details><summary>脱敏 JSON</summary>', '', '```json', JSON.stringify(report, null, 2), '```', '</details>');
           fs.writeFileSync('diagnostic.md', lines.join('\n'));
-          if (!ok) process.exitCode = 1;
+          if (!report.ok) process.exitCode = 1;
           NODE
 
       - name: Publish sanitized report
@@ -115,5 +61,4 @@ jobs:
 
       - name: Enforce result
         if: always()
-        run: |
-          node -e "const r=require('./diagnostic.json'); if(!r.ok) process.exit(1)"
+        run: node -e "const r=require('./diagnostic.json'); if(!r.ok) process.exit(1)"
