@@ -11,6 +11,8 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
+    env:
+      RENDER_BASE_URL: https://qingchen-atlascloud-canvas.onrender.com
     steps:
       - name: Read formal release workflow status
         env:
@@ -39,4 +41,50 @@ jobs:
             })),
           }, null, 2));
           if (!matching.length) process.exitCode = 2;
+          NODE
+
+      - name: Probe Render status and Atlas catalog
+        run: |
+          curl --fail-with-body --retry 3 --retry-delay 10 --max-time 180 \
+            -H 'Accept: application/json' \
+            "$RENDER_BASE_URL/api/status" | tee render-status.json
+          curl --fail-with-body --retry 3 --retry-delay 10 --max-time 180 \
+            -H 'Accept: application/json' \
+            "$RENDER_BASE_URL/api/proxy/atlas/models" | tee atlas-models.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const status = JSON.parse(fs.readFileSync('render-status.json', 'utf8'));
+          const catalog = JSON.parse(fs.readFileSync('atlas-models.json', 'utf8'));
+          const ids = new Set((catalog.items || []).map((item) => item.id || item.model));
+          const required = [
+            'moonshotai/kimi-k3',
+            'atlascloud/wan-2.7-spicy/reference-to-video',
+          ];
+          console.log(JSON.stringify({
+            status,
+            catalogSource: catalog.source,
+            catalogTotal: catalog.total,
+            required: Object.fromEntries(required.map((id) => [id, ids.has(id)])),
+          }, null, 2));
+          if (!status.ok || status.runtime !== 'atlas-only') throw new Error('Render is not healthy Atlas-only runtime');
+          for (const id of required) if (!ids.has(id)) throw new Error(`Missing Atlas model: ${id}`);
+          NODE
+
+      - name: Confirm Render Atlas provider configuration without generation
+        run: |
+          curl --fail-with-body --retry 2 --retry-delay 10 --max-time 180 \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data '{"providerId":"atlas","dryRun":true,"timeoutMs":60000}' \
+            "$RENDER_BASE_URL/api/proxy/external/test-provider" | tee provider-test.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync('provider-test.json', 'utf8'));
+          console.log(JSON.stringify({
+            success: payload.success,
+            code: payload.code,
+            error: payload.error,
+            provider: payload.data?.provider,
+          }, null, 2));
+          if (!payload.success) throw new Error(payload.error || 'Atlas provider is not configured on Render');
           NODE
