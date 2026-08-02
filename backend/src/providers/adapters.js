@@ -16,6 +16,7 @@ const ADAPTERS = {
   atlas,
 };
 
+const ATLAS_LLM_TIMEOUT_MS = 10 * 60 * 1000;
 const COMMON_IMAGE_RATIOS = [
   '1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9', '9:21', '5:4', '4:5',
 ];
@@ -80,6 +81,15 @@ function videoResolutionForAtlas(model, value) {
     return raw.toLowerCase();
   }
   return raw;
+}
+
+function atlasChatOptions(provider, options = {}) {
+  if (cleanProtocol(provider?.protocol) !== 'atlas') return options;
+  const requested = Number(options.timeoutMs || provider?.defaults?.chatTimeoutMs || provider?.defaults?.timeoutMs);
+  const timeoutMs = Number.isFinite(requested) && requested > 0
+    ? Math.max(requested, ATLAS_LLM_TIMEOUT_MS)
+    : ATLAS_LLM_TIMEOUT_MS;
+  return { ...options, timeoutMs };
 }
 
 function normalizeAtlasInput(provider, input = {}, kind) {
@@ -157,7 +167,7 @@ async function generateChatWithProvider(provider, input = {}, options = {}) {
       error: '该扩展平台暂不支持 LLM 调用。',
     };
   }
-  return adapter.generateChat(provider, input, options);
+  return adapter.generateChat(provider, input, atlasChatOptions(provider, options));
 }
 
 async function generateVideoWithProvider(provider, input = {}, options = {}) {
