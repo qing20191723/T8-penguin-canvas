@@ -105,11 +105,15 @@ function proxyToBackend(req, res) {
       res.destroy(error);
       return;
     }
-    res.status(502).json({
+    backendReady = false;
+    phase = backendError ? 'failed' : 'starting-backend';
+    res.setHeader('Retry-After', '2');
+    res.status(503).json({
       success: false,
       code: 'backend_proxy_unavailable',
-      error: backendError || error.message || '清尘无限画布后端暂不可用',
+      error: backendError || error.message || '清尘无限画布后端暂不可用，请稍候重试。',
       phase,
+      recoverable: !backendError,
     });
   });
   req.on('aborted', () => proxyRequest.destroy());
@@ -127,6 +131,7 @@ publicApp.use((req, res, next) => {
       code: phase === 'failed' ? 'backend_start_failed' : 'backend_starting',
       error: backendError || '清尘无限画布后端正在启动，请稍候重试。',
       phase,
+      recoverable: phase !== 'failed',
     });
   }
   return proxyToBackend(req, res);
