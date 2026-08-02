@@ -1349,6 +1349,20 @@ class AssetSemanticPipeline {
     };
   }
 
+  diagnosticStatus() {
+    let counts = {};
+    try {
+      counts = this.database.getAssetSemanticJobStatus?.().counts || {};
+    } catch (_) {}
+    return {
+      active: this.active,
+      queued: Number(counts.queued || 0) + Number(counts.retrying || 0),
+      downloads: this.downloads.size,
+      removals: this.removals.size,
+      verifications: this.modelVerifications.size,
+    };
+  }
+
   async queryEmbedding(modelKey, modelVersion, query, signal) {
     const normalized = normalizeSemanticText(query, MAX_QUERY_TEXT);
     if (!normalized) throw semanticError('asset-semantic-query-empty', '请输入自然语言检索内容');

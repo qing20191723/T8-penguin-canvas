@@ -11,7 +11,9 @@ const snapshot: RunPreflightExecutionSnapshot = {
   projectId: 'project-a',
   canvasId: 'canvas-a',
   revision: 7,
-  graphMutationEpoch: 11,
+  inputMutationEpoch: 11,
+  runtimeMutationEpoch: 3,
+  fingerprint: 'fnv1a32:11111111',
 };
 
 function preview(overrides: Partial<RunActionPreview> = {}): RunActionPreview {
@@ -44,14 +46,16 @@ function advisoryPreview(overrides: Partial<RunActionPreview> = {}): RunActionPr
   });
 }
 
-test('snapshot comparison binds project, canvas, revision, and graph mutation epoch', () => {
+test('snapshot comparison binds identity and accepts revision/epoch drift only for an equivalent fingerprint', () => {
   assert.equal(isSameRunPreflightExecutionSnapshot(snapshot, { ...snapshot }), true);
   for (const changed of [
     { ...snapshot, projectId: 'project-b' },
     { ...snapshot, canvasId: 'canvas-b' },
-    { ...snapshot, revision: 8 },
-    { ...snapshot, graphMutationEpoch: 12 },
+    { ...snapshot, revision: 8, fingerprint: 'fnv1a32:changed' },
+    { ...snapshot, inputMutationEpoch: 12, fingerprint: 'fnv1a32:changed' },
   ]) assert.equal(isSameRunPreflightExecutionSnapshot(snapshot, changed), false);
+  assert.equal(isSameRunPreflightExecutionSnapshot(snapshot, { ...snapshot, runtimeMutationEpoch: 12 }), true);
+  assert.equal(isSameRunPreflightExecutionSnapshot(snapshot, { ...snapshot, revision: 8, inputMutationEpoch: 12 }), true);
   assert.equal(isSameRunPreflightExecutionSnapshot(snapshot, null), false);
 });
 
@@ -99,7 +103,7 @@ test('ordinary advisory warnings authorize without presenting an interrupting di
   assert.equal(result.authorized, true);
 });
 
-test('confirmation is followed by final identity/revision/graph recheck', async () => {
+test('confirmation is followed by final identity/revision/input fingerprint recheck', async () => {
   const candidate = preview();
   let current = { ...snapshot };
   const result = await authorizeRunPreflight({
@@ -107,7 +111,7 @@ test('confirmation is followed by final identity/revision/graph recheck', async 
     signal: new AbortController().signal,
     prepare: async () => candidate,
     captureCurrent: () => ({ ...current }),
-    present: async () => { current = { ...current, graphMutationEpoch: current.graphMutationEpoch + 1 }; return true; },
+    present: async () => { current = { ...current, inputMutationEpoch: current.inputMutationEpoch + 1, fingerprint: 'fnv1a32:changed' }; return true; },
     revalidate: () => { throw new Error('stale graph must not revalidate'); },
   });
   assert.equal(result.authorized, false);

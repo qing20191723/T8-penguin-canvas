@@ -14,16 +14,26 @@ services:
     envVars:
       - key: ATLASCLOUD_API_KEY
         sync: false
+      - key: T8_MEMORY_DEBUG_TOKEN
+        sync: false
       - key: HOST
         value: 0.0.0.0
       - key: PORT
         value: 10000
       - key: NODE_ENV
         value: production
+      - key: T8_WEB_RUNTIME
+        value: 1
       - key: T8PC_FRONTEND_DIST
         value: ../dist
       - key: T8_FIGMA_BRIDGE_AUTOSTART
         value: 0
+      - key: T8_ATLAS_ONLY_RUNTIME
+        value: 1
+      - key: VITE_T8_ATLAS_ONLY_RUNTIME
+        value: 1
+      - key: T8PC_ASSET_PREVIEW_CONCURRENCY
+        value: 1
       - key: ATLAS_ALLOWED_ORIGINS
         value: https://qingchen-atlascloud-canvas.onrender.com
       - key: T8_PUBLIC_ALLOWED_ORIGINS

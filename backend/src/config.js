@@ -168,6 +168,9 @@ const config = {
   PORT: process.env.PORT || 18766, // 注意:与主项目 18765 错开
   APP_VERSION,
   BACKEND_INSTANCE_ID,
+  // Web deployments have a public HTTP boundary. Desktop/local development
+  // keeps the historical loopback-only compatibility surface.
+  WEB_DEPLOYMENT: process.env.T8_WEB_RUNTIME === '1' || process.env.RENDER === 'true',
   HTTP_SHUTDOWN_TIMEOUT_MS: Math.max(100, Math.min(120_000, Number.parseInt(process.env.T8PC_HTTP_SHUTDOWN_TIMEOUT_MS || '5000', 10) || 5_000)),
   NODE_ENV: process.env.NODE_ENV || (IS_PACKAGED ? 'production' : 'development'),
   IS_PACKAGED,

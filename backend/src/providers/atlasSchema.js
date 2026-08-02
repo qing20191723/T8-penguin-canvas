@@ -65,6 +65,116 @@ function inputSchemaFromOpenApi(document) {
   return input;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function safeValue(value, depth = 0) {
+  if (depth > 4) return undefined;
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string') return value.slice(0, 2_000);
+  if (Array.isArray(value)) {
+    const items = value.slice(0, 100).map((item) => safeValue(item, depth + 1));
+    return items.every((item) => item !== undefined) ? items : undefined;
+  }
+  return undefined;
+}
+
+function schemaType(schema) {
+  const explicit = String(schema?.type || '').trim().toLowerCase();
+  if (['string', 'number', 'integer', 'boolean', 'array', 'object'].includes(explicit)) return explicit;
+  if (schema?.properties) return 'object';
+  if (schema?.items) return 'array';
+  const variants = Array.isArray(schema?.oneOf) ? schema.oneOf : [];
+  const variantType = variants.map(schemaType).find(Boolean);
+  return variantType || 'string';
+}
+
+function fieldEnum(schema) {
+  const direct = Array.isArray(schema?.enum) ? schema.enum : [];
+  const variants = Array.isArray(schema?.oneOf) ? schema.oneOf : [];
+  const alternatives = variants.flatMap((variant) => (
+    variant?.const !== undefined ? [variant.const] : (Array.isArray(variant?.enum) ? variant.enum : [])
+  ));
+  const values = [...direct, ...alternatives].map((item) => safeValue(item)).filter((item) => item !== undefined);
+  return [...new Map(values.map((item) => [canonicalJson(item), item])).values()].slice(0, 100);
+}
+
+function sanitizeItems(schema, depth) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema) || depth > 3) return undefined;
+  const result = { type: schemaType(schema) };
+  const values = fieldEnum(schema);
+  if (values.length) result.enum = values;
+  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  const properties = schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)
+    ? schema.properties
+    : null;
+  if (properties) {
+    result.fields = Object.entries(properties).slice(0, 100)
+      .map(([name, rule]) => sanitizeField(name, rule, required.has(name), depth + 1));
+  }
+  return result;
+}
+
+function sanitizeField(name, schema, required, depth = 0) {
+  const rule = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+  const field = {
+    name: String(name).slice(0, 200),
+    type: schemaType(rule),
+    required: Boolean(required),
+  };
+  const defaultValue = safeValue(rule.default);
+  if (defaultValue !== undefined) field.default = defaultValue;
+  const values = fieldEnum(rule);
+  if (values.length) field.enum = values;
+  const minimum = Number(rule.minimum ?? rule.minLength ?? rule.minItems);
+  const maximum = Number(rule.maximum ?? rule.maxLength ?? rule.maxItems);
+  if (Number.isFinite(minimum)) field.min = minimum;
+  if (Number.isFinite(maximum)) field.max = maximum;
+  if (field.type === 'array') {
+    const items = sanitizeItems(rule.items, depth + 1);
+    if (items) field.items = items;
+  }
+  return field;
+}
+
+function atlasKind(value) {
+  const type = String(value || '').trim().toLowerCase();
+  if (type === 'image') return 'image';
+  if (type === 'video') return 'video';
+  if (type === 'audio') return 'audio';
+  if (type === 'text') return 'text';
+  return 'other';
+}
+
+function sanitizeAtlasModelCapability(schema) {
+  const input = schema?.input && typeof schema.input === 'object' && !Array.isArray(schema.input)
+    ? schema.input
+    : {};
+  const required = new Set(Array.isArray(input.required) ? input.required.map(String) : []);
+  const properties = input.properties && typeof input.properties === 'object' && !Array.isArray(input.properties)
+    ? input.properties
+    : {};
+  const capability = {
+    schema: 't8-atlas-model-capability-v1',
+    model: cleanModelId(schema?.model),
+    kind: atlasKind(schema?.type),
+    fields: Object.entries(properties).slice(0, 200)
+      .map(([name, rule]) => sanitizeField(name, rule, required.has(name))),
+  };
+  const digest = crypto.createHash('sha256').update(canonicalJson(capability)).digest('hex');
+  return { ...capability, schemaDigest: `sha256:${digest}` };
+}
+
+async function getAtlasModelCapability(modelId, options = {}) {
+  return sanitizeAtlasModelCapability(await getAtlasModelSchema(modelId, options));
+}
+
 async function getAtlasModelSchema(modelId, options = {}) {
   const model = cleanModelId(modelId);
   if (!model) throw new Error('Atlas 模型名称无效。');
@@ -109,6 +219,9 @@ function resetAtlasSchemaCaches() {
 
 module.exports = {
   ATLAS_MODELS_URL,
+  getAtlasModelCapability,
   getAtlasModelSchema,
   resetAtlasSchemaCaches,
+  sanitizeAtlasModelCapability,
 };
+const crypto = require('crypto');

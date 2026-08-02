@@ -19,6 +19,7 @@ import {
   Video,
 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
+import { idempotentUploadFetch } from '../../services/idempotentUpload';
 import { useThemeStore } from '../../stores/theme';
 import { PORT_COLOR } from '../../config/portTypes';
 import { useUpstreamMaterials, type Material, type MaterialKind } from './useUpstreamMaterials';
@@ -312,7 +313,7 @@ const MaterialSetNode = ({ id, data, selected }: NodeProps) => {
   const uploadSingleFile = async (file: File, fileKind: Exclude<MaterialSetKind, 'text'>): Promise<MaterialSetItem> => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
+    const res = await idempotentUploadFetch('/api/files/upload', fd, file);
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       throw new Error(json.error || `上传失败 HTTP ${res.status}`);

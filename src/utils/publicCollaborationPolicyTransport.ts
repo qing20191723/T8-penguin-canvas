@@ -74,7 +74,15 @@ export function shouldBypassPublicCollaborationExecutionPolicy(
 }
 
 export function atlasOnlyBlockedApiPath(context: AtlasOnlyRequestContext): string | null {
-  if (!ATLAS_ONLY_RUNTIME || context.desktopHost) return null;
+  if (context.desktopHost) return null;
+  if (!ATLAS_ONLY_RUNTIME) {
+    try {
+      const hostname = new URL(context.pageOrigin).hostname.toLowerCase();
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return null;
+    } catch {
+      return null;
+    }
+  }
   let requestUrl: URL;
   try {
     requestUrl = new URL(context.requestUrl, context.pageOrigin);

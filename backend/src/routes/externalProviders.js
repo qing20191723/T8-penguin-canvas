@@ -12,7 +12,8 @@ const {
   testProviderConnection,
 } = require('../providers/adapters');
 const { resolveMediaRef } = require('../providers/mediaResolver');
-const { isLoopbackAddress, safeRemoteMediaFetch } = require('../utils/safeRemoteMediaFetch');
+const { isLoopbackAddress, safeRemoteMediaDownload } = require('../utils/safeRemoteMediaFetch');
+const { validateSavedMedia } = require('./files')._test;
 
 const router = express.Router();
 const EXTERNAL_GENERATION_TIMEOUT_MS = 60 * 60 * 1000;
@@ -61,22 +62,6 @@ function resolveRunnableProvider(body, currentProviders) {
   return { ok: true, provider };
 }
 
-function outputExtFromMime(mime, fallback = '.png') {
-  const text = String(mime || '').toLowerCase();
-  if (text.includes('mp4')) return '.mp4';
-  if (text.includes('webm')) return '.webm';
-  if (text.includes('quicktime')) return '.mov';
-  if (text.includes('mpeg') || text.includes('mp3')) return '.mp3';
-  if (text.includes('wav')) return '.wav';
-  if (text.includes('ogg')) return '.ogg';
-  if (text.includes('jpeg') || text.includes('jpg')) return '.jpg';
-  if (text.includes('webp')) return '.webp';
-  if (text.includes('gif')) return '.gif';
-  if (text.includes('bmp')) return '.bmp';
-  if (text.includes('png')) return '.png';
-  return fallback;
-}
-
 function outputExtFromUrl(url, fallback = '.png') {
   try {
     const parsed = new URL(url);
@@ -88,18 +73,165 @@ function outputExtFromUrl(url, fallback = '.png') {
   return fallback;
 }
 
-function writeOutputBuffer(buffer, ext) {
-  if (!fs.existsSync(config.OUTPUT_DIR)) fs.mkdirSync(config.OUTPUT_DIR, { recursive: true });
-  const suffix = crypto.randomBytes(4).toString('hex');
-  const filename = `external_${Date.now()}_${suffix}${ext || '.png'}`;
-  fs.writeFileSync(path.join(config.OUTPUT_DIR, filename), buffer);
-  return `/files/output/${filename}`;
+async function persistDataMediaOutput(dataUrl, kind) {
+  const comma = dataUrl.indexOf(',');
+  const header = comma > 0 ? dataUrl.slice(0, comma) : '';
+  const headerMatch = header.match(/^data:([^;,]+);base64$/i);
+  if (!headerMatch) throw Object.assign(new Error('媒体 data URL 格式无效。'), { code: 'invalid_media_data_url' });
+  const base64Length = dataUrl.length - comma - 1;
+  const maxBytes = configuredMediaLimit(kind);
+  if (base64Length > Math.ceil(maxBytes * 4 / 3) + 4) {
+    throw Object.assign(new Error(`媒体超过 ${maxBytes} bytes 限制。`), { code: 'item_too_large' });
+  }
+  await fs.promises.mkdir(config.OUTPUT_DIR, { recursive: true });
+  const staging = path.join(config.OUTPUT_DIR, `.external-${crypto.randomUUID()}.part`);
+  let handle = null;
+  let target = '';
+  let byteSize = 0;
+  try {
+    handle = await fs.promises.open(staging, 'wx+', 0o600);
+    // Keep every decoded allocation bounded even when an upstream JSON result
+    // contains a very large embedded media item.
+    const base64ChunkChars = 1024 * 1024;
+    for (let offset = comma + 1; offset < dataUrl.length; offset += base64ChunkChars) {
+      const end = Math.min(dataUrl.length, offset + base64ChunkChars);
+      const chunk = Buffer.from(dataUrl.slice(offset, end), 'base64');
+      byteSize += chunk.length;
+      if (byteSize > maxBytes) throw Object.assign(new Error(`媒体超过 ${maxBytes} bytes 限制。`), { code: 'item_too_large' });
+      await writeOutputChunk(handle, chunk);
+    }
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size <= 0 || stat.size !== byteSize) {
+      throw Object.assign(new Error('媒体 data URL 写入不完整。'), { code: 'remote_body_incomplete' });
+    }
+    const detected = await validateSavedMedia(handle, stat, headerMatch[1], kind);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    const filename = `external_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${detected.extension}`;
+    target = path.join(config.OUTPUT_DIR, filename);
+    await fs.promises.rename(staging, target);
+    await syncOutputDirectory();
+    await writeCompletionManifest(target, {
+      byteSize,
+      kind: detected.kind,
+      mime: detected.mime,
+      sha256: await hashOutputFile(target),
+      completedAt: new Date().toISOString(),
+    });
+    return `/files/output/${filename}`;
+  } catch (error) {
+    if (target) {
+      try { await fs.promises.rm(target, { force: true }); } catch (_) {}
+      try { await fs.promises.rm(`${target}.complete.json`, { force: true }); } catch (_) {}
+    }
+    throw error;
+  } finally {
+    try { await handle?.close(); } catch (_) {}
+    try { await fs.promises.rm(staging, { force: true }); } catch (_) {}
+  }
 }
 
-function defaultExtForKind(kind) {
-  if (kind === 'video') return '.mp4';
-  if (kind === 'audio') return '.mp3';
-  return '.png';
+function configuredMediaLimit(kind) {
+  const defaults = {
+    image: 64 * 1024 * 1024,
+    audio: 256 * 1024 * 1024,
+    video: 1024 * 1024 * 1024,
+  };
+  const envName = `T8_${String(kind).toUpperCase()}_OUTPUT_MAX_BYTES`;
+  const configured = Math.trunc(Number(process.env[envName]));
+  return Number.isSafeInteger(configured) && configured > 0
+    ? Math.min(configured, defaults[kind] || defaults.image)
+    : (defaults[kind] || defaults.image);
+}
+
+async function writeOutputChunk(handle, chunk) {
+  let offset = 0;
+  while (offset < chunk.length) {
+    const { bytesWritten } = await handle.write(chunk, offset, chunk.length - offset, null);
+    if (!bytesWritten) throw Object.assign(new Error('媒体写入未取得进展。'), { code: 'output_write_stalled' });
+    offset += bytesWritten;
+  }
+}
+
+async function hashOutputFile(filename) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(filename)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+async function syncOutputDirectory() {
+  let handle;
+  try {
+    handle = await fs.promises.open(config.OUTPUT_DIR, 'r');
+    await handle.sync();
+  } catch (_) {
+    // Directory fsync is not supported on every Windows filesystem.
+  } finally {
+    try { await handle?.close(); } catch (_) {}
+  }
+}
+
+async function writeCompletionManifest(target, data) {
+  const manifest = `${target}.complete.json`;
+  const temporary = `${manifest}.${crypto.randomUUID()}.part`;
+  const handle = await fs.promises.open(temporary, 'wx', 0o600);
+  try {
+    await handle.writeFile(`${JSON.stringify({ schema: 't8-media-download-complete-v1', ...data })}\n`, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await fs.promises.rename(temporary, manifest);
+  await syncOutputDirectory();
+}
+
+async function persistRemoteMediaOutput(url, kind, options = {}) {
+  await fs.promises.mkdir(config.OUTPUT_DIR, { recursive: true });
+  const staging = path.join(config.OUTPUT_DIR, `.external-${crypto.randomUUID()}.part`);
+  let handle;
+  let target = '';
+  try {
+    const trustedLocal = isTrustedLocalOutputUrl(url, options.trustedLocalOrigins);
+    const remote = await safeRemoteMediaDownload(url, staging, {
+      allowedKinds: [kind],
+      maxBytes: configuredMediaLimit(kind),
+      deadlineMs: 5 * 60 * 1000,
+      idleTimeoutMs: 30 * 1000,
+      maxRedirects: 4,
+      userAgent: 'T8-PenguinCanvas-ExternalProvider/1.0',
+      ...(trustedLocal ? { allowPrivateForTests: (hostname) => isLoopbackAddress(hostname) } : {}),
+    });
+    handle = await fs.promises.open(staging, 'r');
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size <= 0 || stat.size !== remote.byteSize) {
+      throw Object.assign(new Error('远程媒体下载不完整。'), { code: 'remote_body_incomplete' });
+    }
+    const detected = await validateSavedMedia(handle, stat, remote.contentType, kind);
+    await handle.close();
+    handle = null;
+    const filename = `external_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${detected.extension}`;
+    target = path.join(config.OUTPUT_DIR, filename);
+    await fs.promises.rename(staging, target);
+    await syncOutputDirectory();
+    await writeCompletionManifest(target, {
+      byteSize: stat.size,
+      kind: detected.kind,
+      mime: detected.mime,
+      sha256: await hashOutputFile(target),
+      completedAt: new Date().toISOString(),
+    });
+    return `/files/output/${filename}`;
+  } catch (error) {
+    if (target) {
+      try { await fs.promises.rm(target, { force: true }); } catch (_) {}
+      try { await fs.promises.rm(`${target}.complete.json`, { force: true }); } catch (_) {}
+    }
+    throw error;
+  } finally {
+    try { await handle?.close(); } catch (_) {}
+    try { await fs.promises.rm(staging, { force: true }); } catch (_) {}
+  }
 }
 
 function trustedLocalOutputOrigins(provider = {}) {
@@ -133,34 +265,11 @@ function isTrustedLocalOutputUrl(value, trustedOrigins) {
 async function saveOneMediaOutput(url, kind = 'image', options = {}) {
   const text = String(url || '').trim();
   if (!text) return '';
-  const dataMatch = text.match(/^data:([^;,]+);base64,(.+)$/i);
-  if (dataMatch) {
-    const ext = outputExtFromMime(dataMatch[1], defaultExtForKind(kind));
-    return writeOutputBuffer(Buffer.from(dataMatch[2], 'base64'), ext);
+  if (/^data:[^;,]+;base64,/i.test(text)) {
+    return persistDataMediaOutput(text, kind);
   }
   if (/^https?:\/\//i.test(text)) {
-    if (options.fetchImpl || isTrustedLocalOutputUrl(text, options.trustedLocalOrigins)) {
-      const res = await (options.fetchImpl || fetch)(text);
-      if (!res.ok) throw new Error(`下载扩展平台输出失败：HTTP ${res.status}`);
-      const mime = typeof res.headers?.get === 'function' ? res.headers.get('content-type') : '';
-      const ext = outputExtFromMime(mime, outputExtFromUrl(text, defaultExtForKind(kind)));
-      const buf = Buffer.from(await res.arrayBuffer());
-      return writeOutputBuffer(buf, ext);
-    }
-    const remote = await safeRemoteMediaFetch(text, {
-      allowedKinds: [kind],
-      maxBytes: kind === 'video' ? 1024 * 1024 * 1024 : kind === 'audio' ? 256 * 1024 * 1024 : 64 * 1024 * 1024,
-      deadlineMs: 5 * 60 * 1000,
-      idleTimeoutMs: 30 * 1000,
-      maxRedirects: 4,
-      userAgent: 'T8-PenguinCanvas-ExternalProvider/1.0',
-    });
-    const ext = outputExtFromMime(
-      remote.contentType,
-      outputExtFromUrl(remote.finalUrl || text, defaultExtForKind(kind)),
-    );
-    const buf = remote.buffer;
-    return writeOutputBuffer(buf, ext);
+    return persistRemoteMediaOutput(text, kind, options);
   }
   if (text.startsWith('/files/output/')) return text;
   return text;
@@ -239,10 +348,6 @@ async function saveMediaOutputs(kind, urls, options = {}) {
     }
   }
   return { urls: out, errors };
-}
-
-async function saveVideoOutputs(urls, options = {}) {
-  return (await saveMediaOutputs('video', urls, options)).urls;
 }
 
 function outputKindsForPayload(payload = {}) {
@@ -491,6 +596,7 @@ router.post('/image', async (req, res) => {
     const primaryKind = outputKinds[0] || result.primaryKind || result.kind || 'image';
     if (!outputKinds.length) {
       const firstFailure = outputSaveErrors[0];
+      if (firstFailure?.code === 'output_disk_full') res.status(507);
       return resultResponse(res, {
         ...result,
         ok: false,
@@ -689,6 +795,7 @@ router.post('/web-image', async (req, res) => {
     const imageUrls = savedImages.urls;
     if (!imageUrls.length) {
       const firstFailure = savedImages.errors[0];
+      if (firstFailure?.code === 'output_disk_full') res.status(507);
       return res.json({
         success: false,
         code: firstFailure?.code || 'output_missing',
@@ -752,10 +859,30 @@ router.post('/video', async (req, res) => {
     });
     if (!result.ok) return resultResponse(res, result, resolved.provider);
     const remoteVideoUrls = Array.isArray(result.videoUrls) ? result.videoUrls : [];
-    const videoUrls = await saveVideoOutputs(remoteVideoUrls);
+    const savedVideos = await saveMediaOutputs('video', remoteVideoUrls, {
+      trustedLocalOrigins: trustedLocalOutputOrigins(resolved.provider),
+    });
+    const videoUrls = savedVideos.urls;
+    if (!videoUrls.length) {
+      const firstFailure = savedVideos.errors[0];
+      if (firstFailure?.code === 'output_disk_full') res.status(507);
+      return resultResponse(res, {
+        ...result,
+        ok: false,
+        code: firstFailure?.code || 'output_missing',
+        error: firstFailure
+          ? `视频已经生成，但保存到清尘本地失败：${firstFailure.error}`
+          : '视频任务已完成，但平台没有返回可识别的视频地址。请保留任务 ID 并检查平台任务详情。',
+      }, resolved.provider, {
+        remoteVideoUrls,
+        videoUrls: [],
+        outputSaveErrors: savedVideos.errors,
+      });
+    }
     return resultResponse(res, result, resolved.provider, {
       remoteVideoUrls,
       videoUrls,
+      outputSaveErrors: savedVideos.errors,
     });
   } catch (e) {
     return res.status(500).json({
@@ -767,3 +894,10 @@ router.post('/video', async (req, res) => {
 });
 
 module.exports = router;
+module.exports._test = {
+  configuredMediaLimit,
+  outputSaveFailure,
+  persistDataMediaOutput,
+  persistRemoteMediaOutput,
+  saveOneMediaOutput,
+};

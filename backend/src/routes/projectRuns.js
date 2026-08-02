@@ -1,11 +1,10 @@
 const express = require('express');
 const config = require('../config');
-const { getProjectDatabase } = require('../services/projectDatabase');
+const { createLazyProjectDatabase } = require('../services/lazyProjectDatabase');
 const {
   sendProjectDatabaseStorageCapacityError,
 } = require('../services/projectDatabasePublicError');
-const { getBackgroundAssetIndexer } = require('../services/assetIndexer');
-const { getAssetPreviewPipeline } = require('../services/assetPreviewPipeline');
+const { createLazyAssetRuntime } = require('../services/lazyAssetRuntime');
 const { publicAsset, redactLocalPaths } = require('../services/assetPublicView');
 const { redactAndScanRunValue } = require('../services/runRedaction');
 const { normalizeRunError } = require('../services/runErrors');
@@ -52,14 +51,16 @@ function runCommittedNotification(label, callback) {
   }
 }
 
-const database = getProjectDatabase(config);
-const previewPipeline = getAssetPreviewPipeline(config, database);
-const assetIndexer = getBackgroundAssetIndexer(config, database, previewPipeline);
+const database = createLazyProjectDatabase(config);
+const { indexer: assetIndexer } = createLazyAssetRuntime(config, database);
 const collaborationGateway = getCollaborationGateway(config);
 const runExecutionPolicy = new HostExecutionPolicy(database);
 const recoveryManager = getRunRecoveryManager({
   database,
   baseUrl: `http://127.0.0.1:${config.PORT}`,
+  ...(process.env.T8_ATLAS_ONLY_RUNTIME === '1'
+    ? { allowedRecoveryKinds: ['atlas', 'custom'], concurrency: 1 }
+    : {}),
   broadcast: {
     intent: (intent) => runCommittedNotification(
       'recovery.run-intent',

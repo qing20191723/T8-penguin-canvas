@@ -3,15 +3,61 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { startFigmaBridgeOnAppStart } = require('./utils/figmaBridge');
+const ATLAS_ONLY_RUNTIME = String(process.env.T8_ATLAS_ONLY_RUNTIME || '') === '1';
+const startFigmaBridgeOnAppStart = ATLAS_ONLY_RUNTIME
+  ? () => undefined
+  : require('./utils/figmaBridge').startFigmaBridgeOnAppStart;
 const { getRunRecoveryManager } = require('./services/runRecovery');
-const { closeProjectDatabase } = require('./services/projectDatabase');
-const { registerAgentControlInstance } = require('./services/agentControlRegistry');
-const agentControlRouter = require('./routes/agentControl');
-const canvasAgentToolsRouter = require('./routes/canvasAgentTools');
-const creatorAgentRouter = require('./routes/creatorAgent');
+const { closeProjectDatabase, getProjectDatabase } = require('./services/projectDatabase');
+const { peekAssetRuntime } = require('./services/lazyAssetRuntime');
+const { maintainRunRetention } = require('./services/runRetentionMaintenance');
+const { DEFAULT_PROJECT_ID } = require('./collaboration/protocol');
+const {
+  SCHEMA: MEMORY_SCHEMA,
+  authorizeBearer,
+  boundedToken,
+  createActivityTracker,
+  processMemorySnapshot,
+  queueSummary,
+  storageStatus,
+} = require('./services/memoryDiagnostics');
+const registerAgentControlInstance = ATLAS_ONLY_RUNTIME
+  ? () => null
+  : require('./services/agentControlRegistry').registerAgentControlInstance;
 
 const app = express();
+const backendMemoryActivity = createActivityTracker('backend');
+const memoryDebugToken = boundedToken(process.env.T8_MEMORY_DEBUG_TOKEN);
+const memoryInternalToken = boundedToken(process.env.T8_MEMORY_INTERNAL_TOKEN);
+delete process.env.T8_MEMORY_INTERNAL_TOKEN;
+app.use(backendMemoryActivity.middleware);
+
+function atlasOnlyDisabledRouter(feature) {
+  const router = express.Router();
+  router.use((_req, res) => res.status(404).json({
+    success: false,
+    code: 'atlas_only_runtime_disabled',
+    feature,
+    error: '该桌面能力未在 Atlas Web 轻量运行时启用',
+  }));
+  return router;
+}
+
+const agentControlRouter = ATLAS_ONLY_RUNTIME
+  ? Object.assign(atlasOnlyDisabledRouter('agent-control'), {
+    AGENT_CONTROL_REQUEST_LIMIT: 64 * 1024,
+    AGENT_CONTROL_HTTP_SCHEMA: 't8-agent-control-http-v1',
+  })
+  : require('./routes/agentControl');
+const canvasAgentToolsRouter = ATLAS_ONLY_RUNTIME
+  ? atlasOnlyDisabledRouter('canvas-agent')
+  : require('./routes/canvasAgentTools');
+const creatorAgentRouter = ATLAS_ONLY_RUNTIME
+  ? Object.assign(atlasOnlyDisabledRouter('creator-agent'), {
+    CREATOR_AGENT_REQUEST_LIMIT: 1024 * 1024,
+    CREATOR_AGENT_HTTP_SCHEMA: 't8-creator-agent-http-v1',
+  })
+  : require('./routes/creatorAgent');
 
 // Node's http.Server considers a request closed as soon as its socket is
 // destroyed, but an async Express handler can keep running afterwards. Track
@@ -402,8 +448,39 @@ app.use('/api/creator-agent/v1', (req, res, next) => {
     });
   });
 }, creatorAgentRouter);
-app.use(express.json({ limit: '120mb' }));
-app.use(express.urlencoded({ extended: true, limit: '120mb' }));
+const webBodyLimits = process.env.T8_WEB_DEPLOY === '1' || process.env.RENDER === 'true';
+function tightenedBodyLimit(envName, defaultBytes) {
+  const configured = Math.trunc(Number(process.env[envName]));
+  return Number.isSafeInteger(configured) && configured > 0
+    ? Math.min(configured, defaultBytes)
+    : defaultBytes;
+}
+const genericJsonParser = express.json({
+  limit: webBodyLimits ? tightenedBodyLimit('T8_WEB_JSON_MAX_BYTES', 2 * 1024 * 1024) : '120mb',
+});
+const documentJsonParser = express.json({
+  limit: webBodyLimits ? tightenedBodyLimit('T8_WEB_DOCUMENT_JSON_MAX_BYTES', 32 * 1024 * 1024) : '120mb',
+});
+app.use((req, res, next) => {
+  const pathname = String(req.originalUrl || req.url || '').split('?')[0];
+  if (/^\/api\/(?:files|photoshop-bridge)\/upload-base64$/.test(pathname)) return next();
+  const parser = /^\/api\/(?:canvas|project-runs|subflows)(?:\/|$)/.test(pathname)
+    ? documentJsonParser
+    : genericJsonParser;
+  return parser(req, res, (error) => {
+    if (!error) return next();
+    const tooLarge = error?.type === 'entity.too.large';
+    return res.status(tooLarge ? 413 : 400).json({
+      success: false,
+      code: tooLarge ? 'request_too_large' : 'invalid_json',
+      error: tooLarge ? '请求体超过允许大小' : 'JSON 请求体无效',
+    });
+  });
+});
+app.use(express.urlencoded({
+  extended: true,
+  limit: webBodyLimits ? tightenedBodyLimit('T8_WEB_FORM_MAX_BYTES', 2 * 1024 * 1024) : '120mb',
+}));
 
 // 简易访问日志
 app.use((req, _res, next) => {
@@ -474,6 +551,10 @@ app.get('/api/status', (_req, res) => {
     version: config.APP_VERSION,
     port: config.PORT,
     instanceId: config.BACKEND_INSTANCE_ID,
+    runtime: ATLAS_ONLY_RUNTIME ? 'atlas-only' : 'desktop',
+    storage: {
+      persistence: process.env.T8_PERSISTENT_DISK_CONFIGURED === '1' ? 'configured' : 'unknown',
+    },
     time: new Date().toISOString(),
   });
 });
@@ -481,43 +562,109 @@ app.get('/api/status', (_req, res) => {
 // ========== 业务路由 ==========
 const canvasRouter = require('./routes/canvas');
 const settingsRouter = require('./routes/settings');
-const proxyRouter = require('./routes/proxy');
 const atlasProxyRouter = require('./routes/atlasProxy');
 const filesRouter = require('./routes/files');
-const imageOpsRouter = require('./routes/imageOps');
 const resourcesRouter = require('./routes/resources');
 const themesRouter = require('./routes/themes');
-const eagleRouter = require('./routes/eagle');
-const figmaRouter = require('./routes/figma');
 const externalProvidersRouter = require('./routes/externalProviders');
-const grokOAuthRouter = require('./routes/grokOAuth');
-const codexCliRouter = require('./routes/codexCli');
-const aiWatermarkRouter = require('./routes/aiWatermark');
-const cloudUploadsRouter = require('./routes/cloudUploads');
-const parseHubRouter = require('./routes/parseHub');
 const achievementsRouter = require('./routes/achievements');
-const topazRouter = require('./routes/topaz');
-const animeTagsRouter = require('./routes/animeTags');
-const vibexBridgeRouter = require('./routes/vibexBridge');
-const videoOpsRouter = require('./routes/videoOps');
-const batchTagsRouter = require('./routes/batchTags');
-const photoshopBridgeRouter = require('./routes/photoshopBridge');
-const feishuBitableRouter = require('./routes/feishuBitable');
 const webAssetsRouter = require('./routes/webAssets');
 const collaborationRouter = require('./routes/collaboration');
 const { getCollaborationGateway } = require('./collaboration/gateway');
 const projectRunsRouter = require('./routes/projectRuns');
 const projectAssetsRouter = require('./routes/projectAssets');
 const subflowsRouter = require('./routes/subflows');
-const { registerLocalExtensions } = require('./extensions/localExtensions');
-const localHooks = require('./extensions/runtimeHooks');
+const legacyRouter = (feature, modulePath) => ATLAS_ONLY_RUNTIME
+  ? atlasOnlyDisabledRouter(feature)
+  : require(modulePath);
+const proxyRouter = legacyRouter('legacy-provider-proxy', './routes/proxy');
+const imageOpsRouter = legacyRouter('image-operations', './routes/imageOps');
+const eagleRouter = legacyRouter('eagle', './routes/eagle');
+const figmaRouter = legacyRouter('figma', './routes/figma');
+const grokOAuthRouter = legacyRouter('grok-oauth', './routes/grokOAuth');
+const codexCliRouter = legacyRouter('codex-cli', './routes/codexCli');
+const aiWatermarkRouter = legacyRouter('ai-watermark', './routes/aiWatermark');
+const cloudUploadsRouter = legacyRouter('cloud-uploads', './routes/cloudUploads');
+const parseHubRouter = legacyRouter('parsehub', './routes/parseHub');
+const topazRouter = legacyRouter('topaz', './routes/topaz');
+const animeTagsRouter = legacyRouter('anime-tags', './routes/animeTags');
+const vibexBridgeRouter = legacyRouter('vibex-bridge', './routes/vibexBridge');
+const videoOpsRouter = legacyRouter('video-operations', './routes/videoOps');
+const batchTagsRouter = legacyRouter('batch-tags', './routes/batchTags');
+const photoshopBridgeRouter = legacyRouter('photoshop-bridge', './routes/photoshopBridge');
+const feishuBitableRouter = legacyRouter('feishu-bitable', './routes/feishuBitable');
 const collaborationGateway = getCollaborationGateway(config);
+
+function isLoopbackMemoryRequest(req) {
+  const address = String(req.socket?.remoteAddress || '').toLowerCase();
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function activeRunCount() {
+  try {
+    const database = projectAssetsRouter.semanticPipeline?.database;
+    if (!database?.listRuns) return 0;
+    return ['queued', 'running', 'polling']
+      .reduce((total, status) => total + database.listRuns({ status, limit: 10_000 }).length, 0);
+  } catch (_) {
+    return 0;
+  }
+}
+
+function backendMemoryPayload() {
+  const activity = backendMemoryActivity.snapshot();
+  const queues = queueSummary({
+    previewPipeline: projectAssetsRouter.previewPipeline,
+    semanticPipeline: projectAssetsRouter.semanticPipeline,
+    runRecoveryManager,
+  });
+  return {
+    schema: MEMORY_SCHEMA,
+    commit: String(process.env.RENDER_GIT_COMMIT || '').trim() || undefined,
+    phase: 'ready',
+    capturedAt: new Date().toISOString(),
+    process: processMemorySnapshot('backend'),
+    activity: {
+      requests: activity.activeRequests,
+      runs: activeRunCount(),
+      uploads: activity.activeUploads,
+      downloads: activity.activeDownloads + queues.semantic.downloads,
+    },
+    queues,
+    storage: storageStatus(config.DATA_DIR),
+  };
+}
+
+app.get('/api/debug/memory/internal', (req, res) => {
+  if (!memoryInternalToken || !isLoopbackMemoryRequest(req)) return res.status(404).end();
+  if (!authorizeBearer(req, memoryInternalToken)) return res.status(401).end();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(backendMemoryPayload());
+});
+
+// Direct single-process diagnostics for local/desktop investigations. Render's
+// public bootstrap owns the same external route and composes both processes.
+app.get('/api/debug/memory', (req, res) => {
+  if (!memoryDebugToken) return res.status(404).end();
+  if (!authorizeBearer(req, memoryDebugToken)) return res.status(401).end();
+  const backend = backendMemoryPayload();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    schema: MEMORY_SCHEMA,
+    commit: backend.commit,
+    phase: backend.phase,
+    capturedAt: backend.capturedAt,
+    bootstrap: null,
+    backend,
+    totalRss: backend.process.rss,
+  });
+});
 
 app.use('/api/canvas', canvasRouter);
 app.use('/api/settings', settingsRouter);
-app.use('/api/proxy', proxyRouter);
 app.use('/api/proxy/atlas', atlasProxyRouter);
 app.use('/api/proxy/external', externalProvidersRouter);
+app.use('/api/proxy', proxyRouter);
 app.use('/api/files', filesRouter);
 app.use('/api/image', imageOpsRouter);
 app.use('/api/resources', resourcesRouter);
@@ -542,7 +689,11 @@ app.use('/api/collaboration', collaborationRouter);
 app.use('/api/project-runs', projectRunsRouter);
 app.use('/api/project-assets', projectAssetsRouter);
 app.use('/api/subflows', subflowsRouter);
-registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
+if (!ATLAS_ONLY_RUNTIME) {
+  const { registerLocalExtensions } = require('./extensions/localExtensions');
+  const localHooks = require('./extensions/runtimeHooks');
+  registerLocalExtensions(app, { config, express, logger: console, hooks: localHooks });
+}
 
 // ========== 前端静态资源(仅打包模式) ==========
 // 开发模式下不启用,避免与 Vite dev server 打架。
@@ -571,6 +722,7 @@ let httpServerClosePromise = null;
 let gracefulShutdownPromise = null;
 let startupRunRecoveryPromise = null;
 let startupSemanticModelRefreshPromise = null;
+let runRetentionMaintenanceTimer = null;
 let agentControlRegistration = null;
 let serverStartOutcome = null;
 let resolveServerStart;
@@ -614,8 +766,9 @@ const server = app.listen(PORT, HOST, () => {
   console.log('   Figma Bridge: 自动启动中（如需禁用可设置 T8_FIGMA_BRIDGE_AUTOSTART=0）');
   console.log('   按 Ctrl+C 停止服务器...');
   console.log('--------------------------------------------------');
+  backendMemoryActivity.log('backend.listening', { phase: 'http-ready' });
   startFigmaBridgeOnAppStart(console);
-  setImmediate(() => {
+  if (!ATLAS_ONLY_RUNTIME) setImmediate(() => {
     if (shutdownStarted) return;
     startupSemanticModelRefreshPromise = Promise.resolve()
       .then(() => projectAssetsRouter.semanticPipeline.refreshModelStates())
@@ -625,11 +778,38 @@ const server = app.listen(PORT, HOST, () => {
   });
   setImmediate(() => {
     if (shutdownStarted) return;
+    backendMemoryActivity.log('run-recovery.start', { phase: 'run-recovery' });
     startupRunRecoveryPromise = runRecoveryManager.recoverPendingRuns()
       .then((result) => {
         if (result.recovered || result.failed || result.interrupted) console.log('[run-recovery] startup result', result);
+        try {
+          const maintenance = maintainRunRetention(getProjectDatabase(config), DEFAULT_PROJECT_ID, { force: true });
+          if (!maintenance.skipped && maintenance.result?.deletedRuns) {
+            console.log('[run-retention] startup prune', {
+              deletedRuns: maintenance.result.deletedRuns,
+              protectedRuns: maintenance.result.protectedRuns,
+            });
+          }
+        } catch (error) {
+          console.warn('[run-retention] startup prune failed:', error?.message || error);
+        }
+        if (!shutdownStarted && !runRetentionMaintenanceTimer) {
+          runRetentionMaintenanceTimer = setInterval(() => {
+            if (shutdownStarted) return;
+            try {
+              maintainRunRetention(getProjectDatabase(config), DEFAULT_PROJECT_ID);
+            } catch (error) {
+              console.warn('[run-retention] pressure maintenance failed:', error?.message || error);
+            }
+          }, 6 * 60 * 60 * 1000);
+          runRetentionMaintenanceTimer.unref?.();
+        }
+        backendMemoryActivity.log('run-recovery.end', { phase: 'ready' });
       })
-      .catch((error) => console.warn('[run-recovery] startup failed:', error?.message || error));
+      .catch((error) => {
+        backendMemoryActivity.log('run-recovery.error', { phase: 'ready', errorCode: String(error?.code || 'run_recovery_failed').slice(0, 80) });
+        console.warn('[run-recovery] startup failed:', error?.message || error);
+      });
   });
 });
 server.once('error', (error) => {
@@ -653,7 +833,7 @@ function closeSemanticPipeline() {
   if (semanticPipelineClosed) return;
   semanticPipelineClosed = true;
   try {
-    projectAssetsRouter.semanticPipeline?.close?.();
+    peekAssetRuntime().semanticPipeline?.close?.();
   } catch (error) {
     console.warn('[asset-semantic] shutdown failed:', error?.message || error);
   }
@@ -671,7 +851,7 @@ function closeProjectDatabaseLifecycle() {
 
 function shutdownPreviewPipelineLifecycle() {
   if (!previewPipelineShutdownPromise) {
-    const pipeline = projectAssetsRouter.previewPipeline;
+    const pipeline = peekAssetRuntime().previewPipeline;
     try {
       previewPipelineShutdownPromise = typeof pipeline?.shutdown === 'function'
         ? Promise.resolve(pipeline.shutdown())
@@ -840,6 +1020,10 @@ function waitForRuntimeStorageCloseLifecycle() {
 function gracefulShutdown(signal) {
   if (shutdownStarted) return gracefulShutdownPromise || projectDatabaseClosePromise || Promise.resolve();
   shutdownStarted = true;
+  if (runRetentionMaintenanceTimer) {
+    clearInterval(runRetentionMaintenanceTimer);
+    runRetentionMaintenanceTimer = null;
+  }
   try {
     agentControlRegistration?.stop?.();
   } catch (error) {
@@ -920,6 +1104,7 @@ process.once('SIGINT', () => handleShutdownSignal('SIGINT'));
 process.once('SIGTERM', () => handleShutdownSignal('SIGTERM'));
 process.once('exit', closeSemanticPipeline);
 process.once('exit', () => {
+  backendMemoryActivity.close();
   try { agentControlRegistration?.stop?.(); } catch (_) {}
 });
 

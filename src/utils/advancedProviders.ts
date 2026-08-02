@@ -1,4 +1,5 @@
 import type { AdvancedProviderConfig, AdvancedProviderSummary, CanvasProviderSource } from '../types/canvas';
+import { ATLAS_ONLY_RUNTIME } from '../config/atlasOnlyRuntime';
 
 const MASKED_RE = /^\*{2,}/;
 
@@ -218,9 +219,15 @@ export interface AdvancedProviderSelection {
   available: boolean;
 }
 
-const IMAGE_PROTOCOLS = new Set(['openai-compatible', 'atlas']);
-const VIDEO_PROTOCOLS = new Set(['openai-compatible', 'atlas']);
-const LLM_PROTOCOLS = new Set(['openai-compatible', 'atlas']);
+const IMAGE_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+  ? ['openai-compatible', 'atlas']
+  : ['openai-compatible', 'atlas', 'modelscope', 'volcengine', 'agnes', 'jimeng-cli', 'comfyui']);
+const VIDEO_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+  ? ['openai-compatible', 'atlas']
+  : ['openai-compatible', 'atlas', 'volcengine', 'agnes', 'jimeng-cli']);
+const LLM_PROTOCOLS = new Set(ATLAS_ONLY_RUNTIME
+  ? ['openai-compatible', 'atlas']
+  : ['openai-compatible', 'atlas', 'modelscope', 'volcengine']);
 
 // Atlas 的完整模型列表由 /api/proxy/atlas/models 动态加载。
 // 这里仅在模型目录暂时不可达时提供官方已核对模型的最小回退。

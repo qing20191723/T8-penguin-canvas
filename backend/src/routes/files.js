@@ -14,6 +14,7 @@ const { tryDecodeDuckPayload } = require('../utils/duckPayload');
 const { getProjectDatabase } = require('../services/projectDatabase');
 const {
   getBackgroundAssetIndexer,
+  hashFile,
   writeAtomicTarget,
   MAX_IMAGE_INPUT_PIXELS,
 } = require('../services/assetIndexer');
@@ -49,6 +50,12 @@ function getFilesAssetIndexer() {
   }
   return assetIndexer;
 }
+
+function setFilesRouteTestDependencies(dependencies = {}) {
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'projectDatabase')) projectDatabase = dependencies.projectDatabase;
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'previewPipeline')) previewPipeline = dependencies.previewPipeline;
+  if (Object.prototype.hasOwnProperty.call(dependencies, 'assetIndexer')) assetIndexer = dependencies.assetIndexer;
+}
 const THUMBNAIL_IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|avif|tiff?)(?:$|\?)/i;
 const LOCAL_MOV_VIDEO_RE = /\.mov(?:$|[?#])/i;
 const thumbnailInflight = new Map();
@@ -71,6 +78,7 @@ const LOCAL_IMPORT_EXTENSIONS = new Map([
   ['.m4v', { kind: 'video', mime: 'video/x-m4v' }],
 ]);
 const DEFAULT_FILE_UPLOAD_MAX_BYTES = 512 * 1024 * 1024;
+const DEFAULT_WEB_FILE_UPLOAD_MAX_BYTES = 256 * 1024 * 1024;
 const DEFAULT_FILE_SAVE_MAX_BYTES = 512 * 1024 * 1024;
 const DEFAULT_DUCK_DECODE_MAX_BYTES = 128 * 1024 * 1024;
 const MAX_FILE_ROUTE_BYTES = 4 * 1024 * 1024 * 1024;
@@ -85,10 +93,16 @@ function boundedFileBytes(value, fallback) {
     : fallback;
 }
 
-const FILE_UPLOAD_MAX_BYTES = boundedFileBytes(
-  config.FILE_UPLOAD_MAX_BYTES,
-  boundedFileBytes(config.COLLAB_MAX_UPLOAD_BYTES, DEFAULT_FILE_UPLOAD_MAX_BYTES),
+const WEB_FILE_RUNTIME = process.env.T8_WEB_DEPLOY === '1' || process.env.RENDER === 'true';
+const FILE_UPLOAD_DEFAULT_BYTES = WEB_FILE_RUNTIME
+  ? DEFAULT_WEB_FILE_UPLOAD_MAX_BYTES
+  : boundedFileBytes(config.COLLAB_MAX_UPLOAD_BYTES, DEFAULT_FILE_UPLOAD_MAX_BYTES);
+const FILE_UPLOAD_MAX_BYTES = Math.min(
+  FILE_UPLOAD_DEFAULT_BYTES,
+  boundedFileBytes(process.env.T8_FILE_UPLOAD_MAX_BYTES || config.FILE_UPLOAD_MAX_BYTES, FILE_UPLOAD_DEFAULT_BYTES),
 );
+const UPLOAD_DISK_RESERVE_BYTES = boundedFileBytes(process.env.T8_UPLOAD_DISK_RESERVE_BYTES, 64 * 1024 * 1024);
+const uploadReceiptFinalizers = new Map();
 
 // 配置 multer
 const storage = multer.diskStorage({
@@ -119,6 +133,19 @@ function sendUploadError(res, err) {
       error: tooLarge ? '上传文件超过允许大小' : (err.message || '文件上传失败'),
     });
   }
+  if (err?.code === 'ENOSPC') {
+    return res.status(507).json({ success: false, code: 'insufficient_storage', error: '磁盘空间不足，无法完成上传' });
+  }
+  if (Number(err?.status) === 409) {
+    return res.status(409).json({ success: false, code: err.code || 'idempotency_conflict', error: err.message });
+  }
+  if (Number(err?.status) >= 400 && Number(err?.status) < 500) {
+    return res.status(Number(err.status)).json({
+      success: false,
+      code: err.code || 'invalid_upload_request',
+      error: err.message || '文件上传请求无效',
+    });
+  }
   console.error('文件上传错误:', err);
   return res.status(500).json({
     success: false,
@@ -129,44 +156,158 @@ function sendUploadError(res, err) {
 
 const uploadSingleFile = upload.single('file');
 
+function uploadIdempotencyKey(req) {
+  const key = String(req.get('idempotency-key') || '').trim();
+  if (!key) return '';
+  if (!/^[A-Za-z0-9._:-]{16,200}$/.test(key)) {
+    throw Object.assign(new Error('Idempotency-Key 格式无效'), { status: 400, code: 'invalid_idempotency_key' });
+  }
+  return key;
+}
+
+function uploadReceiptPath(key) {
+  const digest = crypto.createHash('sha256').update(key).digest('hex');
+  return path.join(config.DATA_DIR, 'upload-receipts', `${digest}.json`);
+}
+
+async function readUploadReceipt(key) {
+  try {
+    const value = JSON.parse(await fs.promises.readFile(uploadReceiptPath(key), 'utf8'));
+    return value?.schema === 't8-upload-receipt-v1' ? value : null;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function writeUploadReceipt(key, contentHash, data) {
+  const target = uploadReceiptPath(key);
+  await fs.promises.mkdir(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${crypto.randomUUID()}.part`;
+  const handle = await fs.promises.open(temporary, 'wx', 0o600);
+  try {
+    await handle.writeFile(`${JSON.stringify({
+      schema: 't8-upload-receipt-v1',
+      keyDigest: path.basename(target, '.json'),
+      contentHash,
+      data,
+      completedAt: new Date().toISOString(),
+    })}\n`, 'utf8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try { await fs.promises.rename(temporary, target); }
+  finally { try { await fs.promises.rm(temporary, { force: true }); } catch (_) {} }
+}
+
+function assertUploadDiskSpace(req) {
+  if (typeof fs.statfsSync !== 'function') return;
+  const contentLength = Number(req.get('content-length') || 0);
+  if (!Number.isFinite(contentLength) || contentLength <= 0) return;
+  const stat = fs.statfsSync(config.INPUT_DIR);
+  const available = Number(stat.bavail) * Number(stat.bsize);
+  if (available < contentLength + UPLOAD_DISK_RESERVE_BYTES) {
+    throw Object.assign(new Error('磁盘空间不足，无法完成上传'), { code: 'ENOSPC' });
+  }
+}
+
+async function serializedUploadReceipt(key, work) {
+  if (!key) return work();
+  const previous = uploadReceiptFinalizers.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(work);
+  uploadReceiptFinalizers.set(key, current);
+  try { return await current; }
+  finally { if (uploadReceiptFinalizers.get(key) === current) uploadReceiptFinalizers.delete(key); }
+}
+
+function resolveUploadReceiptReplay(receipt, contentHash) {
+  if (!receipt) return null;
+  if (receipt.contentHash !== contentHash) {
+    throw Object.assign(new Error('同一 Idempotency-Key 对应了不同文件'), {
+      status: 409,
+      code: 'idempotency_conflict',
+    });
+  }
+  return { ...receipt.data, duplicate: true };
+}
+
 // POST /api/files/upload — 上传文件
 router.post('/upload', (req, res) => {
+  let idempotencyKey = '';
+  try {
+    idempotencyKey = uploadIdempotencyKey(req);
+    assertUploadDiskSpace(req);
+  } catch (error) {
+    return sendUploadError(res, error);
+  }
   uploadSingleFile(req, res, async (err) => {
     if (err) return sendUploadError(res, err);
     if (!req.file) {
       return res.status(400).json({ success: false, code: 'missing_file', error: '未收到文件' });
     }
-    let asset = null;
-    let indexError = null;
     try {
-      asset = await getFilesAssetIndexer().indexFile(req.file.path, {
-        projectId: req.body?.projectId,
-        rootName: 'input',
-        rootPath: config.INPUT_DIR,
-        publicPrefix: '/files/input/',
-        canvasId: req.body?.canvasId,
-        sourceNodeId: req.body?.sourceNodeId,
-        sourceNodeType: req.body?.sourceNodeType || (req.body?.sourceNodeId ? 'upload' : undefined),
-        creatorId: req.body?.creatorId || 'local-owner',
-        sourceType: req.body?.sourceNodeId ? 'upload-node' : 'upload',
+      const data = await serializedUploadReceipt(idempotencyKey, async () => {
+        const contentHash = await hashFile(req.file.path);
+        const receipt = idempotencyKey ? await readUploadReceipt(idempotencyKey) : null;
+        if (receipt) {
+          await fs.promises.rm(req.file.path, { force: true });
+          return resolveUploadReceiptReplay(receipt, contentHash);
+        }
+        const provisionalResult = {
+          filename: req.file.filename,
+          url: `/files/input/${req.file.filename}`,
+          size: req.file.size,
+          mime: req.file.mimetype,
+          assetId: null,
+          storageMode: 'managed',
+          availability: 'unverified',
+        };
+        // Commit the durable identity before optional indexing. If the process
+        // exits during indexing, the same key still resolves to the same file.
+        if (idempotencyKey) {
+          await writeUploadReceipt(idempotencyKey, contentHash, provisionalResult);
+        }
+        let asset = null;
+        let indexError = null;
+        try {
+          asset = await getFilesAssetIndexer().indexFile(req.file.path, {
+            projectId: req.body?.projectId,
+            rootName: 'input',
+            rootPath: config.INPUT_DIR,
+            publicPrefix: '/files/input/',
+            canvasId: req.body?.canvasId,
+            sourceNodeId: req.body?.sourceNodeId,
+            sourceNodeType: req.body?.sourceNodeType || (req.body?.sourceNodeId ? 'upload' : undefined),
+            creatorId: req.body?.creatorId || 'local-owner',
+            sourceType: req.body?.sourceNodeId ? 'upload-node' : 'upload',
+          });
+        } catch (error) {
+          indexError = error?.message || String(error);
+          console.warn('[asset-index] upload indexing failed:', indexError);
+        }
+        const result = {
+          ...provisionalResult,
+          assetId: asset?.id || null,
+          storageMode: asset?.storageMode || 'managed',
+          availability: asset?.availability || (indexError ? 'unverified' : 'available'),
+          ...(indexError ? { indexError } : {}),
+        };
+        if (idempotencyKey) {
+          try {
+            await writeUploadReceipt(idempotencyKey, contentHash, result);
+          } catch (receiptError) {
+            // The provisional receipt is already durable and safe to replay.
+            console.warn('[upload-receipt] final metadata refresh failed:', receiptError?.message || receiptError);
+          }
+        }
+        return result;
       });
+      return res.json({ success: true, data });
     } catch (error) {
-      indexError = error?.message || String(error);
-      console.warn('[asset-index] upload indexing failed:', indexError);
+      try { await fs.promises.rm(req.file.path, { force: true }); } catch (_) {}
+      return sendUploadError(res, error);
     }
-    return res.json({
-      success: true,
-      data: {
-        filename: req.file.filename,
-        url: `/files/input/${req.file.filename}`,
-        size: req.file.size,
-        mime: req.file.mimetype,
-        assetId: asset?.id || null,
-        storageMode: asset?.storageMode || 'managed',
-        availability: asset?.availability || (indexError ? 'unverified' : 'available'),
-        ...(indexError ? { indexError } : {}),
-      },
-    });
   });
 });
 
@@ -1416,14 +1557,21 @@ module.exports.importLocalFile = importLocalFile;
 module.exports.resolveOpenLocalTarget = resolveOpenLocalTarget;
 module.exports.resolveOpenLocalDirectory = (targetPath) => resolveOpenLocalTarget(targetPath).path;
 module.exports._test = {
+  assertUploadDiskSpace,
   compatibleVideoPreviewCacheFile,
   detectSavedMediaType,
   ensureCompatibleVideoPreviewFile,
   openMountedLocalSource,
+  readUploadReceipt,
   parseMountedFileUrl,
+  resolveUploadReceiptReplay,
   resolveCompatibleVideoPreviewFfmpeg,
   runCompatibleVideoPreviewFfmpeg,
   safeSavedFilename,
   setFileSaveRouteTestOptions,
+  setFilesRouteTestDependencies,
+  uploadIdempotencyKey,
+  uploadReceiptPath,
   validateSavedMedia,
+  writeUploadReceipt,
 };

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["model", "prompt"],
+  "properties": {
+    "model": { "type": "string", "default": "bytedance/seedream-v5.0-pro/text-to-image" },
+    "prompt": { "type": "string" },
+    "size": { "type": "string", "default": "2048*2048", "enum": ["2048*2048", "2304*1728", "1728*2304", "2720*1530", "1530*2720", "1024*1024"] },
+    "output_format": { "type": "string", "default": "jpeg", "enum": ["jpeg", "png"] },
+    "thinking": { "type": "string", "default": "enabled", "enum": ["enabled", "disabled"] }
+  }
+}

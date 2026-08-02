@@ -106,6 +106,7 @@ import {
   type ImagePromptAdjustmentSelection,
 } from '../../data/imagePromptAdjustments';
 import MidjourneyNzPanel from './MidjourneyNzPanel';
+import AtlasCapabilityFields from './AtlasCapabilityFields';
 import {
   buildMidjourneyNzRequest,
   midjourneyNzRequiresPrompt,
@@ -1986,7 +1987,7 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                         providerSource: provider.protocol,
                         providerId: provider.id,
                         providerModel: nextModels[0] || '',
-                        ...clearModelscopeLoraParams(),
+                        ...(provider.protocol === 'atlas' ? { providerParams: {} } : clearModelscopeLoraParams()),
                       });
                     }}
                     style={{ background: '#18181b', color: '#ffffff' }}
@@ -2011,8 +2012,12 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                           && String(providerParams.resolutionType || '').toLowerCase() === '1k';
                         update({
                           providerModel: nextModel,
-                          ...(mustLeave1k ? { providerParams: { ...providerParams, resolutionType: '2k' } } : {}),
-                          ...clearModelscopeLoraParams(),
+                          ...(providerSelection.provider?.protocol === 'atlas'
+                            ? { providerParams: {} }
+                            : {
+                              ...(mustLeave1k ? { providerParams: { ...providerParams, resolutionType: '2k' } } : {}),
+                              ...clearModelscopeLoraParams(),
+                            }),
                         });
                       }}
                       style={{ background: '#18181b', color: '#ffffff' }}
@@ -2036,6 +2041,12 @@ const ImageNode = ({ id, data, selected }: NodeProps) => {
                     </button>
                     {d?.atlasParamsOpen && (
                       <>
+                        <AtlasCapabilityFields
+                          model={externalProviderModel}
+                          kind="image"
+                          params={providerParams}
+                          onChange={patchProviderParams}
+                        />
                         <textarea
                           value={atlasParamsText}
                           onChange={(e) => updateAtlasParamsText(e.target.value)}

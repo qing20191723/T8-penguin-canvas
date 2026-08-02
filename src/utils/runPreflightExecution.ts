@@ -1,11 +1,7 @@
 import type { RunActionPreview } from './runPreflight.ts';
+import { compareRunInputSnapshots, type RunInputSnapshot } from './runInputMutation.ts';
 
-export interface RunPreflightExecutionSnapshot {
-  projectId: string;
-  canvasId: string;
-  revision: number;
-  graphMutationEpoch: number;
-}
+export interface RunPreflightExecutionSnapshot extends RunInputSnapshot {}
 
 export type RunPreflightAuthorizationResult =
   | { authorized: true; reason: 'authorized'; preview: RunActionPreview }
@@ -15,11 +11,7 @@ export function isSameRunPreflightExecutionSnapshot(
   expected: RunPreflightExecutionSnapshot,
   current: RunPreflightExecutionSnapshot | null,
 ) {
-  return Boolean(current
-    && current.projectId === expected.projectId
-    && current.canvasId === expected.canvasId
-    && current.revision === expected.revision
-    && current.graphMutationEpoch === expected.graphMutationEpoch);
+  return compareRunInputSnapshots(expected, current).sameInput;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   updateProjectRunAttempt,
 } from '../services/api';
 import { normalizeRunError } from '../utils/runErrors';
+import { registerRunMutationIdentity } from '../utils/runMutationIdentity';
 import { captureRunNodeInputSnapshot } from '../utils/runReplay';
 import { inferRunRecoveryDescriptor } from '../utils/runRecovery';
 import {
@@ -92,6 +93,7 @@ export function useRunTrigger(
       let providerResponseRecorded = false;
       let activeProviderTrace: RunProviderTrace = {};
       let unregisterCancelHandler: () => void = () => undefined;
+      let unregisterMutationIdentity: () => void = () => undefined;
       let resolvePersistenceReady: () => void = () => undefined;
       const persistenceReady = new Promise<void>((resolve) => {
         resolvePersistenceReady = resolve;
@@ -391,6 +393,12 @@ export function useRunTrigger(
             timestamps: { queuedAt: Date.now(), startedAt: Date.now() },
           });
           attemptId = attempt.id;
+          unregisterMutationIdentity = registerRunMutationIdentity({
+            runId,
+            nodeId,
+            attemptId,
+            executionToken: capturedExecutionToken,
+          });
           await updateProjectNodeRun(runId, nodeRun.id, {
             status: 'running',
             eventPayload: {
@@ -501,6 +509,7 @@ export function useRunTrigger(
           stopped ? 'stopped' : completionError instanceof Error ? completionError.message : String(completionError),
         );
       } finally {
+        unregisterMutationIdentity();
         unregisterCancelHandler();
         useRunBusStore.getState().setActiveNodeRun(nodeId, undefined, capturedExecutionToken);
         releaseRunExecutionBinding(nodeId, capturedExecutionToken);

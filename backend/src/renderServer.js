@@ -12,8 +12,16 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const crypto = require('node:crypto');
 const { spawn } = require('child_process');
 const express = require('express');
+const {
+  SCHEMA: MEMORY_SCHEMA,
+  authorizeBearer,
+  boundedToken,
+  createActivityTracker,
+  processMemorySnapshot,
+} = require('./services/memoryDiagnostics');
 
 process.env.T8_WEB_DEPLOY = '1';
 process.env.T8_FIGMA_BRIDGE_AUTOSTART = '0';
@@ -51,6 +59,10 @@ function resolveFrontendDist() {
 
 const frontendDist = resolveFrontendDist();
 const publicApp = express();
+const bootstrapMemoryActivity = createActivityTracker('bootstrap');
+const memoryDebugToken = boundedToken(process.env.T8_MEMORY_DEBUG_TOKEN);
+const memoryInternalToken = crypto.randomBytes(32).toString('base64url');
+publicApp.use(bootstrapMemoryActivity.middleware);
 let phase = 'public-listening';
 let backendReady = false;
 let backendError = '';
@@ -70,6 +82,68 @@ function publicStatus() {
     uptimeSeconds: Math.round(process.uptime()),
   };
 }
+
+function readInternalMemorySnapshot() {
+  if (!backendReady) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const request = http.get({
+      hostname: INTERNAL_HOST,
+      port: INTERNAL_PORT,
+      path: '/api/debug/memory/internal',
+      timeout: 2_000,
+      headers: { Authorization: `Bearer ${memoryInternalToken}` },
+    }, (response) => {
+      const chunks = [];
+      let size = 0;
+      response.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > 1024 * 1024) return request.destroy();
+        chunks.push(chunk);
+      });
+      response.on('end', () => {
+        if (response.statusCode !== 200) return resolve(null);
+        try { return resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+        catch (_) { return resolve(null); }
+      });
+    });
+    request.on('timeout', () => { request.destroy(); resolve(null); });
+    request.on('error', () => resolve(null));
+  });
+}
+
+publicApp.get('/api/debug/memory', async (req, res) => {
+  if (!memoryDebugToken) return res.status(404).end();
+  if (!authorizeBearer(req, memoryDebugToken)) return res.status(401).end();
+  const bootstrap = {
+    process: processMemorySnapshot('bootstrap'),
+    activity: bootstrapMemoryActivity.snapshot(),
+  };
+  const backend = await readInternalMemorySnapshot();
+  const activity = backend?.activity || {};
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    schema: MEMORY_SCHEMA,
+    commit: String(process.env.RENDER_GIT_COMMIT || '').trim() || undefined,
+    phase,
+    capturedAt: new Date().toISOString(),
+    bootstrap,
+    backend,
+    totalRss: bootstrap.process.rss + Number(backend?.process?.rss || 0),
+    activity: {
+      requests: Math.max(bootstrap.activity.activeRequests, Number(activity.requests || 0)),
+      runs: Number(activity.runs || 0),
+      uploads: Math.max(bootstrap.activity.activeUploads, Number(activity.uploads || 0)),
+      downloads: Math.max(bootstrap.activity.activeDownloads, Number(activity.downloads || 0)),
+    },
+    queues: backend?.queues || {
+      preview: { active: 0, queued: 0, pending: 0 },
+      semantic: { active: 0, queued: 0, downloads: 0 },
+      recovery: { active: 0, pending: 0 },
+    },
+    storage: backend?.storage || { state: 'unknown', persistentDiskConfigured: false },
+    ...(!backendReady || backend ? {} : { backendSnapshotUnavailable: true }),
+  });
+});
 
 publicApp.get('/api/status', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -195,6 +269,7 @@ async function waitForInternalBackend(child) {
     if (await internalBackendIsReady()) {
       backendReady = true;
       phase = 'ready';
+      bootstrapMemoryActivity.log('backend.ready', { phase });
       console.log(`[render] 清尘无限画布后端已就绪：http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
       ciCompatibilityLog(`[render] full T8 backend ready at http://${INTERNAL_HOST}:${INTERNAL_PORT}`);
       return;
@@ -215,6 +290,7 @@ function startFullBackend() {
       PORT: String(INTERNAL_PORT),
       T8_WEB_DEPLOY: '1',
       T8_FIGMA_BRIDGE_AUTOSTART: '0',
+      T8_MEMORY_INTERNAL_TOKEN: memoryInternalToken,
     },
     stdio: 'inherit',
   });
@@ -241,6 +317,7 @@ const publicServer = publicApp.listen(PUBLIC_PORT, PUBLIC_HOST, () => {
   console.log(`[render] 前端目录：${frontendDist}`);
   ciCompatibilityLog(`[render] public bootstrap listening on http://${PUBLIC_HOST}:${PUBLIC_PORT}`);
   ciCompatibilityLog(`[render] serving frontend from ${frontendDist}`);
+  bootstrapMemoryActivity.log('bootstrap.listening', { phase });
   setImmediate(startFullBackend);
 });
 
@@ -254,6 +331,8 @@ function shutdown(signal) {
   shuttingDown = true;
   phase = 'stopping';
   console.log(`[render] 收到 ${signal}，正在停止公网和内部服务`);
+  bootstrapMemoryActivity.log('bootstrap.stopping', { phase });
+  bootstrapMemoryActivity.close();
   if (backendChild && backendChild.exitCode === null) backendChild.kill(signal);
   publicServer.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 8000).unref();

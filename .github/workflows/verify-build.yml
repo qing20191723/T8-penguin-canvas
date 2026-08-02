@@ -30,5 +30,47 @@ jobs:
           T8_WEB_DEPLOY: '1'
         run: npm ci --include=dev
 
-      - name: Build frontend
+      - name: Verify Atlas adapters and official schema boundary
+        run: node --test backend/src/providers/adapters.test.js backend/src/providers/atlas.test.js backend/src/providers/atlasSchema.test.js
+
+      - name: Verify Web credential boundary
+        run: npm run test:electron:ts -- tests/advancedProviderSettingsRoute.test.ts
+
+      - name: Verify protected memory diagnostics
+        run: node --test tests/memoryDiagnostics.test.cjs tests/renderMemoryDiagnostics.test.cjs
+
+      - name: Verify generated feature artifacts
+        run: npm run feature-sync:check
+
+      - name: TypeScript and Vite production build
+        env:
+          ATLASCLOUD_API_KEY: ci-atlas-secret-must-not-enter-frontend-bundle
         run: npm run build
+
+      - name: Scan frontend bundle for server credentials and raw settings route
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const forbidden = [
+            'ci-atlas-secret-must-not-enter-frontend-bundle',
+            '/api/settings/raw',
+            '/settings/raw',
+          ];
+          const files = [];
+          const walk = (dir) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const target = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(target);
+              else files.push(target);
+            }
+          };
+          walk('dist');
+          for (const file of files) {
+            const body = fs.readFileSync(file);
+            for (const value of forbidden) {
+              if (body.includes(Buffer.from(value))) throw new Error(`${value} found in ${file}`);
+            }
+          }
+          console.log(`Scanned ${files.length} frontend bundle files.`);
+          NODE

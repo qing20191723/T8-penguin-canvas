@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useUpdateNodeData } from './useUpdateNodeData';
+import { idempotentUploadFetch } from '../../services/idempotentUpload';
 import { useThemeStore } from '../../stores/theme';
 import { trackAchievementEvent } from '../../stores/achievements';
 import { useHiddenFeatureStore, isRhDuckUploadEnabled } from '../../stores/hiddenFeatures';
@@ -531,7 +532,7 @@ const UploadNode = ({ id, data, selected, type }: NodeProps) => {
     fd.append('sourceNodeId', id);
     fd.append('sourceNodeType', String(type || 'upload'));
     fd.append('creatorId', 'local-owner');
-    const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
+    const res = await idempotentUploadFetch('/api/files/upload', fd, file);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `上传失败 HTTP ${res.status}`);

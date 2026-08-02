@@ -322,8 +322,12 @@ router.get('/', (_req, res) => {
   res.json({ success: true, data: masked });
 });
 
-// GET /api/settings/raw — 内部接口,获取明文(供 Phase 4 代理调用使用)
+// GET /api/settings/raw — desktop/local compatibility only. A Web deployment
+// must never expose persisted provider credentials through its public server.
 router.get('/raw', (_req, res) => {
+  if (config.WEB_DEPLOYMENT) {
+    return res.status(404).json({ success: false, error: 'not_found' });
+  }
   res.json({ success: true, data: loadSettings() });
 });
 

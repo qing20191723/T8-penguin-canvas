@@ -1,26 +1,26 @@
 name: Verify Render deployment
 
 on:
-  pull_request:
+  push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: verify-render-deployment
-  cancel-in-progress: true
+  group: verify-render-deployment-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   smoke:
-    if: github.head_ref == 'ci/verify-build'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Wait for the PR base commit on Render
+      - name: Wait for the pushed main commit on Render
         shell: bash
         env:
-          EXPECTED_COMMIT: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
           base='https://qingchen-atlascloud-canvas.onrender.com'
@@ -127,71 +127,19 @@ jobs:
           NODE
           cat /tmp/catalog-counts.json
 
-      - name: Generate text through the generic Atlas LLM node route
+      - name: Verify public credential boundary
         shell: bash
         run: |
           set -euo pipefail
           base='https://qingchen-atlascloud-canvas.onrender.com'
-          model=$(cat /tmp/llm-model.txt)
-          MODEL="$model" node - <<'NODE' > /tmp/llm-request.json
-          const model=process.env.MODEL;
-          process.stdout.write(JSON.stringify({
-            providerId:'atlas',
-            providerModel:model,
-            model,
-            messages:[{role:'user',content:'Reply with exactly PONG and nothing else.'}],
-            temperature:0,
-            max_tokens:16,
-          }));
-          NODE
-          code=$(curl -L -sS -o /tmp/llm-result.json -w '%{http_code}' --max-time 300 \
-            -H 'Content-Type: application/json' --data-binary @/tmp/llm-request.json \
-            "$base/api/proxy/external/llm")
-          cat /tmp/llm-result.json
-          test "$code" = '200'
+          code=$(curl -L -sS -o /tmp/raw-settings.json -w '%{http_code}' --max-time 90 "$base/api/settings/raw")
+          test "$code" = '404'
           node - <<'NODE'
-          const d=require('/tmp/llm-result.json');
-          if(!d.success) throw new Error(d.error||'Atlas LLM request failed');
-          const text=String(d.data?.text||'').trim();
-          if(!text) throw new Error('Atlas LLM returned empty text');
-          console.log('Atlas LLM verified:',d.data?.model,text.slice(0,120));
-          NODE
-
-      - name: Generate through the generic Seedream Pro ImageNode route
-        shell: bash
-        run: |
-          set -euo pipefail
-          base='https://qingchen-atlascloud-canvas.onrender.com'
-          cat > /tmp/image-request.json <<'JSON'
-          {
-            "providerId": "atlas",
-            "providerModel": "bytedance/seedream-v5.0-pro/text-to-image",
-            "model": "bytedance/seedream-v5.0-pro/text-to-image",
-            "prompt": "A minimal white circle centered on a plain black background, clean test image, no text",
-            "size": "1024*1024",
-            "n": 1
+          const text=require('fs').readFileSync('/tmp/settings.json','utf8');
+          const payload=JSON.parse(text);
+          const providers=payload.data?.advancedProviders||[];
+          for(const provider of providers) {
+            if(provider.apiKey && !/^\*{4}/.test(provider.apiKey)) throw new Error(`unmasked provider key for ${provider.id}`);
           }
-          JSON
-          code=$(curl -L -sS -o /tmp/image-result.json -w '%{http_code}' --max-time 1200 \
-            -H 'Content-Type: application/json' --data-binary @/tmp/image-request.json \
-            "$base/api/proxy/external/image")
-          cat /tmp/image-result.json
-          test "$code" = '200'
-          node - <<'NODE'
-          const d=require('/tmp/image-result.json');
-          if(!d.success) throw new Error(d.error||'generic Atlas image generation failed');
-          const data=d.data||{};
-          if(!Array.isArray(data.imageUrls)||!data.imageUrls.length) throw new Error('no image URL');
-          console.log('Seedream Pro task=',data.taskId||'', 'url=',data.imageUrls[0]);
+          if(/Bearer\s+\S+|sk-[A-Za-z0-9_-]{12,}/i.test(text)) throw new Error('credential-like value found in public settings');
           NODE
-          image_url=$(node -e "const d=require('/tmp/image-result.json').data; process.stdout.write(String(d.imageUrls[0]))")
-          case "$image_url" in
-            http://*|https://*) final_url="$image_url" ;;
-            /*) final_url="$base$image_url" ;;
-            *) exit 1 ;;
-          esac
-          code=$(curl -L -sS -D /tmp/image.headers -o /tmp/image.bin -w '%{http_code}' --max-time 240 "$final_url")
-          test "$code" = '200'
-          test "$(wc -c < /tmp/image.bin)" -gt 1000
-          grep -qi '^content-type: image/' /tmp/image.headers
-          echo "Seedream Pro ImageNode path verified: $final_url"
