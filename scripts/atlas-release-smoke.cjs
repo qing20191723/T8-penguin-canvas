@@ -31,9 +31,10 @@ function writeSummary(summary) {
     '',
     `- Source SHA: \`${summary.sourceSha || 'unknown'}\``,
     `- Kimi K3: **${summary.kimi?.ok ? 'PASS' : 'FAIL'}**`,
-    `- Wan 2.7 Spicy: **${summary.wan?.ok ? 'PASS' : 'FAIL'}**`,
+    `- Wan 2.7 Spicy: **${summary.wan?.ok ? 'PASS' : summary.wan?.skipped ? 'SKIPPED' : 'FAIL'}**`,
   ];
   if (summary.kimi?.text) lines.push(`- Kimi response: \`${summary.kimi.text.replace(/`/g, '')}\``);
+  if (summary.wan?.reason) lines.push(`- Wan status: ${summary.wan.reason}`);
   if (summary.wan?.taskId) lines.push(`- Wan task: \`${summary.wan.taskId}\``);
   if (summary.wan?.bytes) lines.push(`- Wan artifact: ${summary.wan.bytes.toLocaleString('en-US')} bytes`);
   if (summary.wan?.sha256) lines.push(`- Wan SHA-256: \`${summary.wan.sha256}\``);
@@ -59,7 +60,9 @@ async function postJsonOnce(route, body, idempotencyKey, timeoutMs) {
   try { payload = text ? JSON.parse(text) : {}; }
   catch { throw new Error(`${route} returned non-JSON HTTP ${response.status}: ${text.slice(0, 500)}`); }
   if (!response.ok || payload.success !== true) {
-    throw new Error(`${route} failed HTTP ${response.status}: ${payload.error || payload.message || text.slice(0, 500)}`);
+    const code = String(payload.code || payload.error?.code || '').trim();
+    const detail = payload.error?.message || payload.error || payload.message || text.slice(0, 500);
+    throw new Error(`${route} failed HTTP ${response.status}${code ? ` [${code}]` : ''}: ${detail}`);
   }
   return payload.data || {};
 }
@@ -80,7 +83,7 @@ async function main() {
   fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const summary = {
-    schema: 't8-atlas-paid-release-smoke-v2',
+    schema: 't8-atlas-paid-release-smoke-v3',
     sourceSha: process.env.GITHUB_SHA || '',
     renderBaseUrl: BASE_URL,
     startedAt: new Date().toISOString(),
@@ -94,7 +97,7 @@ async function main() {
       providerId: 'atlas',
       model: MODEL_KIMI,
       messages: [{ role: 'user', content: 'Reply with exactly: KIMI_K3_OK' }],
-      maxTokens: 512,
+      maxTokens: 32,
       temperature: 0,
       timeoutMs: 120000,
     }, 'release-v1.0.0-kimi-final', 180000);
@@ -104,7 +107,16 @@ async function main() {
   } catch (error) {
     const message = `Kimi K3: ${sanitizeError(error)}`;
     summary.kimi.error = message;
+    summary.wan = {
+      ok: false,
+      skipped: true,
+      model: MODEL_WAN,
+      reason: 'Kimi failed, so Wan was not submitted to avoid unnecessary paid usage.',
+    };
     summary.errors.push(message);
+    summary.completedAt = new Date().toISOString();
+    writeSummary(summary);
+    throw new Error(`Paid release smoke stopped after Kimi: ${message}`);
   }
 
   try {
