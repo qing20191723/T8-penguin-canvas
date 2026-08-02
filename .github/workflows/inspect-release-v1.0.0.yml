@@ -61,12 +61,16 @@ jobs:
             'atlascloud/wan-2.7-spicy/reference-to-video',
           ];
           console.log(JSON.stringify({
-            status,
+            serviceStatus: status.status,
+            runtimeProfile: status.runtime?.profile,
             catalogSource: catalog.source,
             catalogTotal: catalog.total,
             required: Object.fromEntries(required.map((id) => [id, ids.has(id)])),
           }, null, 2));
-          if (!status.ok || status.runtime !== 'atlas-only') throw new Error('Render is not healthy Atlas-only runtime');
+          if (status.status !== 'ok' || status.runtime?.profile !== 'atlas-only') {
+            throw new Error('Render is not a healthy Atlas-only runtime');
+          }
+          if (!catalog.ok) throw new Error('Atlas model catalog did not return ok=true');
           for (const id of required) if (!ids.has(id)) throw new Error(`Missing Atlas model: ${id}`);
           NODE
 
