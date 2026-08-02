@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "required": ["model", "text"],
+  "properties": {
+    "model": { "type": "string", "default": "bytedance/seed-audio-1.0", "enum": ["bytedance/seed-audio-1.0"] },
+    "text": { "type": "string" },
+    "references": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "properties": {
+          "speaker": { "type": "string", "enum": ["zh_female_vv_uranus_bigtts", "zh_male_m191_uranus_bigtts"] },
+          "audio_url": { "type": "string" },
+          "audio_data": { "type": "string" },
+          "image_url": { "type": "string" },
+          "image_data": { "type": "string" }
+        }
+      }
+    },
+    "format": { "type": "string", "default": "mp3", "enum": ["mp3", "wav", "pcm", "ogg_opus"] },
+    "sample_rate": { "type": "integer", "default": 24000, "enum": [8000, 16000, 24000, 32000, 44100, 48000] },
+    "pitch_rate": { "type": "integer", "default": 0, "minimum": -12, "maximum": 12 },
+    "speech_rate": { "type": "integer", "default": 0, "minimum": -50, "maximum": 100 },
+    "loudness_rate": { "type": "integer", "default": 0, "minimum": -50, "maximum": 100 }
+  }
+}

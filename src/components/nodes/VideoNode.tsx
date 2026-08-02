@@ -92,6 +92,7 @@ import {
 import { LocalNodeAddonSlot } from 'virtual:t8-local-extensions';
 import JimengCliHelpButton from './JimengCliHelpButton';
 import AtlasCapabilityFields from './AtlasCapabilityFields';
+import AtlasModelPicker from '../AtlasModelPicker';
 
 /**
  * VideoNode - 异步视频生成(完全对齐 gpt-image-2-web)
@@ -1097,6 +1098,9 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
     try {
       if (isExternalSelected && providerSelection.provider) {
         const providerModel = externalProviderModel;
+        if (providerSelection.provider.protocol === 'atlas' && !providerSelection.modelAvailable) {
+          throw new Error(`所选模型 ${providerModel} 已不在当前 Atlas 官方目录中，请重新选择；系统不会自动改用其他收费模型。`);
+        }
         const refs = imageUrls.slice(0, Math.max(1, maxMentionRefs || modelDef.maxRefImages || 8));
         const videoRefs = videoUrls.slice(0, maxMentionVideos);
         const audioRefs = audioUrls.slice(0, maxMentionAudios);
@@ -1840,7 +1844,15 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                 {isExternalSelected && providerSelection.provider && (
                   <div>
                     <label className="text-[10px] text-white/50 block mb-1">{providerSelection.provider?.protocol === 'atlas' ? 'Atlas 模型' : '自定义模型'}</label>
-                    <select
+                    {providerSelection.provider.protocol === 'atlas' ? (
+                      <AtlasModelPicker
+                        provider={providerSelection.provider}
+                        kind="video"
+                        mode={externalProviderModel.includes('reference-to-video') ? 'reference-to-video' : externalProviderModel.includes('image-to-video') ? 'image-to-video' : 'text-to-video'}
+                        value={externalProviderModel}
+                        onChange={(nextModel) => update({ providerModel: nextModel, providerParams: {} })}
+                      />
+                    ) : (<select
                       value={externalProviderModel}
                       onChange={(e) => {
                         const nextModel = e.target.value;
@@ -1859,7 +1871,7 @@ const VideoNode = ({ id, data, selected }: NodeProps) => {
                       {externalModelOptions.map((m) => (
                         <option key={m} value={m} style={{ background: '#18181b', color: '#ffffff' }}>{m}</option>
                       ))}
-                    </select>
+                    </select>)}
                   </div>
                 )}
                 {isExternalSelected && providerSelection.provider?.protocol === 'atlas' && (

@@ -30,6 +30,7 @@ import { portraitResourceToNodeData } from './utils/portraitResource';
 import { applyUiFontPreference } from './utils/uiFont';
 import { LocalModalSlot, LocalTopbarSlot } from 'virtual:t8-local-extensions';
 import { DESKTOP_ATLAS_RUNTIME } from './config/atlasOnlyRuntime';
+import { readRememberedAtlasModel } from './components/AtlasModelPicker';
 
 const Canvas = lazy(() => import('./components/Canvas'));
 const ApiSettingsModal = lazy(() => import('./components/ApiSettings'));
@@ -763,7 +764,7 @@ function App() {
   }, [atlasProvider, settingsLoaded]);
 
   const buildSidebarNodeOptions = useCallback((type: NodeType): Parameters<AddNodeFn>[1] | undefined => {
-    if (!atlasProvider || !['image', 'video', 'seedance', 'llm'].includes(type)) return undefined;
+    if (!atlasProvider || !['image', 'video', 'seedance', 'llm', 'audio'].includes(type)) return undefined;
     if (type === 'seedance') {
       return {
         data: {
@@ -777,15 +778,22 @@ function App() {
       ? atlasProvider.imageModels
       : type === 'video'
         ? atlasProvider.videoModels
-        : atlasProvider.chatModels;
+        : type === 'audio'
+          ? atlasProvider.audioModels
+          : atlasProvider.chatModels;
     const defaultModel = type === 'image'
       ? atlasProvider.defaults?.imageModel
       : type === 'video'
         ? atlasProvider.defaults?.videoModel
-        : atlasProvider.defaults?.chatModel;
-    const providerModel = String(defaultModel || models?.[0] || '').trim();
+        : type === 'audio'
+          ? atlasProvider.defaults?.audioModel
+          : atlasProvider.defaults?.chatModel;
+    const recentMode = type === 'image' ? 'image' : type === 'video' ? 'text-to-video' : type === 'audio' ? 'speech' : 'llm';
+    const remembered = readRememberedAtlasModel(recentMode);
+    const providerModel = String(models?.includes(remembered) ? remembered : defaultModel || models?.[0] || '').trim();
     return {
       data: {
+        ...(type === 'audio' ? { audioProviderMode: 'atlas' } : {}),
         providerSource: 'atlas',
         providerId: atlasProvider.id,
         providerModel,

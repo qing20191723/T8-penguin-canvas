@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["model", "audio_url"],
+  "properties": {
+    "model": { "type": "string", "default": "bytedance/seed-asr-2.0" },
+    "audio_url": { "type": "string" },
+    "format": { "type": "string", "default": "mp3", "enum": ["mp3", "wav", "ogg", "raw"] },
+    "language": { "type": "string" },
+    "enable_itn": { "type": "boolean", "default": true },
+    "enable_punc": { "type": "boolean", "default": false },
+    "enable_ddc": { "type": "boolean", "default": false },
+    "enable_speaker_info": { "type": "boolean", "default": false },
+    "show_utterances": { "type": "boolean", "default": false }
+  }
+}

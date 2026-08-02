@@ -100,6 +100,8 @@ test('Render wiring enables Atlas-only runtime, keeps unified external gateway, 
   assert.match(vite, /__T8_ATLAS_ONLY_RUNTIME__/);
   assert.match(server, /app\.use\('\/api\/proxy\/external', externalProvidersRouter\)/);
   assert.match(externalProviders, /router\.use\(providerSubmissionContextMiddleware\)/);
+  assert.match(externalProviders, /router\.post\('\/audio'/);
+  assert.match(externalProviders, /generateAudioWithProvider/);
   assert.doesNotMatch(atlasOnlyCss, /button\[title\*=['"]Grok['"]\]/);
   assert.match(server, /atlas_only_runtime_disabled/);
   assert.match(

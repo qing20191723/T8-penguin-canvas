@@ -4,7 +4,7 @@ const fields = (items: AtlasCapabilityField[]) => items;
 
 export function verifiedAtlasFallbackCapability(
   model: string,
-  kind: 'image' | 'video',
+  kind: 'image' | 'video' | 'audio' | 'text',
 ): AtlasModelCapability | null {
   const common = {
     schema: 't8-atlas-model-capability-v1' as const,
@@ -20,6 +20,32 @@ export function verifiedAtlasFallbackCapability(
         { name: 'aspect_ratio', type: 'string', required: false, enum: ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
         { name: 'resolution', type: 'string', required: false, default: '1k', enum: ['1k', '2k', '4k'] },
         { name: 'output_format', type: 'string', required: false, default: 'default', enum: ['default', 'png', 'jpeg'] },
+      ]),
+    };
+  }
+  if (model === 'bytedance/seed-audio-1.0') {
+    return {
+      ...common,
+      kind: 'audio',
+      fields: fields([
+        { name: 'format', type: 'string', required: false, default: 'mp3', enum: ['mp3', 'wav', 'pcm', 'ogg_opus'] },
+        { name: 'sample_rate', type: 'integer', required: false, default: 24000, enum: [8000, 16000, 24000, 32000, 44100, 48000] },
+        { name: 'pitch_rate', type: 'integer', required: false, default: 0, min: -12, max: 12 },
+        { name: 'speech_rate', type: 'integer', required: false, default: 0, min: -50, max: 100 },
+        { name: 'loudness_rate', type: 'integer', required: false, default: 0, min: -50, max: 100 },
+      ]),
+    };
+  }
+  if (model === 'bytedance/seed-asr-2.0') {
+    return {
+      ...common,
+      kind: 'audio',
+      fields: fields([
+        { name: 'format', type: 'string', required: false, default: 'mp3', enum: ['mp3', 'wav', 'ogg', 'raw'] },
+        { name: 'language', type: 'string', required: false },
+        { name: 'enable_itn', type: 'boolean', required: false, default: true },
+        { name: 'enable_punc', type: 'boolean', required: false, default: false },
+        { name: 'enable_speaker_info', type: 'boolean', required: false, default: false },
       ]),
     };
   }
@@ -70,8 +96,8 @@ export function verifiedAtlasFallbackCapability(
 }
 
 export const ATLAS_NODE_MANAGED_FIELDS = new Set([
-  'model', 'prompt', 'negative_prompt',
+  'model', 'prompt', 'text', 'negative_prompt',
   'image', 'images', 'reference_images', 'end_image',
-  'video', 'videos', 'audio', 'audios', 'reference_voice',
+  'video', 'videos', 'audio', 'audio_url', 'audios', 'references', 'reference_voice',
   'enable_base64_output', 'enable_sync_mode',
 ]);

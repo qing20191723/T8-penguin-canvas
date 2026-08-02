@@ -184,7 +184,22 @@ async function generateVideoWithProvider(provider, input = {}, options = {}) {
   return adapter.generateVideo(provider, normalizeAtlasInput(provider, input, 'video'), options);
 }
 
+async function generateAudioWithProvider(provider, input = {}, options = {}) {
+  const adapter = getAdapterForProtocol(provider?.protocol);
+  if (!adapter?.generateAudio) {
+    return {
+      ok: false,
+      code: 'unsupported_audio_generation',
+      providerId: provider?.id || '',
+      protocol: provider?.protocol || '',
+      error: '该扩展平台暂不支持音频生成或识别。',
+    };
+  }
+  return adapter.generateAudio(provider, input, options);
+}
+
 module.exports = {
+  generateAudioWithProvider,
   generateChatWithProvider,
   generateImageWithProvider,
   generateVideoWithProvider,

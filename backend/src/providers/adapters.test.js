@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  generateAudioWithProvider,
   generateImageWithProvider,
   generateVideoWithProvider,
 } = require('./adapters');
@@ -17,6 +18,12 @@ const provider = {
     videoModel: 'bytedance/seedance-2.0/image-to-video',
     pollIntervalMs: 1000,
   },
+};
+
+const audioProvider = {
+  ...provider,
+  audioModels: ['bytedance/seed-audio-1.0', 'bytedance/seed-asr-2.0'],
+  defaults: { ...provider.defaults, audioModel: 'bytedance/seed-audio-1.0' },
 };
 
 function jsonResponse(payload, status = 200) {
@@ -135,4 +142,62 @@ test('Atlas video adapter normalizes lowercase p-resolution for Seedance family'
   });
 
   assert.equal(result.ok, true);
+});
+
+test('Atlas audio adapter submits Seed Audio exactly once to generateAudio', async () => {
+  let submitCount = 0;
+  const result = await generateAudioWithProvider(audioProvider, {
+    providerModel: 'bytedance/seed-audio-1.0',
+    text: '你好，这是清尘 Atlas 画布。',
+    providerParams: { format: 'mp3', sample_rate: 24000 },
+  }, {
+    modelType: 'Audio',
+    modelSchema: {
+      type: 'object',
+      required: ['model', 'text'],
+      properties: {
+        model: { type: 'string' },
+        text: { type: 'string' },
+        format: { type: 'string', enum: ['mp3', 'wav'] },
+        sample_rate: { type: 'integer', enum: [16000, 24000] },
+      },
+    },
+    fetchImpl: async (url, init = {}) => {
+      submitCount += 1;
+      assert.match(String(url), /\/model\/generateAudio$/);
+      const body = JSON.parse(init.body);
+      assert.equal(body.model, 'bytedance/seed-audio-1.0');
+      assert.equal(body.text, '你好，这是清尘 Atlas 画布。');
+      assert.equal(body.format, 'mp3');
+      return jsonResponse({ code: 200, data: { status: 'completed', outputs: ['https://example.com/voice.mp3'] } });
+    },
+  });
+  assert.equal(submitCount, 1);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.audioUrls, ['https://example.com/voice.mp3']);
+});
+
+test('Atlas ASR returns text without requiring a media download or resubmission', async () => {
+  let submitCount = 0;
+  const result = await generateAudioWithProvider(audioProvider, {
+    providerModel: 'bytedance/seed-asr-2.0',
+    audio: 'https://example.com/speech.mp3',
+  }, {
+    modelType: 'Audio',
+    modelSchema: {
+      type: 'object',
+      required: ['model', 'audio_url'],
+      properties: { model: { type: 'string' }, audio_url: { type: 'string' } },
+    },
+    fetchImpl: async (url, init = {}) => {
+      submitCount += 1;
+      assert.match(String(url), /\/model\/generateAudio$/);
+      assert.equal(JSON.parse(init.body).audio_url, 'https://example.com/speech.mp3');
+      return jsonResponse({ code: 200, data: { status: 'completed', result: '测试转写成功。' } });
+    },
+  });
+  assert.equal(submitCount, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.text, '测试转写成功。');
+  assert.deepEqual(result.audioUrls, []);
 });

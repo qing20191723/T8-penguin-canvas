@@ -139,6 +139,8 @@ export interface AdvancedProviderConfig {
   imageModels?: string[];
   videoModels?: string[];
   chatModels?: string[];
+  audioModels?: string[];
+  atlasCatalog?: AtlasCatalogMetadata;
   defaults?: Record<string, any>;
   modelscopeConfig?: {
     defaultsVersion?: number;
@@ -175,6 +177,29 @@ export interface AdvancedProviderConfig {
     wslDistro?: string;
     pollSeconds?: number;
   };
+}
+
+export interface AtlasCatalogItem {
+  id: string;
+  model: string;
+  name: string;
+  displayName: string;
+  type: 'Image' | 'Video' | 'Audio' | 'Text' | string;
+  provider: string;
+  description?: string;
+  tags?: string[];
+  categories?: string[];
+  schema: string;
+}
+
+export interface AtlasCatalogMetadata {
+  schema: 't8-atlas-model-catalog-v1';
+  version: number;
+  catalogDigest: string;
+  fetchedAt: string;
+  source: 'live' | 'cache' | 'fallback';
+  total: number;
+  items: AtlasCatalogItem[];
 }
 
 export interface AdvancedProviderSummary {

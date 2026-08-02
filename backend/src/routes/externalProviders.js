@@ -7,6 +7,7 @@ const settingsRouter = require('./settings');
 const { maskAdvancedProviders, normalizeAdvancedProviders } = require('../providers/registry');
 const {
   generateChatWithProvider,
+  generateAudioWithProvider,
   generateImageWithProvider,
   generateVideoWithProvider,
   testProviderConnection,
@@ -890,6 +891,68 @@ router.post('/video', async (req, res) => {
     return res.status(500).json({
       success: false,
       code: 'external_video_failed',
+      error: e?.message || String(e),
+    });
+  }
+});
+
+router.post('/audio', async (req, res) => {
+  try {
+    const settings = settingsRouter.loadSettings({ persistMigrations: false });
+    const currentProviders = normalizeAdvancedProviders(settings.advancedProviders);
+    const resolved = resolveRunnableProvider(req.body || {}, currentProviders);
+    if (!resolved.ok) {
+      return res.json({
+        success: false,
+        code: resolved.code,
+        error: resolved.error,
+        data: resolved.provider ? { provider: safeProviderForResponse(resolved.provider) } : undefined,
+      });
+    }
+    const result = await generateAudioWithProvider(resolved.provider, req.body || {}, {
+      timeoutMs: generationTimeoutMs(req.body?.timeoutMs),
+      baseUrl: `http://127.0.0.1:${config.PORT}`,
+    });
+    if (!result.ok) return resultResponse(res, result, resolved.provider);
+    const remoteAudioUrls = Array.isArray(result.audioUrls) ? result.audioUrls : [];
+    const savedAudios = await saveMediaOutputs('audio', remoteAudioUrls, {
+      trustedLocalOrigins: trustedLocalOutputOrigins(resolved.provider),
+    });
+    const audioUrls = savedAudios.urls;
+    const text = typeof result.text === 'string' ? result.text : '';
+    if (!audioUrls.length && !text) {
+      const firstFailure = savedAudios.errors[0];
+      if (firstFailure?.code === 'output_disk_full') res.status(507);
+      return resultResponse(res, {
+        ...result,
+        ok: false,
+        code: firstFailure?.code || 'output_missing',
+        error: firstFailure
+          ? `音频任务已完成，但保存到本地失败：${firstFailure.error}`
+          : 'Atlas 音频任务已完成，但没有返回可识别的音频或文本结果。请保留任务 ID 并检查平台任务详情。',
+      }, resolved.provider, {
+        remoteAudioUrls,
+        audioUrls: [],
+        text,
+        outputSaveErrors: savedAudios.errors,
+      });
+    }
+    return resultResponse(res, result, resolved.provider, {
+      remoteAudioUrls,
+      audioUrls,
+      text,
+      kind: text && !audioUrls.length ? 'text' : 'audio',
+      primaryKind: text && !audioUrls.length ? 'text' : 'audio',
+      outputKinds: [
+        ...(audioUrls.length ? ['audio'] : []),
+        ...(text ? ['text'] : []),
+      ],
+      outputSaveErrors: savedAudios.errors,
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      code: 'external_audio_failed',
       error: e?.message || String(e),
     });
   }
