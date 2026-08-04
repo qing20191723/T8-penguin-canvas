@@ -12,7 +12,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     env:
-      TARGET_SHA: e308781192d8700799cd69eedc1623f9c07a98b1
+      TARGET_SHA: 4b06aec1e9741c3fb530e98c6855f70a893ea094
     steps:
       - name: Report bootstrap workflow run
         env:
