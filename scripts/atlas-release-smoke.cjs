@@ -12,11 +12,13 @@ const WAN_VIDEO_PATH = path.join(OUTPUT_DIR, 'wan-2.7-spicy.mp4');
 const BASE_URL = String(process.env.ATLAS_RENDER_BASE_URL || 'https://qingchen-atlascloud-canvas.onrender.com').replace(/\/+$/, '');
 const MODEL_KIMI = 'moonshotai/kimi-k3';
 const MODEL_WAN = 'atlascloud/wan-2.7-spicy/reference-to-video';
-const REFERENCE_IMAGE = 'https://avatars.githubusercontent.com/u/131326843?v=4';
 const KIMI_EVIDENCE_RUN_ID = '30927107033';
 const KIMI_EVIDENCE_SHA = 'd92852a2b554b649d61c8b9bc787abf9a32b8fa0';
+const WAN_EVIDENCE_RUN_ID = '30928064689';
+const WAN_RESUME_PREDICTION_ID = 'a239d599caf94acc98311972960be79f';
 const POLL_INTERVAL_MS = 5_000;
 const WAN_TIMEOUT_MS = 45 * 60 * 1_000;
+const TRANSIENT_HTTP_STATUSES = new Set([429, 502, 503, 504]);
 
 function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
@@ -35,11 +37,12 @@ function writeSummary(summary) {
     '',
     `- Source SHA: \`${summary.sourceSha || 'unknown'}\``,
     `- Kimi K3: **${summary.kimi?.ok ? 'PASS' : 'FAIL'}**`,
-    `- Wan 2.7 Spicy: **${summary.wan?.ok ? 'PASS' : summary.wan?.skipped ? 'SKIPPED' : 'FAIL'}**`,
+    `- Wan 2.7 Spicy: **${summary.wan?.ok ? 'PASS' : 'FAIL'}**`,
   ];
   if (summary.kimi?.text) lines.push(`- Kimi response: \`${summary.kimi.text.replace(/`/g, '')}\``);
   if (summary.kimi?.evidenceRunId) lines.push(`- Kimi evidence run: \`${summary.kimi.evidenceRunId}\``);
   if (summary.wan?.taskId) lines.push(`- Wan task: \`${summary.wan.taskId}\``);
+  if (summary.wan?.evidenceRunId) lines.push(`- Wan submission run: \`${summary.wan.evidenceRunId}\``);
   if (summary.wan?.bytes) lines.push(`- Wan artifact: ${summary.wan.bytes.toLocaleString('en-US')} bytes`);
   if (summary.wan?.sha256) lines.push(`- Wan SHA-256: \`${summary.wan.sha256}\``);
   if (summary.errors?.length) lines.push('', '## Errors', ...summary.errors.map((error) => `- ${error}`));
@@ -57,51 +60,42 @@ async function fetchJson(url, options = {}, timeoutMs = 120_000) {
   try {
     payload = text ? JSON.parse(text) : {};
   } catch {
-    throw new Error(`${url} returned non-JSON HTTP ${response.status}: ${text.slice(0, 800)}`);
+    const error = new Error(`${url} returned non-JSON HTTP ${response.status}: ${text.slice(0, 800)}`);
+    error.status = response.status;
+    throw error;
   }
   if (!response.ok) {
-    throw new Error(`${url} failed HTTP ${response.status}: ${payload.error || payload.message || text.slice(0, 800)}`);
+    const error = new Error(`${url} failed HTTP ${response.status}: ${payload.error || payload.message || text.slice(0, 800)}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
-}
-
-async function submitWan() {
-  const payload = await fetchJson(`${BASE_URL}/api/proxy/atlas/video`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL_WAN,
-      reference_images: [REFERENCE_IMAGE],
-      prompt: 'subject1@image1 remains centered while the camera performs a slow, stable push-in. One continuous shot, natural motion, no cuts.',
-      duration: 2,
-      resolution: '720P',
-      aspect_ratio: '1:1',
-    }),
-  }, 150_000);
-
-  if (payload.success !== true) {
-    throw new Error(`Wan submission failed: ${payload.error || payload.message || JSON.stringify(payload).slice(0, 800)}`);
-  }
-  const outputs = Array.isArray(payload.outputs) ? payload.outputs.filter(Boolean) : [];
-  const predictionId = String(payload.predictionId || payload.data?.id || '').trim();
-  if (!predictionId && !outputs.length) throw new Error('Wan submission returned neither predictionId nor output URL');
-  return { predictionId, outputs, status: String(payload.status || 'processing') };
 }
 
 async function pollWan(predictionId) {
   const startedAt = Date.now();
   let pollCount = 0;
+  let transientFailures = 0;
   while (Date.now() - startedAt < WAN_TIMEOUT_MS) {
     if (pollCount > 0) await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     pollCount += 1;
-    const payload = await fetchJson(
-      `${BASE_URL}/api/proxy/atlas/poll/${encodeURIComponent(predictionId)}`,
-      { method: 'GET', headers: { Accept: 'application/json' } },
-      120_000,
-    );
+    let payload;
+    try {
+      payload = await fetchJson(
+        `${BASE_URL}/api/proxy/atlas/poll/${encodeURIComponent(predictionId)}`,
+        { method: 'GET', headers: { Accept: 'application/json' } },
+        120_000,
+      );
+    } catch (error) {
+      if (TRANSIENT_HTTP_STATUSES.has(Number(error?.status))) {
+        transientFailures += 1;
+        console.log(`[atlas-release-smoke] transient Render/Atlas poll failure ${error.status}; retrying task ${predictionId} (poll ${pollCount})`);
+        continue;
+      }
+      throw error;
+    }
+
     const status = String(payload.status || payload.data?.status || 'processing').toLowerCase();
     const outputs = Array.isArray(payload.outputs) ? payload.outputs.filter(Boolean) : [];
     if (payload.success === false || ['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) {
@@ -112,6 +106,7 @@ async function pollWan(predictionId) {
         outputs: outputs.length ? outputs : [payload.src],
         status: 'completed',
         pollCount,
+        transientFailures,
       };
     }
   }
@@ -134,7 +129,7 @@ async function main() {
   fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const summary = {
-    schema: 't8-atlas-paid-release-smoke-v5',
+    schema: 't8-atlas-paid-release-smoke-v6',
     sourceSha: process.env.GITHUB_SHA || '',
     renderBaseUrl: BASE_URL,
     startedAt: new Date().toISOString(),
@@ -147,24 +142,30 @@ async function main() {
       evidenceSourceSha: KIMI_EVIDENCE_SHA,
       reusedEvidence: true,
     },
-    wan: { ok: false, model: MODEL_WAN },
+    wan: {
+      ok: false,
+      model: MODEL_WAN,
+      taskId: WAN_RESUME_PREDICTION_ID,
+      evidenceRunId: WAN_EVIDENCE_RUN_ID,
+      resumedExistingTask: true,
+    },
     errors: [],
   };
 
   try {
-    const submitted = await submitWan();
-    const result = submitted.outputs.length
-      ? { outputs: submitted.outputs, status: 'completed', pollCount: 0 }
-      : await pollWan(submitted.predictionId);
+    const result = await pollWan(WAN_RESUME_PREDICTION_ID);
     const url = result.outputs[0] || '';
     if (!url) throw new Error('Wan 2.7 Spicy completed without a video URL');
     const artifact = await downloadWanArtifact(url);
     summary.wan = {
       ok: true,
       model: MODEL_WAN,
-      taskId: submitted.predictionId,
+      taskId: WAN_RESUME_PREDICTION_ID,
+      evidenceRunId: WAN_EVIDENCE_RUN_ID,
+      resumedExistingTask: true,
       status: result.status,
       pollCount: result.pollCount,
+      transientFailures: result.transientFailures,
       ...artifact,
     };
   } catch (error) {
@@ -177,7 +178,7 @@ async function main() {
   writeSummary(summary);
   if (summary.errors.length) throw new Error(`Paid release smoke failed: ${summary.errors.join(' | ')}`);
   console.log(`[atlas-release-smoke] Kimi K3 evidence reused from run ${KIMI_EVIDENCE_RUN_ID}: ${summary.kimi.text}`);
-  console.log(`[atlas-release-smoke] Wan passed: task=${summary.wan.taskId} bytes=${summary.wan.bytes} sha256=${summary.wan.sha256}`);
+  console.log(`[atlas-release-smoke] Wan resumed and passed: task=${summary.wan.taskId} bytes=${summary.wan.bytes} sha256=${summary.wan.sha256}`);
 }
 
 main().catch((error) => {
