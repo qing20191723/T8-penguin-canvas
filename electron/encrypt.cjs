@@ -24,6 +24,7 @@ const path = require('path');
 const crypto = require('crypto');
 const bytenode = require('bytenode');
 const { encryptBuffer } = require('./loader.cjs');
+const { shouldExcludeDesktopAtlasBackendFile } = require('./desktopAtlasBackendProfile.cjs');
 
 const BACKEND_SRC = path.resolve(__dirname, '..', 'backend', 'src');
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -166,7 +167,9 @@ function encryptFile(srcAbs, sourceRoot = BACKEND_SRC, outRoot = OUT_DIR) {
 
 function isExcludedBackendFile(srcAbs) {
   const rel = path.relative(BACKEND_SRC, srcAbs).replace(/\\/g, '/');
-  return EXCLUDED_BACKEND_FILES.has(rel);
+  if (EXCLUDED_BACKEND_FILES.has(rel)) return true;
+  return process.env.T8_DESKTOP_ATLAS_RUNTIME === '1'
+    && shouldExcludeDesktopAtlasBackendFile(rel);
 }
 
 function sha256File(filename) {
@@ -298,6 +301,7 @@ module.exports = {
   CANVAS_AGENT_INTEGRITY_MANIFEST,
   main,
   encryptFile,
+  isExcludedBackendFile,
   rewriteRequires,
   writeCanvasAgentIntegrityManifest,
   readExpectedElectronVersion,
