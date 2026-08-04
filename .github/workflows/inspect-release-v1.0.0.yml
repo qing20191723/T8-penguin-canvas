@@ -1,23 +1,32 @@
-name: Inspect v1.0.0 release
+name: Inspect desktop RH maker bundle imports
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    env:
-      RELEASE_SHA: 2ed132e436c263f3b60f34786f2dc36b3d5c2106
     steps:
-      - name: Report formal release run
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checkout current main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Trace RH toolbox maker definitions and imports
+        shell: bash
         run: |
           set -euo pipefail
-          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=30" \
-            --jq ".workflow_runs[] | select(.head_sha == \"${RELEASE_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
+          echo '=== exact forbidden markers ==='
+          rg -n --hidden --glob '!node_modules/**' --glob '!dist/**' --glob '!dist_electron/**' \
+            'RHToolboxMakerNode|RH工具箱制作器|rh-toolbox-maker' . || true
+          echo '=== broader maker identifiers ==='
+          rg -n --hidden --glob '!node_modules/**' --glob '!dist/**' --glob '!dist_electron/**' \
+            'rhToolboxMaker|RhToolboxMaker|RH_TOOLBOX_MAKER|toolboxMaker' src vite.config.ts electron tests scripts || true
+          echo '=== desktop build constants and aliases ==='
+          rg -n --hidden --glob '!node_modules/**' \
+            'VITE_T8_DESKTOP_ATLAS_RUNTIME|T8_DESKTOP_ATLAS_RUNTIME|resolve.alias|alias:' vite.config.ts src electron || true
