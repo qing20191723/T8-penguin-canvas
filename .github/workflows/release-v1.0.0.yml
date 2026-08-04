@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/release-v1.0.0.yml'
+      - 'package.json'
       - 'scripts/atlas-release-smoke.cjs'
       - 'release-notes/v1.0.0.md'
 
