@@ -21,6 +21,9 @@ jobs:
     if: github.repository == 'qing20191723/T8-penguin-canvas'
     runs-on: windows-latest
     timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: T8-penguin-canvas-release-v1.0.0
     env:
       CI: 'true'
       GH_TOKEN: ${{ github.token }}
@@ -31,16 +34,33 @@ jobs:
       T8_RELEASE_TAG: v1.0.0
 
     steps:
-      - name: Checkout fixed main SHA
+      - name: Checkout fixed main SHA into release worktree
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+          path: T8-penguin-canvas-release-v1.0.0
+
+      - name: Detach and verify fixed release commit
+        shell: pwsh
+        run: |
+          git checkout --detach $env:T8_RELEASE_TARGET
+          $head = (git rev-parse HEAD).Trim().ToLowerInvariant()
+          $branch = (git branch --show-current).Trim()
+          if ($head -ne $env:T8_RELEASE_TARGET.ToLowerInvariant()) {
+            throw "Release checkout mismatch: expected $env:T8_RELEASE_TARGET, got $head"
+          }
+          if ($branch) {
+            throw "Formal release checkout must be detached, but branch is $branch"
+          }
+          node scripts/worktree-role.cjs release
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: T8-penguin-canvas-release-v1.0.0/package-lock.json
 
       - name: Preflight Render and Atlas connection without generation
         shell: pwsh
@@ -79,7 +99,7 @@ jobs:
           npm run type-check
           npm run feature-sync:check
 
-      - name: Run paid Kimi test, then Wan only if Kimi passes
+      - name: Verify previously completed Kimi and Wan evidence
         run: node scripts/atlas-release-smoke.cjs
 
       - name: Preserve paid smoke evidence
@@ -87,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: atlas-paid-smoke-v1.0.0-${{ github.sha }}
-          path: artifacts/atlas-paid-smoke
+          path: ${{ github.workspace }}/T8-penguin-canvas-release-v1.0.0/artifacts/atlas-paid-smoke
           if-no-files-found: warn
           retention-days: 30
 
