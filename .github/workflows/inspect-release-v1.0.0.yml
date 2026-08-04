@@ -1,32 +1,182 @@
-name: Inspect desktop collaboration dependencies
+name: Apply desktop remote collaboration pruning
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  patch:
     runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: agent/prune-remote-collaboration-from-desktop
     steps:
-      - name: Checkout current main
+      - name: Checkout product fix branch
         uses: actions/checkout@v6
         with:
-          ref: main
-          fetch-depth: 1
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
 
-      - name: Trace non-collaboration dependencies
+      - name: Apply audited desktop backend profile patch
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== non-collaboration files referencing collaboration modules ==='
-          find backend/src -type f \( -name '*.js' -o -name '*.cjs' \) ! -path 'backend/src/collaboration/*' -print0 \
-            | xargs -0 grep -nHE "require\(['\"][^'\"]*collaboration|from ['\"][^'\"]*collaboration|routes/collaboration|collaboration/" || true
-          echo '=== collaboration protocol exports ==='
-          sed -n '1,240p' backend/src/collaboration/protocol.js
-          echo '=== desktop/runtime collaboration route registration in server ==='
-          grep -nE 'collaboration|DEFAULT_PROJECT_ID|ATLAS_LIGHTWEIGHT_RUNTIME' backend/src/server.js || true
-          echo '=== package and encryption filters ==='
-          grep -nE 'EXCLUDED_BACKEND|T8_DESKTOP_ATLAS_RUNTIME|collaboration' electron/encrypt.cjs package.json scripts/dist-release.cjs scripts/verify-desktop-atlas-install.cjs || true
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(pathname, before, after):
+              path = Path(pathname)
+              text = path.read_text(encoding='utf-8')
+              if before not in text:
+                  raise SystemExit(f'{pathname}: patch marker not found: {before!r}')
+              path.write_text(text.replace(before, after, 1), encoding='utf-8')
+
+          profile = Path('electron/desktopAtlasBackendProfile.cjs')
+          profile.write_text("""'use strict';
+
+const DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES = Object.freeze([
+  'routes/collaboration.js',
+  'collaboration/abuseLimits.js',
+  'collaboration/auth.js',
+  'collaboration/gateway.js',
+  'collaboration/hostManagement.js',
+  'collaboration/publicExposure.js',
+  'collaboration/publicExposureStore.js',
+  'collaboration/textCrdt.js',
+]);
+
+function normalizeBackendRelativePath(value) {
+  return String(value || '').replace(/\\\\/g, '/').replace(/^\\/+/, '');
+}
+
+function shouldExcludeDesktopAtlasBackendFile(relativePath) {
+  return DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES.includes(normalizeBackendRelativePath(relativePath));
+}
+
+function packagedBackendPath(relativePath) {
+  return `resources/backend-enc/${normalizeBackendRelativePath(relativePath).replace(/\\.(?:js|cjs)$/, '.t8c')}`;
+}
+
+module.exports = {
+  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES,
+  normalizeBackendRelativePath,
+  packagedBackendPath,
+  shouldExcludeDesktopAtlasBackendFile,
+};
+""", encoding='utf-8')
+
+          replace_once(
+              'electron/encrypt.cjs',
+              "const { encryptBuffer } = require('./loader.cjs');\n",
+              "const { encryptBuffer } = require('./loader.cjs');\nconst { shouldExcludeDesktopAtlasBackendFile } = require('./desktopAtlasBackendProfile.cjs');\n",
+          )
+          replace_once(
+              'electron/encrypt.cjs',
+              "function isExcludedBackendFile(srcAbs) {\n  const rel = path.relative(BACKEND_SRC, srcAbs).replace(/\\\\/g, '/');\n  return EXCLUDED_BACKEND_FILES.has(rel);\n}\n",
+              "function isExcludedBackendFile(srcAbs) {\n  const rel = path.relative(BACKEND_SRC, srcAbs).replace(/\\\\/g, '/');\n  if (EXCLUDED_BACKEND_FILES.has(rel)) return true;\n  return process.env.T8_DESKTOP_ATLAS_RUNTIME === '1'\n    && shouldExcludeDesktopAtlasBackendFile(rel);\n}\n",
+          )
+          replace_once(
+              'electron/encrypt.cjs',
+              "  encryptFile,\n  rewriteRequires,\n",
+              "  encryptFile,\n  isExcludedBackendFile,\n  rewriteRequires,\n",
+          )
+
+          replace_once(
+              'scripts/verify-desktop-atlas-install.cjs',
+              "const path = require('node:path');\n",
+              "const path = require('node:path');\nconst {\n  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES,\n  packagedBackendPath,\n} = require('../electron/desktopAtlasBackendProfile.cjs');\n",
+          )
+          replace_once(
+              'scripts/verify-desktop-atlas-install.cjs',
+              "  '/photoshop-bridge/', '/collaboration/', '/runninghub/', '/vibex/', '/feishu/', '/comfyui/',\n",
+              "  '/photoshop-bridge/', '/runninghub/', '/vibex/', '/feishu/', '/comfyui/',\n",
+          )
+          replace_once(
+              'scripts/verify-desktop-atlas-install.cjs',
+              "];\n\nfunction normalize(value) {\n",
+              "];\n\nconst FORBIDDEN_INSTALLED_FILES = new Set(\n  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES.map((relative) => `/${packagedBackendPath(relative).toLowerCase()}/`),\n);\n\nfunction normalize(value) {\n",
+          )
+          replace_once(
+              'scripts/verify-desktop-atlas-install.cjs',
+              "    const relative = normalize(path.relative(appDir, filename));\n    for (const marker of FORBIDDEN_PATH_MARKERS) {\n",
+              "    const relative = normalize(path.relative(appDir, filename));\n    if (FORBIDDEN_INSTALLED_FILES.has(relative)) {\n      errors.push(`disabled remote collaboration resource found in install tree: ${relative}`);\n    }\n    for (const marker of FORBIDDEN_PATH_MARKERS) {\n",
+          )
+          replace_once(
+              'scripts/verify-desktop-atlas-install.cjs',
+              "module.exports = { FORBIDDEN_PATH_MARKERS, validateInstallTree, walkFiles };\n",
+              "module.exports = { FORBIDDEN_INSTALLED_FILES, FORBIDDEN_PATH_MARKERS, validateInstallTree, walkFiles };\n",
+          )
+
+          replace_once(
+              'tests/desktopAtlasPackaging.test.cjs',
+              "const { validateInstallTree } = require('../scripts/verify-desktop-atlas-install.cjs');\n",
+              "const { validateInstallTree } = require('../scripts/verify-desktop-atlas-install.cjs');\nconst {\n  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES,\n  packagedBackendPath,\n  shouldExcludeDesktopAtlasBackendFile,\n} = require('../electron/desktopAtlasBackendProfile.cjs');\n",
+          )
+          replace_once(
+              'tests/desktopAtlasPackaging.test.cjs',
+              "    write('resources/backend-enc/server.t8c');\n    write('resources/frontend/index.html');\n",
+              "    write('resources/backend-enc/server.t8c');\n    write('resources/backend-enc/collaboration/protocol.t8c');\n    write('resources/backend-enc/collaboration/gatewaySecurity.t8c');\n    write('resources/frontend/index.html');\n",
+          )
+          replace_once(
+              'tests/desktopAtlasPackaging.test.cjs',
+              "    assert.deepEqual(validateInstallTree(root).errors, []);\n    write('resources/tools/parsehub-bridge/server.js');\n",
+              "    assert.deepEqual(validateInstallTree(root).errors, []);\n    write('resources/backend-enc/collaboration/gateway.t8c');\n    write('resources/tools/parsehub-bridge/server.js');\n",
+          )
+          replace_once(
+              'tests/desktopAtlasPackaging.test.cjs',
+              "    assert.equal(errors.some((entry) => entry.includes('disabled resource')), true);\n",
+              "    assert.equal(errors.some((entry) => entry.includes('disabled remote collaboration resource')), true);\n    assert.equal(errors.some((entry) => entry.includes('disabled resource')), true);\n",
+          )
+          test_path = Path('tests/desktopAtlasPackaging.test.cjs')
+          tests = test_path.read_text(encoding='utf-8')
+          if "desktop backend profile excludes only remote collaboration transport modules" not in tests:
+              tests += """
+
+test('desktop backend profile excludes only remote collaboration transport modules', () => {
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/gateway.js'), true);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('routes/collaboration.js'), true);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/protocol.js'), false);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/gatewaySecurity.js'), false);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/executionPolicy.js'), false);
+  assert.equal(DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES.length, 8);
+  assert.equal(packagedBackendPath('collaboration/gateway.js'), 'resources/backend-enc/collaboration/gateway.t8c');
+});
+"""
+          test_path.write_text(tests, encoding='utf-8')
+
+          handoff_path = Path('HANDOFF.md')
+          handoff = handoff_path.read_text(encoding='utf-8')
+          start = handoff.index('## 0. 最新实时状态')
+          end = handoff.index('\n## 1. 新会话读取规则', start)
+          live = """## 0. 最新实时状态（2026-08-05）
+
+- 当前 `main` SHA：`21a2508101f770f305904b48f6a130f47d31992c`。
+- RH/FAL Maker 生产 bundle 残留已经通过 PR #68 修复，相关 CI 与内容级扫描均通过。
+- 最新正式 Release run：`30939414022`。
+- 该运行已通过 LFS、固定 SHA、detached HEAD、Atlas 无付费预检、Kimi/Wan 证据复用、NSIS 生成、FFmpeg/FFprobe 能力检查以及 RH/FAL post-build 安全检查。
+- 当前新阻塞：`verify-desktop-atlas-install.cjs` 使用整个 `/collaboration/` 目录禁用规则，误拦截本地项目数据库必须使用的共享协议模块。
+- 依赖扫描 Run `30940122387` 已确认：`projectDatabase`、`assetIndexer`、`canvasPatch`、`projectRuns` 等本地核心代码依赖 `protocol`、`commonOperation*`、`reviewLifecycle`、`runIntentAuthority`、`gatewaySecurity`、`executionPolicy`。
+- 远程协作路由与 gateway 在桌面模式已由运行时分支禁用；当前修复分支 `agent/prune-remote-collaboration-from-desktop` 将只裁掉远程 transport/邀请/鉴权/公开暴露模块，并保留本地域模型所需模块。
+- 修复策略：新增统一桌面后端 profile；加密阶段不生成 8 个远程协作文件；安装树门禁精确拒绝这些文件，不再粗暴拒绝整个共享目录；新增回归测试。
+- 下一步：完成 PR CI、合并、启动新正式 Release run，并继续到 Release 上传与回下载 SHA-256 校验。
+- **禁止重复调用 Kimi/Wan 付费验收；后续只复用既有证据。**
+"""
+          handoff = handoff[:start] + live + handoff[end:]
+          handoff_path.write_text(handoff, encoding='utf-8')
+          PY
+
+          git diff --check
+          git diff --stat
+          git diff -- electron/desktopAtlasBackendProfile.cjs electron/encrypt.cjs scripts/verify-desktop-atlas-install.cjs tests/desktopAtlasPackaging.test.cjs HANDOFF.md
+
+      - name: Commit product fix branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add electron/desktopAtlasBackendProfile.cjs electron/encrypt.cjs scripts/verify-desktop-atlas-install.cjs tests/desktopAtlasPackaging.test.cjs HANDOFF.md
+          git commit -m 'fix: prune remote collaboration modules from desktop package'
+          git push origin HEAD:${TARGET_BRANCH}
