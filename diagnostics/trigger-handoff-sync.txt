@@ -1,1 +1,1 @@
-trigger handoff sync for agent/release-trigger-and-handoff-sync
+trigger desktop remote collaboration pruning for agent/prune-remote-collaboration-from-desktop
