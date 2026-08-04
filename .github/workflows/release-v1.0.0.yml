@@ -8,6 +8,8 @@ on:
       - '.github/workflows/release-v1.0.0.yml'
       - 'package.json'
       - 'electron/_post_build.cjs'
+      - 'electron/encrypt.cjs'
+      - 'electron/desktopAtlasBackendProfile.cjs'
       - 'scripts/dist-release.cjs'
       - 'scripts/verify-desktop-atlas-package.cjs'
       - 'scripts/verify-desktop-atlas-install.cjs'
