@@ -98,7 +98,7 @@ jobs:
             checkUpdateArtifacts();
 
             if (missingCount > 0) {
-              console.error(`\n[post-build] FAILED: ${missingCount} desktop Atlas files are missing`);
+              console.error('\n[post-build] FAILED: ' + missingCount + ' desktop Atlas files are missing');
               process.exit(1);
             }
             console.log('\n[post-build] DESKTOP ATLAS DONE ✅');
