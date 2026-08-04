@@ -2,6 +2,26 @@
 
 > 本文件是新会话、Codex、其他智能体或人工维护者接手本仓库时的**第一读取入口**。任何关键修复、发布结果、阻塞点或验证证据发生变化后，都必须同步更新本文件。
 
+## 0. 最新实时状态（2026-08-05）
+
+- 交接文档已通过 PR #67 重构并合并到 `main`。
+- RH/FAL 开发制作器生产 bundle 残留已通过 PR #68 修复并合并。
+- 当前已确认的 `main` SHA：`0bd0f099877dcfe8ce791fc91209a532aac59684`。
+- PR #68 `Verify build`：Run `30938093852`，全部通过。
+- PR #68 `Verify production startup`：Run `30938095879`，通过。
+- `build:desktop-atlas` 后的内容级扫描已确认下列开发标记均未进入桌面 bundle：
+  - `RHToolboxMakerNode`
+  - `RH工具箱制作器`
+  - `rh-toolbox-maker`
+  - `FalToolboxMakerNode`
+  - `FAL应用制作工具`
+  - `fal-toolbox-maker`
+- 当前活动分支：`agent/release-trigger-and-handoff-sync`。
+- 当前活动工作：扩展正式 release workflow 的路径触发范围，并同步交接状态。
+- 该分支合并后应自动触发新的 Windows 正式 Release run。
+- 下一步：锁定新的正式 Release run，复用已有 Kimi/Wan 证据，完成 NSIS、GitHub Release 上传、回下载和 SHA-256 校验。
+- **仍然禁止重复调用 Kimi/Wan 付费验收。**
+
 ## 1. 新会话读取规则
 
 新会话开始后，严格按以下顺序接手，不要先猜测，也不要重复执行昂贵操作：
@@ -11,7 +31,7 @@
 3. 检查所有未关闭 PR、最近失败的 GitHub Actions，以及 `.github/workflows/release-v1.0.0.yml`。
 4. 只在确认当前阻塞点后继续修改；不要重新推翻已经通过的修复。
 5. **禁止重复提交已完成的 Kimi/Wan 付费验收。** 优先复用下面记录的证据、任务 ID 和 Actions artifact。
-6. 每完成一个关键阶段，立即更新本文件中的“当前状态”“已完成”“待完成”“最新验证证据”和“下一步”。
+6. 每完成一个关键阶段，立即更新本文件中的“最新实时状态”“已完成”“待完成”“最新验证证据”和“下一步”。
 7. 最终发布成功后，将 Release URL、安装包名称、大小、SHA-256、Tag、目标 commit 和回下载校验结果写入本文件。
 
 新会话可直接向智能体发送：
@@ -106,15 +126,17 @@ npm install --include=dev \
 
 已解决 Render 上 `better-sqlite3` Electron ABI 与 Node.js 22 ABI 冲突：Web 构建后必须重新执行 `npm rebuild better-sqlite3`。
 
-## 6. 当前基线
+## 6. 当前基线与关键历史定位
 
-- 本文件首次重写前的 `main` SHA：`2ed132e436c263f3b60f34786f2dc36b3d5c2106`
-- 最近正式发布运行：GitHub Actions Run `30933706609`
-- 最近正式发布结果：失败于 post-build 安全检查，安装器本体已经成功生成
-- 最近只读诊断 PR：`#49`，已经关闭且不得合并
-- 最近完成的产品修复 PR：`#65`，已合并
+- 交接文档重构前基线：`2ed132e436c263f3b60f34786f2dc36b3d5c2106`
+- RH/FAL bundle 修复合并后基线：`0bd0f099877dcfe8ce791fc91209a532aac59684`
+- 最近失败的正式发布运行：GitHub Actions Run `30933706609`
+- 最近失败的正式发布结果：安装器已生成，但当时被 RH Maker bundle 安全检查拦截
+- 最近完成的产品修复 PR：`#68`
+- 最近交接文档 PR：`#67`
+- 临时诊断 PR：`#49`，不得合并
 
-新会话必须重新读取最新 `main` SHA；本节 SHA 只作为历史定位点。
+新会话必须重新读取最新 `main` SHA；本节 SHA 用于历史定位，不得盲目假设仍是最新。
 
 ## 7. 已完成工作
 
@@ -154,12 +176,12 @@ Wan 2.7 Spicy：
 - 正式 checkout 已启用 `lfs: true`。
 - Git LFS 中真实 FFmpeg/FFprobe 已在 Actions 中成功下载。
 - `better-sqlite3` Electron x64 rebuild 已通过。
-- electron-builder 已成功生成：
+- electron-builder 已成功生成过：
 
 ```text
- dist_electron/Qingchen-AtlasCanvas-Setup-1.0.0.exe
- dist_electron/Qingchen-AtlasCanvas-Setup-1.0.0.exe.blockmap
- latest.yml
+dist_electron/Qingchen-AtlasCanvas-Setup-1.0.0.exe
+dist_electron/Qingchen-AtlasCanvas-Setup-1.0.0.exe.blockmap
+latest.yml
 ```
 
 - 打包后的真实 FFmpeg 已通过：
@@ -171,96 +193,79 @@ Wan 2.7 Spicy：
 - 桌面 Atlas 加密后端、前端、shared 清单、`better_sqlite3.node` 均通过 post-build 文件检查。
 - 桌面 Atlas 专用 post-build profile 与安装树禁用资源扫描已经接入。
 
-### 7.4 已通过的测试
+### 7.4 RH/FAL 开发制作器 bundle 泄漏已修复
 
-最近正式运行已通过：
+根因：多处使用 `import.meta.env?.DEV`，Vite 无法稳定完成编译期替换和死代码消除，导致开发节点名称、中文标签、节点类型和默认数据进入生产主 bundle。
 
-- Atlas adapter/schema/registry：25 项
-- 桌面 Atlas 打包策略：3 项
-- Electron updater：4 项
-- TypeScript `tsc --noEmit`
-- Creative capability artifact 同步检查
-- Render/Atlas 无付费预检
-- Kimi/Wan 已完成证据复用
+已修复位置：
 
-## 8. 当前唯一明确阻塞点
-
-正式运行 `30933706609` 在 `Build, seal and publish Windows release` 的 post-build 阶段失败：
-
-```text
-SECURITY RH toolbox maker frontend code leaked into packaged assets:
-resources/frontend/assets/index-DDbtuV5v.js
-```
-
-注意：
-
-- NSIS 安装器已经生成成功。
-- FFmpeg、FFprobe 和原生依赖已经通过。
-- 当前不是 Atlas、Render、Kimi、Wan、LFS、Electron 入口或 NSIS 本体问题。
-- 当前必须真正从桌面生产 bundle 中移除 RH Toolbox Maker 开发代码，不能放宽安全扫描。
-
-诊断扫描确认以下开发态标记仍进入源码构建图：
-
-- `RHToolboxMakerNode`
-- `RH工具箱制作器`
-- `rh-toolbox-maker`
-
-主要位置：
-
-- `src/config/nodeRegistry.ts`
 - `src/components/Canvas.tsx`
+- `src/config/nodeRegistry.ts`
 - `src/config/portTypes.ts`
 - `src/utils/nodePlacement.ts`
 - `src/config/atlasOnlyRuntime.ts`
-- `src/types/canvas.ts`（仅类型声明是否会进入 bundle需单独判断）
 
-根因判断：多处使用 `import.meta.env?.DEV`。Vite 生产构建最可靠的静态替换与死代码消除目标是 `import.meta.env.DEV`；可选链形式使部分字符串和注册对象保留在主 bundle。
+修复内容：
 
-已确认的示例：
+- Maker 相关 DEV guard 改为 `import.meta.env.DEV`
+- Maker 类型只在 DEV 模式加入隐藏集合
+- `scripts/verify-desktop-atlas-package.cjs --frontend` 增加 bundle 内容级扫描
+- `tests/desktopAtlasPackaging.test.cjs` 增加：
+  - dev-only marker 拒绝测试
+  - 禁止回退为 `import.meta.env?.DEV` 的回归测试
 
-```ts
-const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_LIGHTWEIGHT_RUNTIME
-  ? [
-      { type: 'rh-toolbox-maker', label: 'RH工具箱制作器', ... },
-      { type: 'fal-toolbox-maker', ... },
-    ]
-  : [];
-```
+验证结果：
 
-以及 `Canvas.tsx` 中的开发节点模块常量、lazy import、nodeTypes 注册和默认节点数据。
+- PR #68 `Verify build` Run `30938093852`：全部通过
+- PR #68 `Verify production startup` Run `30938095879`：通过
+- 普通 Vite 生产构建：通过
+- 桌面 Atlas Vite 生产构建：通过
+- 六个 RH/FAL Maker 禁用标记内容扫描：通过
 
-## 9. 接下来需要完成的工作
+### 7.5 已通过的主要测试
 
-按优先顺序执行：
+- Atlas adapter/schema/registry
+- Atlas searchable model selector
+- 桌面 Atlas runtime 与安全存储
+- 桌面 Atlas packaging 与 updater policy
+- Web credential boundary
+- memory diagnostics
+- generated feature artifacts
+- TypeScript `tsc --noEmit`
+- 普通 Vite production build
+- desktop Atlas production build
+- Render 风格生产启动
+- Kimi/Wan 已完成证据复用
 
-1. 在独立修复分支中，将 RH/FAL Maker 的开发态门禁改为可被 Vite 静态消除的形式。
-2. 不只替换一个表达式；必须审查所有含 Maker 字符串、注册、默认值、端口、尺寸和隐藏列表的路径。
-3. 保持开发环境中 Maker 功能可用；只从生产和桌面 Atlas bundle 中删除。
-4. 增加或更新回归测试，至少验证：
-   - 开发源码仍存在 Maker 能力；
-   - `build:desktop-atlas` 的输出中不存在三个禁用标记；
-   - 普通生产构建策略没有意外破坏其他节点。
-5. 运行 PR CI：
-   - Atlas adapter/schema tests
-   - desktop packaging tests
-   - Electron updater tests
-   - type-check
-   - Vite production build
-   - desktop Atlas production build
-   - 前端密钥扫描
-6. 合并修复后，确认自动触发正式 `Release v1.0.0` workflow。
-7. 正式 release 中核对：
-   - post-build 安全检查通过；
-   - installed-tree 检查通过；
-   - installer 小于 500 MiB；
-   - 生成 `.sha256`；
-   - 创建/更新 GitHub Release `v1.0.0`；
-   - 上传 exe、blockmap、latest.yml、sha256；
-   - 回下载并校验 SHA-256；
-   - updater 元数据指向正确安装包。
-8. 发布成功后更新本文件并记录最终 Release URL 和文件信息。
+## 8. 当前待完成工作
 
-## 10. 发布脚本与安全约束
+当前代码级 RH/FAL bundle 阻塞已经解决。剩余工作集中在正式发布：
+
+1. 合并 `agent/release-trigger-and-handoff-sync`。
+2. 确认 `.github/workflows/release-v1.0.0.yml` 自动触发新的 push 型正式运行。
+3. 锁定该运行的 Run ID 和目标 SHA。
+4. 确认正式发布复用 Kimi/Wan 证据，不重新付费。
+5. 完成正式 Windows 构建：
+   - LFS checkout
+   - detached HEAD 与固定 SHA
+   - native rebuild
+   - electron-builder NSIS
+   - post-build 文件检查
+   - RH/FAL bundle 内容扫描
+   - installed-tree 禁用资源扫描
+   - 500 MiB 上限
+   - 密钥扫描
+6. 创建或更新 Tag/Release：`v1.0.0`。
+7. 上传：
+   - `Qingchen-AtlasCanvas-Setup-1.0.0.exe`
+   - `.exe.blockmap`
+   - `latest.yml`
+   - `.exe.sha256`
+8. 从 GitHub Release 回下载安装包并验证 SHA-256。
+9. 检查 updater 元数据与目标 commit。
+10. 将最终 Release URL、文件大小、SHA-256、Tag、commit、回下载结果写回本文件。
+
+## 9. 发布脚本与安全约束
 
 重点文件：
 
@@ -288,7 +293,7 @@ const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_LIGHTWEIGHT
 
 不得为了“让 CI 变绿”而删除或放宽这些门禁。应修复真实打包内容或发布逻辑。
 
-## 11. 已知发布行为
+## 10. 已知发布行为
 
 在非 Tag push 上，electron-builder 会生成本地安装器，但可能提示：
 
@@ -296,36 +301,22 @@ const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_LIGHTWEIGHT
 release doesn't exist and not created because publish is not always and build is not on tag
 ```
 
-`dist-release.cjs` 后续应负责创建或补齐正式 Release/Tag/资产。不要把该提示误判为当前主要失败；最近一次运行实际先被 RH Maker 安全检查阻止。
+`dist-release.cjs` 后续应负责创建或补齐正式 Release/Tag/资产。不要把该提示误判为主要失败；必须继续看 post-build、release 创建和回下载阶段的最终日志。
 
-## 12. 分支、PR 与临时诊断规则
+## 11. 分支、PR 与临时诊断规则
 
 - 产品修改必须走独立分支和 PR，审查 diff 后再合并。
-- 临时只读诊断 workflow/PR 不得合并进 `main`，用完立即关闭。
+- 临时只读或补丁诊断 workflow/PR 不得合并进 `main`，用完立即关闭。
 - 不要创建会重复触发付费 smoke 的额外发布任务。
 - 正式 workflow 同一 SHA 只保留一条运行；若仅重试确定的非付费失败任务，应优先 rerun failed job。
 - Actions Token 对 `.github/workflows/*` 的写入可能受限；必要时由 GitHub 连接器单独提交 workflow 变更。
 
-## 13. 当前工作约定
-
-从现在起，每个关键阶段都要同步本文件：
-
-- 文档建立完成
-- RH Maker 修复分支建立
-- PR 创建
-- CI 结果
-- PR 合并和新 main SHA
-- 正式 Release run ID
-- 发布成功或新阻塞点
-
-更新时不得删除历史付费证据和禁止重复付费规则。
-
-## 14. 当前下一步
+## 12. 当前下一步
 
 立即执行：
 
-1. 建立 RH Maker tree-shaking 修复分支。
-2. 完整读取并修改 `nodeRegistry.ts`、`Canvas.tsx`、`portTypes.ts`、`nodePlacement.ts`、`atlasOnlyRuntime.ts` 相关上下文。
-3. 将生产 bundle 残留检查加入可重复测试。
-4. 构建、测试、PR、合并。
-5. 重跑正式发布，并将结果更新到本文件。
+1. 审查并合并 `agent/release-trigger-and-handoff-sync`。
+2. 获取新正式 Release run ID。
+3. 跟踪到 NSIS、Release 上传和回下载校验全部完成。
+4. 若失败，读取最新 job 日志，仅修复新的真实阻塞，不回退已通过修复。
+5. 更新本文件的“最新实时状态”和最终发布信息。
