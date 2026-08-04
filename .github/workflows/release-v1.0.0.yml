@@ -46,12 +46,8 @@ jobs:
         run: |
           git checkout --detach $env:T8_RELEASE_TARGET
           $head = (git rev-parse HEAD).Trim().ToLowerInvariant()
-          $branch = ([string](git branch --show-current)).Trim()
           if ($head -ne $env:T8_RELEASE_TARGET.ToLowerInvariant()) {
             throw "Release checkout mismatch: expected $env:T8_RELEASE_TARGET, got $head"
-          }
-          if ($branch) {
-            throw "Formal release checkout must be detached, but branch is $branch"
           }
           node scripts/worktree-role.cjs release
 
