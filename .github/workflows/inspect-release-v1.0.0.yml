@@ -1,31 +1,23 @@
-name: Inspect v1.0.0 release
+name: Inspect bootstrap patch
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  actions: write
+  actions: read
   contents: read
 
 jobs:
-  dispatch:
+  inspect:
     runs-on: ubuntu-latest
     env:
-      RELEASE_SHA: f745ae80961f876fed4fcefc0430bcde0b2d90a9
+      TARGET_SHA: b1209a9d803b070ad943cf8c0a71d63eba8d31fa
     steps:
-      - name: Dispatch only when fixed SHA has no release run
+      - name: Report bootstrap workflow run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          existing=$(gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=30" --jq ".workflow_runs[] | select(.head_sha == \"${RELEASE_SHA}\") | .id" | head -n 1)
-          if [ -z "$existing" ]; then
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/dispatches" -f ref=main
-            echo "Dispatched formal release for ${RELEASE_SHA}."
-          else
-            echo "Formal release already exists: ${existing}. No duplicate dispatch."
-          fi
-          sleep 10
-          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=30" \
-            --jq ".workflow_runs[] | select(.head_sha == \"${RELEASE_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/bootstrap-desktop-postbuild-patch.yml/runs?branch=main&per_page=10" \
+            --jq ".workflow_runs[] | select(.head_sha == \"${TARGET_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
