@@ -27,6 +27,7 @@ const PRODUCT_NAME = PACKAGE_JSON.build && PACKAGE_JSON.build.productName
   : 'T8-PenguinCanvas';
 const UNPACKED = path.join(ROOT, 'dist_electron', 'win-unpacked');
 const RES = path.join(UNPACKED, 'resources');
+const IS_DESKTOP_ATLAS = process.env.T8_DESKTOP_ATLAS_RUNTIME === '1';
 let missingCount = 0;
 const CANVAS_AGENT_INTEGRITY_MANIFEST = 'canvas-agent-source-integrity.json';
 const CANVAS_AGENT_INTEGRITY_FILES = Object.freeze([
@@ -867,7 +868,63 @@ function checkNoFalToolboxMaker() {
   console.log('  ✅ FAL toolbox maker is not present in packaged resources');
 }
 
+function mainDesktopAtlas() {
+  console.log('==========================================');
+  console.log('[post-build] 验证桌面 Atlas 精简包');
+  console.log('==========================================');
+
+  if (!fs.existsSync(UNPACKED)) {
+    console.error('  ❌ dist_electron/win-unpacked 不存在,先跑正式桌面构建');
+    process.exit(1);
+  }
+
+  console.log('[1] 桌面 Atlas 加密后端与原生依赖:');
+  const requiredBackend = [
+    'server.t8c',
+    'config.t8c',
+    path.join('routes', 'canvas.t8c'),
+    path.join('routes', 'settings.t8c'),
+    path.join('routes', 'proxy.t8c'),
+    path.join('routes', 'externalProviders.t8c'),
+    path.join('routes', 'files.t8c'),
+    path.join('routes', 'imageOps.t8c'),
+    path.join('routes', 'projectRuns.t8c'),
+    path.join('routes', 'projectAssets.t8c'),
+    path.join('services', 'projectDatabase.t8c'),
+    path.join('services', 'assetBlobStore.t8c'),
+    path.join('providers', 'registry.t8c'),
+    path.join('providers', 'adapters.t8c'),
+  ];
+  for (const relative of requiredBackend) checkFile(path.join(RES, 'backend-enc', relative));
+  checkFile(path.join(RES, 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'));
+  checkNoLocalVibexRoute();
+
+  console.log('\n[2] 桌面前端与共享清单:');
+  checkFile(path.join(RES, 'frontend', 'index.html'));
+  checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
+  checkFile(path.join(RES, 'shared', 'videoTransitions.json'));
+
+  console.log('\n[3] 清除可能混入的明文后端源码:');
+  nukePlainBackend();
+
+  console.log('\n[4] FFmpeg/FFprobe sidecar runtime:');
+  checkFfmpegRuntime();
+  checkFfprobeRuntime();
+
+  console.log('\n[5] 禁用制作器与自动更新资产:');
+  checkNoRhToolboxMaker();
+  checkNoFalToolboxMaker();
+  checkUpdateArtifacts();
+
+  if (missingCount > 0) {
+    console.error('\n[post-build] FAILED: ' + missingCount + ' desktop Atlas files are missing');
+    process.exit(1);
+  }
+  console.log('\n[post-build] DESKTOP ATLAS DONE ✅');
+}
+
 function main() {
+  if (IS_DESKTOP_ATLAS) return mainDesktopAtlas();
   console.log('==========================================');
   console.log('[post-build] 验证打包产物');
   console.log('==========================================');
