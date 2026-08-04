@@ -1,4 +1,4 @@
-name: Inspect bootstrap patch
+name: Inspect v1.0.0 release
 
 on:
   pull_request:
@@ -12,12 +12,12 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     env:
-      TARGET_SHA: 4b06aec1e9741c3fb530e98c6855f70a893ea094
+      RELEASE_SHA: 2ed132e436c263f3b60f34786f2dc36b3d5c2106
     steps:
-      - name: Report bootstrap workflow run
+      - name: Report formal release run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/bootstrap-desktop-postbuild-patch.yml/runs?branch=main&per_page=10" \
-            --jq ".workflow_runs[] | select(.head_sha == \"${TARGET_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=30" \
+            --jq ".workflow_runs[] | select(.head_sha == \"${RELEASE_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
