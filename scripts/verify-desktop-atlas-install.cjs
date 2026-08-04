@@ -3,11 +3,19 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES,
+  packagedBackendPath,
+} = require('../electron/desktopAtlasBackendProfile.cjs');
 
 const FORBIDDEN_PATH_MARKERS = [
   '/agent/', '/skills/', '/zcanvas-cli/', '/runtime-archives/', '/parsehub-', '/figma-bridge/',
-  '/photoshop-bridge/', '/collaboration/', '/runninghub/', '/vibex/', '/feishu/', '/comfyui/',
+  '/photoshop-bridge/', '/runninghub/', '/vibex/', '/feishu/', '/comfyui/',
 ];
+
+const FORBIDDEN_INSTALLED_FILES = new Set(
+  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES.map((relative) => `/${packagedBackendPath(relative).toLowerCase()}/`),
+);
 
 function normalize(value) {
   return `/${String(value || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase()}/`;
@@ -48,6 +56,9 @@ function validateInstallTree(appDir, options = {}) {
   const files = fs.existsSync(appDir) ? walkFiles(appDir) : [];
   for (const filename of files) {
     const relative = normalize(path.relative(appDir, filename));
+    if (FORBIDDEN_INSTALLED_FILES.has(relative)) {
+      errors.push(`disabled remote collaboration resource found in install tree: ${relative}`);
+    }
     for (const marker of FORBIDDEN_PATH_MARKERS) {
       if (relative.includes(marker)) errors.push(`disabled resource found in install tree: ${relative}`);
     }
@@ -84,4 +95,9 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { FORBIDDEN_PATH_MARKERS, validateInstallTree, walkFiles };
+module.exports = {
+  FORBIDDEN_INSTALLED_FILES,
+  FORBIDDEN_PATH_MARKERS,
+  validateInstallTree,
+  walkFiles,
+};
