@@ -80,28 +80,28 @@ jobs:
             checkFile(path.join(RES, 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'));
             checkNoLocalVibexRoute();
 
-            console.log('\n[2] 桌面前端与共享清单:');
+            console.log('\\n[2] 桌面前端与共享清单:');
             checkFile(path.join(RES, 'frontend', 'index.html'));
             checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
             checkFile(path.join(RES, 'shared', 'videoTransitions.json'));
 
-            console.log('\n[3] 清除可能混入的明文后端源码:');
+            console.log('\\n[3] 清除可能混入的明文后端源码:');
             nukePlainBackend();
 
-            console.log('\n[4] FFmpeg/FFprobe sidecar runtime:');
+            console.log('\\n[4] FFmpeg/FFprobe sidecar runtime:');
             checkFfmpegRuntime();
             checkFfprobeRuntime();
 
-            console.log('\n[5] 禁用制作器与自动更新资产:');
+            console.log('\\n[5] 禁用制作器与自动更新资产:');
             checkNoRhToolboxMaker();
             checkNoFalToolboxMaker();
             checkUpdateArtifacts();
 
             if (missingCount > 0) {
-              console.error('\n[post-build] FAILED: ' + missingCount + ' desktop Atlas files are missing');
+              console.error('\\n[post-build] FAILED: ' + missingCount + ' desktop Atlas files are missing');
               process.exit(1);
             }
-            console.log('\n[post-build] DESKTOP ATLAS DONE ✅');
+            console.log('\\n[post-build] DESKTOP ATLAS DONE ✅');
           }
           `;
             postBuild = replaceOnce(
