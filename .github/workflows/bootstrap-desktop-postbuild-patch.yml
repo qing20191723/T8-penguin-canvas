@@ -154,8 +154,8 @@ jobs:
           if (!releaseWorkflow.includes('          lfs: true\n')) {
             releaseWorkflow = replaceOnce(
               releaseWorkflow,
-              '          fetch-depth: 0\n          ref: ${{ github.sha }}\n',
-              '          fetch-depth: 0\n          lfs: true\n          ref: ${{ github.sha }}\n',
+              '          fetch-depth: 0\n',
+              '          fetch-depth: 0\n          lfs: true\n',
               releaseWorkflowPath,
             );
           }
