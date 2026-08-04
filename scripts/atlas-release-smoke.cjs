@@ -83,7 +83,7 @@ async function main() {
   fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const summary = {
-    schema: 't8-atlas-paid-release-smoke-v3',
+    schema: 't8-atlas-paid-release-smoke-v4',
     sourceSha: process.env.GITHUB_SHA || '',
     renderBaseUrl: BASE_URL,
     startedAt: new Date().toISOString(),
@@ -97,10 +97,10 @@ async function main() {
       providerId: 'atlas',
       model: MODEL_KIMI,
       messages: [{ role: 'user', content: 'Reply with exactly: KIMI_K3_OK' }],
-      maxTokens: 32,
+      maxTokens: 1024,
       temperature: 0,
       timeoutMs: 120000,
-    }, 'release-v1.0.0-kimi-final', 180000);
+    }, 'release-v1.0.0-kimi-final-v2', 180000);
     const text = String(result.text || '').trim();
     if (!text) throw new Error('Kimi K3 returned an empty response');
     summary.kimi = { ok: true, model: MODEL_KIMI, text: text.slice(0, 500), usage: result.usage || null };
