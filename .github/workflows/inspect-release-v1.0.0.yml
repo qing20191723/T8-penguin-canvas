@@ -1,23 +1,32 @@
-name: Inspect final v1.0.0 release
+name: Inspect desktop collaboration dependencies
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    env:
-      RELEASE_SHA: 21a2508101f770f305904b48f6a130f47d31992c
     steps:
-      - name: Report formal release run
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checkout current main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Trace non-collaboration dependencies
+        shell: bash
         run: |
           set -euo pipefail
-          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=30" \
-            --jq ".workflow_runs[] | select(.head_sha == \"${RELEASE_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
+          echo '=== non-collaboration files referencing collaboration modules ==='
+          find backend/src -type f \( -name '*.js' -o -name '*.cjs' \) ! -path 'backend/src/collaboration/*' -print0 \
+            | xargs -0 grep -nHE "require\(['\"][^'\"]*collaboration|from ['\"][^'\"]*collaboration|routes/collaboration|collaboration/" || true
+          echo '=== collaboration protocol exports ==='
+          sed -n '1,240p' backend/src/collaboration/protocol.js
+          echo '=== desktop/runtime collaboration route registration in server ==='
+          grep -nE 'collaboration|DEFAULT_PROJECT_ID|ATLAS_LIGHTWEIGHT_RUNTIME' backend/src/server.js || true
+          echo '=== package and encryption filters ==='
+          grep -nE 'EXCLUDED_BACKEND|T8_DESKTOP_ATLAS_RUNTIME|collaboration' electron/encrypt.cjs package.json scripts/dist-release.cjs scripts/verify-desktop-atlas-install.cjs || true
