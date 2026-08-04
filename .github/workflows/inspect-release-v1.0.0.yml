@@ -1,33 +1,126 @@
-name: Inspect desktop RH maker bundle imports
+name: Apply desktop maker tree-shaking fix
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  patch:
     runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: agent/remove-rh-maker-from-desktop-bundle
     steps:
-      - name: Checkout current main
+      - name: Checkout product fix branch
         uses: actions/checkout@v6
         with:
-          ref: main
-          fetch-depth: 1
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
 
-      - name: Trace RH toolbox maker definitions and imports
+      - name: Apply audited source and regression-test patch
         shell: bash
         run: |
           set -euo pipefail
-          SEARCH_ROOTS=(src vite.config.ts electron tests scripts)
-          echo '=== exact forbidden markers ==='
-          grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist_electron --exclude='*.map' \
-            'RHToolboxMakerNode|RH工具箱制作器|rh-toolbox-maker' "${SEARCH_ROOTS[@]}" || true
-          echo '=== broader maker identifiers ==='
-          grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist_electron --exclude='*.map' \
-            'rhToolboxMaker|RhToolboxMaker|RH_TOOLBOX_MAKER|toolboxMaker' "${SEARCH_ROOTS[@]}" || true
-          echo '=== desktop build constants and aliases ==='
-          grep -RInE --exclude-dir=node_modules --exclude='*.map' \
-            'VITE_T8_DESKTOP_ATLAS_RUNTIME|T8_DESKTOP_ATLAS_RUNTIME|resolve[[:space:]]*:[[:space:]]*\{|alias[[:space:]]*:' vite.config.ts src electron || true
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_all(filename: str, old: str, new: str, minimum: int = 1) -> None:
+              path = Path(filename)
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count < minimum:
+                  raise SystemExit(f'{filename}: expected at least {minimum} occurrences of {old!r}, found {count}')
+              path.write_text(text.replace(old, new), encoding='utf-8')
+              print(f'{filename}: replaced {count} occurrence(s)')
+
+          for filename in (
+              'src/config/nodeRegistry.ts',
+              'src/config/portTypes.ts',
+              'src/utils/nodePlacement.ts',
+              'src/components/Canvas.tsx',
+          ):
+              replace_all(filename, 'import.meta.env?.DEV', 'import.meta.env.DEV')
+
+          runtime_path = Path('src/config/atlasOnlyRuntime.ts')
+          runtime = runtime_path.read_text(encoding='utf-8')
+          credential_marker = "export const ATLAS_RUNTIME_CREDENTIAL_MARKER = '****server';\n"
+          if 'const DEV_MAKER_NODE_TYPES:' not in runtime:
+              if credential_marker not in runtime:
+                  raise SystemExit('atlasOnlyRuntime.ts: credential marker not found')
+              runtime = runtime.replace(
+                  credential_marker,
+                  credential_marker
+                  + "\nconst DEV_MAKER_NODE_TYPES: NodeType[] = import.meta.env.DEV\n"
+                  + "  ? ['rh-toolbox-maker', 'fal-toolbox-maker']\n"
+                  + "  : [];\n",
+                  1,
+              )
+          for literal in ("  'rh-toolbox-maker',\n", "  'fal-toolbox-maker',\n"):
+              count = runtime.count(literal)
+              if count != 2:
+                  raise SystemExit(f'atlasOnlyRuntime.ts: expected 2 occurrences of {literal!r}, found {count}')
+              runtime = runtime.replace(literal, '')
+          insertion = "  'rh-toolbox',\n  'vibex',"
+          replacement = "  'rh-toolbox',\n  ...DEV_MAKER_NODE_TYPES,\n  'vibex',"
+          count = runtime.count(insertion)
+          if count != 2:
+              raise SystemExit(f'atlasOnlyRuntime.ts: expected 2 hidden-set insertion points, found {count}')
+          runtime = runtime.replace(insertion, replacement)
+          runtime_path.write_text(runtime, encoding='utf-8')
+
+          verifier_path = Path('scripts/verify-desktop-atlas-package.cjs')
+          verifier = verifier_path.read_text(encoding='utf-8')
+          if 'FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS' not in verifier:
+              marker = "];\n\nfunction fail(message)"
+              addition = """\n];\n\nconst FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS = [\n  'RHToolboxMakerNode',\n  'RH工具箱制作器',\n  'rh-toolbox-maker',\n  'FalToolboxMakerNode',\n  'FAL应用制作工具',\n  'fal-toolbox-maker',\n];\n\nfunction fail(message)"""
+              if marker not in verifier:
+                  raise SystemExit('verify-desktop-atlas-package.cjs: constant insertion marker not found')
+              verifier = verifier.replace(marker, addition, 1)
+
+              scan_marker = """  for (const marker of FORBIDDEN_DESKTOP_CHUNK_MARKERS) {\n    const hit = files.find((filename) => path.basename(filename).includes(marker));\n    if (hit) fail(`disabled desktop chunk was emitted: ${path.relative(dist, hit)}`);\n  }\n"""
+              scan_addition = scan_marker + """  const textFiles = files.filter((filename) => /\\.(?:css|html|js|json|mjs)$/i.test(filename));\n  for (const marker of FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS) {\n    const bytes = Buffer.from(marker);\n    const hit = textFiles.find((filename) => fs.readFileSync(filename).includes(bytes));\n    if (hit) fail(`dev-only toolbox maker marker was emitted: ${marker} in ${path.relative(dist, hit)}`);\n  }\n"""
+              if scan_marker not in verifier:
+                  raise SystemExit('verify-desktop-atlas-package.cjs: frontend scan insertion marker not found')
+              verifier = verifier.replace(scan_marker, scan_addition, 1)
+
+              export_marker = "  FORBIDDEN_DESKTOP_CHUNK_MARKERS,\n"
+              if export_marker not in verifier:
+                  raise SystemExit('verify-desktop-atlas-package.cjs: export marker not found')
+              verifier = verifier.replace(
+                  export_marker,
+                  export_marker + "  FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS,\n",
+                  1,
+              )
+          verifier_path.write_text(verifier, encoding='utf-8')
+
+          test_path = Path('tests/desktopAtlasPackaging.test.cjs')
+          tests = test_path.read_text(encoding='utf-8')
+          if 'verifyDesktopFrontend,' not in tests:
+              tests = tests.replace(
+                  "  verifyArtifact,\n",
+                  "  verifyArtifact,\n  verifyDesktopFrontend,\n",
+                  1,
+              )
+          if "desktop frontend verifier rejects dev-only toolbox maker markers" not in tests:
+              tests += """\n\ntest('desktop frontend verifier rejects dev-only toolbox maker markers', () => {\n  const root = fs.mkdtempSync(path.join(os.tmpdir(), 't8-atlas-frontend-'));\n  try {\n    const dist = path.join(root, 'dist');\n    const assets = path.join(dist, 'assets');\n    fs.mkdirSync(assets, { recursive: true });\n    fs.writeFileSync(path.join(dist, 'index.html'), '<main>Atlas</main>');\n    fs.writeFileSync(path.join(assets, 'LegacyDesktopDisabledNode-test.js'), 'export default {};');\n    assert.doesNotThrow(() => verifyDesktopFrontend(root));\n    fs.writeFileSync(path.join(assets, 'index-test.js'), 'const leaked = "RHToolboxMakerNode";');\n    assert.throws(() => verifyDesktopFrontend(root), /dev-only toolbox maker marker was emitted/);\n  } finally {\n    fs.rmSync(root, { recursive: true, force: true });\n  }\n});\n\ntest('dev-only toolbox makers use statically eliminable Vite DEV guards', () => {\n  for (const relative of [\n    'src/config/nodeRegistry.ts',\n    'src/config/portTypes.ts',\n    'src/utils/nodePlacement.ts',\n    'src/components/Canvas.tsx',\n  ]) {\n    const source = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');\n    assert.doesNotMatch(source, /import\\.meta\\.env\\?\\.DEV/, `${relative} must not use optional chaining for Vite DEV guards`);\n  }\n});\n"""
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+          git diff --check
+          git diff -- src/config/nodeRegistry.ts src/config/portTypes.ts src/utils/nodePlacement.ts src/components/Canvas.tsx src/config/atlasOnlyRuntime.ts scripts/verify-desktop-atlas-package.cjs tests/desktopAtlasPackaging.test.cjs
+
+      - name: Commit product fix branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/config/nodeRegistry.ts src/config/portTypes.ts src/utils/nodePlacement.ts src/components/Canvas.tsx src/config/atlasOnlyRuntime.ts scripts/verify-desktop-atlas-package.cjs tests/desktopAtlasPackaging.test.cjs
+          if git diff --cached --quiet; then
+            echo 'No product changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix: tree-shake dev toolbox makers from desktop bundle'
+          git push origin HEAD:${TARGET_BRANCH}
