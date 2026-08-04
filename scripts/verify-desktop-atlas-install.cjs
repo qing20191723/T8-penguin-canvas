@@ -36,6 +36,7 @@ function validateInstallTree(appDir, options = {}) {
     'resources/backend-enc/server.t8c',
     'resources/frontend/index.html',
     'resources/tools/ffmpeg/ffmpeg.exe',
+    'resources/tools/ffmpeg/ffprobe.exe',
   ];
   const errors = [];
   for (const relative of required) {

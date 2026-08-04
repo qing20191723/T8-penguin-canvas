@@ -303,6 +303,7 @@ function main() {
   run('rebuild native modules for Electron', command('npm'), ['run', 'rebuild:electron']);
   run('electron-builder nsis', electronBuilder, ['--win', '--x64', '--config.npmRebuild=false']);
   run('post-build checks', process.execPath, [path.join(ROOT, 'electron', '_post_build.cjs')]);
+  run('desktop Atlas install tree checks', process.execPath, [path.join(ROOT, 'scripts', 'verify-desktop-atlas-install.cjs'), '--app-dir', path.join(ROOT, 'dist_electron', 'win-unpacked')]);
   run('desktop Atlas artifact checks', process.execPath, [path.join(ROOT, 'scripts', 'verify-desktop-atlas-package.cjs'), '--artifact']);
   assertReleaseTargetUnchanged(releaseTarget, 'release target check before provenance');
   assertReleaseSourceClean('release worktree check before provenance sealing');

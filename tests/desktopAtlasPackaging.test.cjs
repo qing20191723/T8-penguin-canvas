@@ -56,6 +56,7 @@ test('clean installed tree passes and disabled bridges or secrets fail', () => {
     write('resources/backend-enc/server.t8c');
     write('resources/frontend/index.html');
     write('resources/tools/ffmpeg/ffmpeg.exe');
+    write('resources/tools/ffmpeg/ffprobe.exe');
     assert.deepEqual(validateInstallTree(root).errors, []);
     write('resources/tools/parsehub-bridge/server.js');
     write('resources/frontend/leak.txt', 'ci-secret-value');
