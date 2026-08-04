@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "description": "Atlas Canvas — AI 无限画布工作流（基于 Atlas Cloud 100+ 模型）",
   "author": "qing20191723",
   "license": "MIT",
