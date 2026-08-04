@@ -9,8 +9,15 @@ on:
       - 'package.json'
       - 'electron/_post_build.cjs'
       - 'scripts/dist-release.cjs'
+      - 'scripts/verify-desktop-atlas-package.cjs'
       - 'scripts/verify-desktop-atlas-install.cjs'
       - 'scripts/atlas-release-smoke.cjs'
+      - 'tests/desktopAtlasPackaging.test.cjs'
+      - 'src/components/Canvas.tsx'
+      - 'src/config/atlasOnlyRuntime.ts'
+      - 'src/config/nodeRegistry.ts'
+      - 'src/config/portTypes.ts'
+      - 'src/utils/nodePlacement.ts'
       - 'release-notes/v1.0.0.md'
 
 permissions:
