@@ -12,6 +12,11 @@ const {
   verifyDesktopFrontend,
 } = require('../scripts/verify-desktop-atlas-package.cjs');
 const { validateInstallTree } = require('../scripts/verify-desktop-atlas-install.cjs');
+const {
+  DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES,
+  packagedBackendPath,
+  shouldExcludeDesktopAtlasBackendFile,
+} = require('../electron/desktopAtlasBackendProfile.cjs');
 
 const packageJson = require('../package.json');
 
@@ -43,7 +48,7 @@ test('artifact verifier enforces 500 MiB and writes an exact SHA-256 sidecar', (
   }
 });
 
-test('clean installed tree passes and disabled bridges or secrets fail', () => {
+test('clean installed tree allows local collaboration domain modules but rejects remote transport and secrets', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 't8-atlas-install-'));
   const write = (relative, value = 'ok') => {
     const target = path.join(root, ...relative.split('/'));
@@ -55,13 +60,18 @@ test('clean installed tree passes and disabled bridges or secrets fail', () => {
     write('resources/app.asar');
     write('resources/app-update.yml', 'owner: qing20191723\nrepo: T8-penguin-canvas\n');
     write('resources/backend-enc/server.t8c');
+    write('resources/backend-enc/collaboration/protocol.t8c');
+    write('resources/backend-enc/collaboration/gatewaySecurity.t8c');
     write('resources/frontend/index.html');
     write('resources/tools/ffmpeg/ffmpeg.exe');
     write('resources/tools/ffmpeg/ffprobe.exe');
     assert.deepEqual(validateInstallTree(root).errors, []);
+
+    write('resources/backend-enc/collaboration/gateway.t8c');
     write('resources/tools/parsehub-bridge/server.js');
     write('resources/frontend/leak.txt', 'ci-secret-value');
     const errors = validateInstallTree(root, { secret: 'ci-secret-value' }).errors;
+    assert.equal(errors.some((entry) => entry.includes('disabled remote collaboration resource')), true);
     assert.equal(errors.some((entry) => entry.includes('disabled resource')), true);
     assert.equal(errors.some((entry) => entry.includes('secret scan value')), true);
   } finally {
@@ -69,6 +79,18 @@ test('clean installed tree passes and disabled bridges or secrets fail', () => {
   }
 });
 
+test('desktop backend profile excludes only remote collaboration transport modules', () => {
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/gateway.js'), true);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('routes/collaboration.js'), true);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/protocol.js'), false);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/gatewaySecurity.js'), false);
+  assert.equal(shouldExcludeDesktopAtlasBackendFile('collaboration/executionPolicy.js'), false);
+  assert.equal(DESKTOP_ATLAS_EXCLUDED_BACKEND_FILES.length, 8);
+  assert.equal(
+    packagedBackendPath('collaboration/gateway.js'),
+    'resources/backend-enc/collaboration/gateway.t8c',
+  );
+});
 
 test('desktop frontend verifier rejects dev-only toolbox maker markers', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 't8-atlas-frontend-'));
