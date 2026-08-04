@@ -21,12 +21,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          SEARCH_ROOTS=(src vite.config.ts electron tests scripts)
           echo '=== exact forbidden markers ==='
-          rg -n --hidden --glob '!node_modules/**' --glob '!dist/**' --glob '!dist_electron/**' \
-            'RHToolboxMakerNode|RH工具箱制作器|rh-toolbox-maker' . || true
+          grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist_electron --exclude='*.map' \
+            'RHToolboxMakerNode|RH工具箱制作器|rh-toolbox-maker' "${SEARCH_ROOTS[@]}" || true
           echo '=== broader maker identifiers ==='
-          rg -n --hidden --glob '!node_modules/**' --glob '!dist/**' --glob '!dist_electron/**' \
-            'rhToolboxMaker|RhToolboxMaker|RH_TOOLBOX_MAKER|toolboxMaker' src vite.config.ts electron tests scripts || true
+          grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist_electron --exclude='*.map' \
+            'rhToolboxMaker|RhToolboxMaker|RH_TOOLBOX_MAKER|toolboxMaker' "${SEARCH_ROOTS[@]}" || true
           echo '=== desktop build constants and aliases ==='
-          rg -n --hidden --glob '!node_modules/**' \
-            'VITE_T8_DESKTOP_ATLAS_RUNTIME|T8_DESKTOP_ATLAS_RUNTIME|resolve.alias|alias:' vite.config.ts src electron || true
+          grep -RInE --exclude-dir=node_modules --exclude='*.map' \
+            'VITE_T8_DESKTOP_ATLAS_RUNTIME|T8_DESKTOP_ATLAS_RUNTIME|resolve[[:space:]]*:[[:space:]]*\{|alias[[:space:]]*:' vite.config.ts src electron || true
