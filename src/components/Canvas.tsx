@@ -1399,10 +1399,10 @@ const FeishuBitableOutputNode = DESKTOP_ATLAS_RUNTIME ? LegacyDesktopDisabledNod
 const GroupBoxNode = lazyCanvasNode(() => import('./nodes/GroupBoxNode'), 'GroupBoxNode');
 const RH_TOOLBOX_MAKER_MODULE = './nodes/RHToolboxMakerNode';
 const FAL_TOOLBOX_MAKER_MODULE = './nodes/FalToolboxMakerNode';
-const RHToolboxMakerNode = import.meta.env?.DEV
+const RHToolboxMakerNode = import.meta.env.DEV
   ? lazyCanvasNode(() => import(/* @vite-ignore */ RH_TOOLBOX_MAKER_MODULE), 'RHToolboxMakerNode')
   : PlaceholderNode;
-const FalToolboxMakerNode = import.meta.env?.DEV
+const FalToolboxMakerNode = import.meta.env.DEV
   ? lazyCanvasNode(() => import(/* @vite-ignore */ FAL_TOOLBOX_MAKER_MODULE), 'FalToolboxMakerNode')
   : PlaceholderNode;
 
@@ -1426,7 +1426,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'rh-tools': RHToolsNode,
   'rh-toolbox': RHToolboxNode,
   vibex: VibeXNode,
-  ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
+  ...(import.meta.env.DEV ? { 'rh-toolbox-maker': RHToolboxMakerNode } : {}),
   'fal-toolbox': FalToolboxNode,
   'model-3d-preview': Model3DPreviewNode,
   'face-expression-3d': FaceExpression3DNode,
@@ -1436,7 +1436,7 @@ const SPECIFIC_NODES: Record<string, any> = {
   'codex-image-conjure': CodexImageConjureNode,
   'artist-style-master': ArtistStyleMasterNode,
   'anime-tag-master': AnimeTagMasterNode,
-  ...(import.meta.env?.DEV ? { 'fal-toolbox-maker': FalToolboxMakerNode } : {}),
+  ...(import.meta.env.DEV ? { 'fal-toolbox-maker': FalToolboxMakerNode } : {}),
   'comfyui-store': ComfyUIStoreNode,
   'comfyui-app-maker': ComfyUIAppMakerNode,
   // Special (5)
@@ -2141,7 +2141,7 @@ const INITIAL_DATA: Record<string, Record<string, any>> = {
     text: '',
     outputText: '',
   },
-  ...(import.meta.env?.DEV ? {
+  ...(import.meta.env.DEV ? {
     'rh-toolbox-maker': {
       rhToolboxMakerTitle: '智能抠图',
       rhToolboxMakerId: 'image-cutout-v1',

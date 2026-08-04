@@ -63,7 +63,7 @@ export const NODE_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
   'face-expression-3d': { w: 520, h: 520 },
   'comfyui-store': { w: 400, h: 560 },
   'comfyui-app-maker': { w: 720, h: 620 },
-  ...(import.meta.env?.DEV ? { 'rh-toolbox-maker': { w: 760, h: 620 }, 'fal-toolbox-maker': { w: 720, h: 620 } } : {}),
+  ...(import.meta.env.DEV ? { 'rh-toolbox-maker': { w: 760, h: 620 }, 'fal-toolbox-maker': { w: 720, h: 620 } } : {}),
   'multi-angle-3d': { w: 320, h: 380 },
   'panorama-720': { w: 320, h: 380 },
   'penguin-portrait': { w: 320, h: 380 },

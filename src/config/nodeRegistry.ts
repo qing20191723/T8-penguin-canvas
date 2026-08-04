@@ -33,7 +33,7 @@ interface CanvasNodeSchemaManifest {
 
 export const CANVAS_NODE_SCHEMA_MANIFEST = schemaManifest as unknown as CanvasNodeSchemaManifest;
 
-const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env?.DEV && !ATLAS_LIGHTWEIGHT_RUNTIME ? [
+const DEV_NODE_REGISTRY: NodeMeta[] = import.meta.env.DEV && !ATLAS_LIGHTWEIGHT_RUNTIME ? [
   { type: 'rh-toolbox-maker', label: 'RH工具箱制作器', category: 'rh', description: '维护者专用：在画布内制作 RH工具箱 manifest 模板，开发环境可见，用户包不打入', icon: 'FileJson', color: 'emerald' },
   { type: 'fal-toolbox-maker', label: 'FAL应用制作工具', category: 'fal', description: '维护者专用：从 fal.ai API 文档生成 Fal超市 manifest 草稿，开发环境可见，用户包不打入', icon: 'FileJson', color: 'violet' },
 ] : [];

@@ -100,7 +100,7 @@ const INTERNAL_CONNECTION_PORTS: Record<string, ManifestConnectionPortAuthority>
   },
 };
 
-const DEV_CONNECTION_PORTS: Record<string, ManifestConnectionPortAuthority> = import.meta.env?.DEV ? {
+const DEV_CONNECTION_PORTS: Record<string, ManifestConnectionPortAuthority> = import.meta.env.DEV ? {
   'rh-toolbox-maker': {
     resolver: 'static', inputs: [], outputs: [{ id: null, kinds: ['text'], required: false, minConnections: 0, maxConnections: null }],
   },
@@ -368,7 +368,7 @@ export function resolveNodeConnectionPorts(node: Node | null | undefined): NodeC
   return unresolvedConnectionPorts('connection resolver is unsupported', authority.resolver);
 }
 
-const DEV_NODE_PORTS: Record<string, NodePorts> = import.meta.env?.DEV ? {
+const DEV_NODE_PORTS: Record<string, NodePorts> = import.meta.env.DEV ? {
   // RH 工具箱制作器: 维护者开发态节点，只输出生成好的 manifest JSON 文本。
   'rh-toolbox-maker': { inputs: [], outputs: ['text'] },
   // FAL 应用制作工具: 维护者开发态节点，只输出生成好的 Fal 超市 manifest JSON 文本。

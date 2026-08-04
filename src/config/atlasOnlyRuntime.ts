@@ -22,6 +22,10 @@ export const ATLAS_LIGHTWEIGHT_RUNTIME = ATLAS_ONLY_RUNTIME || DESKTOP_ATLAS_RUN
 
 export const ATLAS_RUNTIME_CREDENTIAL_MARKER = '****server';
 
+const DEV_MAKER_NODE_TYPES: NodeType[] = import.meta.env.DEV
+  ? ['rh-toolbox-maker', 'fal-toolbox-maker']
+  : [];
+
 export const ATLAS_ONLY_HIDDEN_NODE_TYPES: ReadonlySet<NodeType> = new Set<NodeType>([
   'video',
   'runninghub',
@@ -29,10 +33,9 @@ export const ATLAS_ONLY_HIDDEN_NODE_TYPES: ReadonlySet<NodeType> = new Set<NodeT
   'rh-config',
   'rh-tools',
   'rh-toolbox',
-  'rh-toolbox-maker',
+  ...DEV_MAKER_NODE_TYPES,
   'vibex',
   'fal-toolbox',
-  'fal-toolbox-maker',
   'grok-oauth-agent',
   'codex-cli-agent',
   'codex-image-conjure',
@@ -55,10 +58,9 @@ export const DESKTOP_ATLAS_HIDDEN_NODE_TYPES: ReadonlySet<NodeType> = new Set<No
   'rh-config',
   'rh-tools',
   'rh-toolbox',
-  'rh-toolbox-maker',
+  ...DEV_MAKER_NODE_TYPES,
   'vibex',
   'fal-toolbox',
-  'fal-toolbox-maker',
   'grok-oauth-agent',
   'codex-cli-agent',
   'codex-image-conjure',
