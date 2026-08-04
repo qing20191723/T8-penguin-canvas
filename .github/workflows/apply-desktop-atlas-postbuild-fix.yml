@@ -1,0 +1,176 @@
+name: Apply desktop Atlas post-build fix
+
+on:
+  push:
+    branches:
+      - agent/fix-desktop-atlas-postbuild-profile
+    paths:
+      - '.github/workflows/apply-desktop-atlas-postbuild-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/fix-desktop-atlas-postbuild-profile
+          fetch-depth: 0
+
+      - name: Patch release verification for the desktop Atlas profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function replaceOnce(text, before, after, filename) {
+            if (!text.includes(before)) {
+              throw new Error(`${filename}: expected patch marker not found`);
+            }
+            return text.replace(before, after);
+          }
+
+          const postBuildPath = 'electron/_post_build.cjs';
+          let postBuild = fs.readFileSync(postBuildPath, 'utf8');
+          if (!postBuild.includes("const IS_DESKTOP_ATLAS = process.env.T8_DESKTOP_ATLAS_RUNTIME === '1';")) {
+            postBuild = replaceOnce(
+              postBuild,
+              "const RES = path.join(UNPACKED, 'resources');\n",
+              "const RES = path.join(UNPACKED, 'resources');\nconst IS_DESKTOP_ATLAS = process.env.T8_DESKTOP_ATLAS_RUNTIME === '1';\n",
+              postBuildPath,
+            );
+          }
+
+          if (!postBuild.includes('function mainDesktopAtlas() {')) {
+            const desktopMain = `
+          function mainDesktopAtlas() {
+            console.log('==========================================');
+            console.log('[post-build] 验证桌面 Atlas 精简包');
+            console.log('==========================================');
+
+            if (!fs.existsSync(UNPACKED)) {
+              console.error('  ❌ dist_electron/win-unpacked 不存在,先跑正式桌面构建');
+              process.exit(1);
+            }
+
+            console.log('[1] 桌面 Atlas 加密后端与原生依赖:');
+            const requiredBackend = [
+              'server.t8c',
+              'config.t8c',
+              path.join('routes', 'canvas.t8c'),
+              path.join('routes', 'settings.t8c'),
+              path.join('routes', 'proxy.t8c'),
+              path.join('routes', 'externalProviders.t8c'),
+              path.join('routes', 'files.t8c'),
+              path.join('routes', 'imageOps.t8c'),
+              path.join('routes', 'projectRuns.t8c'),
+              path.join('routes', 'projectAssets.t8c'),
+              path.join('services', 'projectDatabase.t8c'),
+              path.join('services', 'assetBlobStore.t8c'),
+              path.join('providers', 'registry.t8c'),
+              path.join('providers', 'adapters.t8c'),
+            ];
+            for (const relative of requiredBackend) checkFile(path.join(RES, 'backend-enc', relative));
+            checkFile(path.join(RES, 'app.asar.unpacked', 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'));
+            checkNoLocalVibexRoute();
+
+            console.log('\n[2] 桌面前端与共享清单:');
+            checkFile(path.join(RES, 'frontend', 'index.html'));
+            checkFile(path.join(RES, 'shared', 'achievementManifest.json'));
+            checkFile(path.join(RES, 'shared', 'videoTransitions.json'));
+
+            console.log('\n[3] 清除可能混入的明文后端源码:');
+            nukePlainBackend();
+
+            console.log('\n[4] FFmpeg/FFprobe sidecar runtime:');
+            checkFfmpegRuntime();
+            checkFfprobeRuntime();
+
+            console.log('\n[5] 禁用制作器与自动更新资产:');
+            checkNoRhToolboxMaker();
+            checkNoFalToolboxMaker();
+            checkUpdateArtifacts();
+
+            if (missingCount > 0) {
+              console.error(`\n[post-build] FAILED: ${missingCount} desktop Atlas files are missing`);
+              process.exit(1);
+            }
+
+            console.log('\n[post-build] DESKTOP ATLAS DONE ✅');
+          }
+          `;
+            postBuild = replaceOnce(
+              postBuild,
+              '\nfunction main() {\n',
+              `${desktopMain}\nfunction main() {\n  if (IS_DESKTOP_ATLAS) return mainDesktopAtlas();\n`,
+              postBuildPath,
+            );
+          }
+          fs.writeFileSync(postBuildPath, postBuild, 'utf8');
+
+          const distReleasePath = 'scripts/dist-release.cjs';
+          let distRelease = fs.readFileSync(distReleasePath, 'utf8');
+          if (!distRelease.includes("run('desktop Atlas install tree checks'")) {
+            distRelease = replaceOnce(
+              distRelease,
+              "  run('post-build checks', process.execPath, [path.join(ROOT, 'electron', '_post_build.cjs')]);\n  run('desktop Atlas artifact checks', process.execPath, [path.join(ROOT, 'scripts', 'verify-desktop-atlas-package.cjs'), '--artifact']);",
+              "  run('post-build checks', process.execPath, [path.join(ROOT, 'electron', '_post_build.cjs')]);\n  run('desktop Atlas install tree checks', process.execPath, [path.join(ROOT, 'scripts', 'verify-desktop-atlas-install.cjs'), '--app-dir', path.join(ROOT, 'dist_electron', 'win-unpacked')]);\n  run('desktop Atlas artifact checks', process.execPath, [path.join(ROOT, 'scripts', 'verify-desktop-atlas-package.cjs'), '--artifact']);",
+              distReleasePath,
+            );
+          }
+          fs.writeFileSync(distReleasePath, distRelease, 'utf8');
+
+          const installVerifierPath = 'scripts/verify-desktop-atlas-install.cjs';
+          let installVerifier = fs.readFileSync(installVerifierPath, 'utf8');
+          if (!installVerifier.includes("'resources/tools/ffmpeg/ffprobe.exe'")) {
+            installVerifier = replaceOnce(
+              installVerifier,
+              "    'resources/tools/ffmpeg/ffmpeg.exe',\n",
+              "    'resources/tools/ffmpeg/ffmpeg.exe',\n    'resources/tools/ffmpeg/ffprobe.exe',\n",
+              installVerifierPath,
+            );
+          }
+          fs.writeFileSync(installVerifierPath, installVerifier, 'utf8');
+
+          const packagingTestPath = 'tests/desktopAtlasPackaging.test.cjs';
+          let packagingTest = fs.readFileSync(packagingTestPath, 'utf8');
+          if (!packagingTest.includes("write('resources/tools/ffmpeg/ffprobe.exe');")) {
+            packagingTest = replaceOnce(
+              packagingTest,
+              "    write('resources/tools/ffmpeg/ffmpeg.exe');\n",
+              "    write('resources/tools/ffmpeg/ffmpeg.exe');\n    write('resources/tools/ffmpeg/ffprobe.exe');\n",
+              packagingTestPath,
+            );
+          }
+          fs.writeFileSync(packagingTestPath, packagingTest, 'utf8');
+
+          const releaseWorkflowPath = '.github/workflows/release-v1.0.0.yml';
+          let releaseWorkflow = fs.readFileSync(releaseWorkflowPath, 'utf8');
+          if (!/fetch-depth: 0\s+ lfs: true/.test(releaseWorkflow)) {
+            releaseWorkflow = replaceOnce(
+              releaseWorkflow,
+              '          fetch-depth: 0\n          ref: ${{ github.sha }}\n',
+              '          fetch-depth: 0\n          lfs: true\n          ref: ${{ github.sha }}\n',
+              releaseWorkflowPath,
+            );
+          }
+          if (!releaseWorkflow.includes("      - 'electron/_post_build.cjs'")) {
+            releaseWorkflow = replaceOnce(
+              releaseWorkflow,
+              "      - 'package.json'\n      - 'scripts/atlas-release-smoke.cjs'\n",
+              "      - 'package.json'\n      - 'electron/_post_build.cjs'\n      - 'scripts/dist-release.cjs'\n      - 'scripts/verify-desktop-atlas-install.cjs'\n      - 'scripts/atlas-release-smoke.cjs'\n",
+              releaseWorkflowPath,
+            );
+          }
+          fs.writeFileSync(releaseWorkflowPath, releaseWorkflow, 'utf8');
+          NODE
+
+          git rm .github/workflows/apply-desktop-atlas-postbuild-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add electron/_post_build.cjs scripts/dist-release.cjs scripts/verify-desktop-atlas-install.cjs tests/desktopAtlasPackaging.test.cjs .github/workflows/release-v1.0.0.yml
+          git commit -m 'fix: align post-build checks with desktop Atlas package'
+          git push origin HEAD:agent/fix-desktop-atlas-postbuild-profile
