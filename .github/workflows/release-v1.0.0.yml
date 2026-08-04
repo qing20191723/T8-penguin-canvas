@@ -46,7 +46,7 @@ jobs:
         run: |
           git checkout --detach $env:T8_RELEASE_TARGET
           $head = (git rev-parse HEAD).Trim().ToLowerInvariant()
-          $branch = (git branch --show-current).Trim()
+          $branch = ([string](git branch --show-current)).Trim()
           if ($head -ne $env:T8_RELEASE_TARGET.ToLowerInvariant()) {
             throw "Release checkout mismatch: expected $env:T8_RELEASE_TARGET, got $head"
           }
