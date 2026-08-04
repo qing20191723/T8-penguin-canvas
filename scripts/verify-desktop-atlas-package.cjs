@@ -45,6 +45,16 @@ const FORBIDDEN_DESKTOP_CHUNK_MARKERS = [
   'TopazImageUpscaleNode',
   'TopazVideoUpscaleNode',
   'RemoveAiWatermarkNode',
+
+];
+
+const FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS = [
+  'RHToolboxMakerNode',
+  'RH工具箱制作器',
+  'rh-toolbox-maker',
+  'FalToolboxMakerNode',
+  'FAL应用制作工具',
+  'fal-toolbox-maker',
 ];
 
 function fail(message) {
@@ -172,6 +182,12 @@ function verifyDesktopFrontend(root) {
     const hit = files.find((filename) => path.basename(filename).includes(marker));
     if (hit) fail(`disabled desktop chunk was emitted: ${path.relative(dist, hit)}`);
   }
+  const textFiles = files.filter((filename) => /\.(?:css|html|js|json|mjs)$/i.test(filename));
+  for (const marker of FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS) {
+    const bytes = Buffer.from(marker);
+    const hit = textFiles.find((filename) => fs.readFileSync(filename).includes(bytes));
+    if (hit) fail(`dev-only toolbox maker marker was emitted: ${marker} in ${path.relative(dist, hit)}`);
+  }
   if (!files.some((filename) => path.basename(filename).includes('LegacyDesktopDisabledNode'))) {
     fail('legacy compatibility placeholder chunk was not emitted');
   }
@@ -203,6 +219,7 @@ if (require.main === module) main();
 module.exports = {
   ALLOWED_RESOURCE_TARGETS,
   FORBIDDEN_DESKTOP_CHUNK_MARKERS,
+  FORBIDDEN_DESKTOP_BUNDLE_TEXT_MARKERS,
   FORBIDDEN_PACKAGE_MARKERS,
   MAX_INSTALLER_BYTES,
   RELEASE_REPOSITORY,

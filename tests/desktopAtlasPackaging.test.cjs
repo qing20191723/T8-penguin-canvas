@@ -9,6 +9,7 @@ const {
   MAX_INSTALLER_BYTES,
   validatePackagePolicy,
   verifyArtifact,
+  verifyDesktopFrontend,
 } = require('../scripts/verify-desktop-atlas-package.cjs');
 const { validateInstallTree } = require('../scripts/verify-desktop-atlas-install.cjs');
 
@@ -65,5 +66,34 @@ test('clean installed tree passes and disabled bridges or secrets fail', () => {
     assert.equal(errors.some((entry) => entry.includes('secret scan value')), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('desktop frontend verifier rejects dev-only toolbox maker markers', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 't8-atlas-frontend-'));
+  try {
+    const dist = path.join(root, 'dist');
+    const assets = path.join(dist, 'assets');
+    fs.mkdirSync(assets, { recursive: true });
+    fs.writeFileSync(path.join(dist, 'index.html'), '<main>Atlas</main>');
+    fs.writeFileSync(path.join(assets, 'LegacyDesktopDisabledNode-test.js'), 'export default {};');
+    assert.doesNotThrow(() => verifyDesktopFrontend(root));
+    fs.writeFileSync(path.join(assets, 'index-test.js'), 'const leaked = "RHToolboxMakerNode";');
+    assert.throws(() => verifyDesktopFrontend(root), /dev-only toolbox maker marker was emitted/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('dev-only toolbox makers use statically eliminable Vite DEV guards', () => {
+  for (const relative of [
+    'src/config/nodeRegistry.ts',
+    'src/config/portTypes.ts',
+    'src/utils/nodePlacement.ts',
+    'src/components/Canvas.tsx',
+  ]) {
+    const source = fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
+    assert.doesNotMatch(source, /import\.meta\.env\?\.DEV/, `${relative} must not use optional chaining for Vite DEV guards`);
   }
 });
