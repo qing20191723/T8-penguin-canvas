@@ -1,73 +1,23 @@
-name: Sync live handoff status
+name: Inspect final v1.0.0 release
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
 jobs:
-  sync:
+  inspect:
     runs-on: ubuntu-latest
     env:
-      TARGET_BRANCH: agent/release-trigger-and-handoff-sync
+      RELEASE_SHA: 21a2508101f770f305904b48f6a130f47d31992c
     steps:
-      - name: Checkout handoff sync branch
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.TARGET_BRANCH }}
-          fetch-depth: 0
-
-      - name: Update durable handoff status
-        shell: bash
+      - name: Report formal release run
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('HANDOFF.md')
-          text = path.read_text(encoding='utf-8')
-          start = '<!-- LIVE_STATUS_START -->'
-          end = '<!-- LIVE_STATUS_END -->'
-          block = '''<!-- LIVE_STATUS_START -->
-## 0. 最新实时状态（2026-08-05）
-
-- 交接文档已重构并通过 PR #67 合并到 `main`。
-- RH/FAL 开发制作器生产 bundle 残留已通过 PR #68 修复并合并。
-- 当前 `main` SHA：`0bd0f099877dcfe8ce791fc91209a532aac59684`。
-- PR #68 CI：`Verify build` Run `30938093852` 全部通过；`Verify production startup` Run `30938095879` 通过。
-- `build:desktop-atlas` 后的内容级扫描已确认以下标记均未进入桌面 bundle：`RHToolboxMakerNode`、`RH工具箱制作器`、`rh-toolbox-maker`、`FalToolboxMakerNode`、`FAL应用制作工具`、`fal-toolbox-maker`。
-- 当前活动分支：`agent/release-trigger-and-handoff-sync`。
-- 当前工作：扩展正式 release workflow 的路径触发范围，使本次及未来桌面 bundle/验证器变更自动触发 Windows 正式发布。
-- 下一步：合并 release 触发 PR，锁定新的正式 Release run，复用 Kimi/Wan 证据，完成 NSIS、GitHub Release 上传及回下载校验。
-- 仍然禁止重复调用 Kimi/Wan 付费验收。
-
-<!-- LIVE_STATUS_END -->'''
-          if start in text and end in text:
-              before, remainder = text.split(start, 1)
-              _, after = remainder.split(end, 1)
-              text = before.rstrip() + '\n\n' + block + after
-          else:
-              first_newline = text.find('\n')
-              if first_newline < 0:
-                  raise SystemExit('HANDOFF.md title line not found')
-              text = text[:first_newline + 1] + '\n' + block + '\n' + text[first_newline + 1:]
-          path.write_text(text, encoding='utf-8')
-          PY
-          git diff --check
-          git diff -- HANDOFF.md
-
-      - name: Commit handoff sync
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add HANDOFF.md
-          if git diff --cached --quiet; then
-            echo 'No handoff changes to commit.'
-            exit 0
-          fi
-          git commit -m 'docs: sync RH maker fix and release continuation state'
-          git push origin HEAD:${TARGET_BRANCH}
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release-v1.0.0.yml/runs?branch=main&per_page=30" \
+            --jq ".workflow_runs[] | select(.head_sha == \"${RELEASE_SHA}\") | {id,status,conclusion,event,head_sha,html_url}" | head -n 1
