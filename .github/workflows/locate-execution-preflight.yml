@@ -1,0 +1,169 @@
+name: Locate execution preflight blocker
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  locate:
+    if: github.event.pull_request.head.ref == 'ci/live-atlas-smoke-209a05d' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ORIGIN: https://qingchen-atlascloud-canvas.onrender.com
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Search the complete repository source tree
+        run: |
+          python3 <<'PY' | tee preflight-source-search.txt
+          from pathlib import Path
+
+          exact = [
+              '执行前只读体检',
+              '体检阻断',
+              '本次直接运行未绑定历史运行证据',
+              '存在阻断项，不能授权执行',
+              '修正后请重新生成体检预览',
+          ]
+          broad = [
+              '体检', '运行单节点', '只读', '阻断', '授权执行', '历史运行',
+              'NodeRun', 'Attempt', 'run-single', 'preflight', 'evidence',
+              'revision', 'executableNodes', 'execution scope',
+          ]
+          skip_dirs = {'.git', 'node_modules', 'dist', 'release', 'coverage', '.vite', 'artifacts'}
+          suffixes = {
+              '.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.json', '.md', '.html',
+              '.css', '.scss', '.yml', '.yaml', '.txt', '.sql'
+          }
+          matches = []
+          for path in Path('.').rglob('*'):
+              if not path.is_file() or any(part in skip_dirs for part in path.parts):
+                  continue
+              if path.suffix.lower() not in suffixes:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except Exception:
+                  continue
+              hit_lines = []
+              for index, line in enumerate(text.splitlines(), 1):
+                  lower = line.lower()
+                  if any(term in line for term in exact) or any(term.lower() in lower for term in broad):
+                      hit_lines.append(index)
+              if hit_lines:
+                  matches.append((path, text.splitlines(), hit_lines))
+
+          print(f'FOUND_SOURCE_FILES={len(matches)}')
+          for path, lines, hit_lines in matches:
+              print(f'\n===== {path} =====')
+              printed = set()
+              for line_no in hit_lines[:30]:
+                  start = max(1, line_no - 6)
+                  end = min(len(lines), line_no + 10)
+                  if (start, end) in printed:
+                      continue
+                  printed.add((start, end))
+                  print(f'--- lines {start}-{end} ---')
+                  for number in range(start, end + 1):
+                      print(f'{number:05d}: {lines[number - 1]}')
+          PY
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and build the current branch
+        env:
+          T8_WEB_DEPLOY: '1'
+        run: |
+          npm ci --include=dev
+          npm run build
+
+      - name: Search generated production bundles
+        run: |
+          python3 <<'PY' | tee preflight-dist-search.txt
+          from pathlib import Path
+          terms = [
+              '执行前只读体检', '体检阻断', '本次直接运行未绑定历史运行证据',
+              '存在阻断项', '不能授权执行', '修正后请重新生成体检预览',
+              '运行单节点', 'Run / NodeRun / Attempt', 'preflight', 'run-single'
+          ]
+          found = 0
+          for path in Path('dist').rglob('*'):
+              if not path.is_file() or path.suffix.lower() not in {'.js', '.css', '.html', '.map'}:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except Exception:
+                  continue
+              for term in terms:
+                  offset = text.find(term)
+                  if offset < 0:
+                      continue
+                  found += 1
+                  start = max(0, offset - 1200)
+                  end = min(len(text), offset + len(term) + 1800)
+                  print(f'\n===== {path} :: {term} @ {offset} =====')
+                  print(text[start:end])
+          print(f'\nFOUND_DIST_MATCHES={found}')
+          PY
+
+      - name: Download and inspect the live Render JavaScript bundles
+        run: |
+          node --input-type=module <<'NODE' | tee preflight-live-search.txt
+          import fs from 'node:fs';
+
+          const origin = process.env.APP_ORIGIN.replace(/\/+$/, '');
+          const htmlResponse = await fetch(`${origin}/?diagnostic=${Date.now()}`, { cache: 'no-store' });
+          const html = await htmlResponse.text();
+          console.log('LIVE_HTML_STATUS=' + htmlResponse.status);
+          const refs = [...html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|mjs)(?:\?[^"']*)?)["']/gi)]
+            .map((match) => new URL(match[1], origin).href);
+          const urls = [...new Set(refs)];
+          console.log('LIVE_BUNDLE_COUNT=' + urls.length);
+
+          const terms = [
+            '执行前只读体检', '体检阻断', '本次直接运行未绑定历史运行证据',
+            '存在阻断项', '不能授权执行', '修正后请重新生成体检预览',
+            '运行单节点', 'Run / NodeRun / Attempt', 'preflight', 'run-single'
+          ];
+          let found = 0;
+          for (const url of urls) {
+            const response = await fetch(url, { cache: 'no-store' });
+            const text = await response.text();
+            console.log(`BUNDLE ${response.status} ${url} bytes=${text.length}`);
+            for (const term of terms) {
+              const offset = text.indexOf(term);
+              if (offset < 0) continue;
+              found += 1;
+              const start = Math.max(0, offset - 1800);
+              const end = Math.min(text.length, offset + term.length + 2600);
+              console.log(`\n===== LIVE ${url} :: ${term} @ ${offset} =====`);
+              console.log(text.slice(start, end));
+            }
+            const sourceMap = text.match(/\/\/# sourceMappingURL=([^\s]+)/)?.[1];
+            if (sourceMap) console.log(`SOURCEMAP ${new URL(sourceMap, url).href}`);
+          }
+          console.log('FOUND_LIVE_MATCHES=' + found);
+          fs.writeFileSync('live-index.html', html);
+          if (found === 0) process.exitCode = 2;
+          NODE
+
+      - name: Upload diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-preflight-diagnostic
+          path: |
+            preflight-source-search.txt
+            preflight-dist-search.txt
+            preflight-live-search.txt
+            live-index.html
+          if-no-files-found: warn
+          retention-days: 2
