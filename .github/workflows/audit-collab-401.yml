@@ -1,0 +1,62 @@
+name: Audit collaboration preflight 401
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    if: github.event.pull_request.head.ref == 'ci/audit-collab-401-209a05d'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Inspect collaboration feature gating and request auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          needles = [
+              'COLLAB_MANAGEMENT_TOKEN',
+              'collaborationEnabled',
+              'collaboration_enabled',
+              'enableCollaboration',
+              'project-local',
+              'isElectron',
+              'electronAPI',
+              'management-token',
+              'MANAGEMENT_AUTHORITY_HEADER',
+              'getCollaborationExecutionPolicy',
+          ]
+          roots = [Path('src'), Path('backend/src'), Path('electron')]
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in root.rglob('*'):
+                  if not path.is_file() or path.suffix not in {'.ts', '.tsx', '.js', '.cjs'}:
+                      continue
+                  try:
+                      lines = path.read_text(encoding='utf-8').splitlines()
+                  except Exception:
+                      continue
+                  hits = [i for i, line in enumerate(lines) if any(n in line for n in needles)]
+                  if not hits:
+                      continue
+                  print(f'\n===== {path} =====')
+                  shown = set()
+                  for i in hits:
+                      start = max(0, i - 12)
+                      end = min(len(lines), i + 16)
+                      if (start, end) in shown:
+                          continue
+                      shown.add((start, end))
+                      print(f'--- lines {start+1}-{end} ---')
+                      for j in range(start, end):
+                          print(f'{j+1:6}: {lines[j]}')
+          PY
